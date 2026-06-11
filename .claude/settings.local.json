@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const src = require\\('fs'\\).readFileSync\\('./node_modules/three-gpu-pathtracer/build/index.umd.cjs', 'utf8'\\); const idx = src.indexOf\\('update\\('\\); const snippet = src.substring\\(idx, idx + 800\\); console.log\\(snippet\\)\")"
+    ]
+  }
+}

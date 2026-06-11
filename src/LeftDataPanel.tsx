@@ -1,0 +1,271 @@
+import { useState } from 'react'
+import { LayerData } from './types'
+
+interface LeftDataPanelProps {
+  layers:   LayerData[]
+  onChange: (layers: LayerData[]) => void
+}
+
+// ── Shared styles ─────────────────────────────────────────────────────────────
+
+const DEFAULT_COLORS = [
+  '#b0b0b0', '#4466dd', '#cccc44', '#cc5533',
+  '#3344aa', '#44aa66', '#aa44cc', '#44aaaa',
+]
+
+let _nextId = 100
+function nextId() { return String(_nextId++) }
+
+const cell: React.CSSProperties = { padding: '4px 5px', verticalAlign: 'middle' }
+
+const inputBase: React.CSSProperties = {
+  background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '6px',
+  color: '#1D1D1F', fontSize: '12px', padding: '3px 6px',
+  outline: 'none', width: '100%', fontFamily: 'inherit',
+}
+
+const iconBtn: React.CSSProperties = {
+  background: '#F2F2F7', border: '1px solid #D1D1D6', color: '#6C6C70',
+  cursor: 'pointer', borderRadius: '5px', padding: '2px 6px',
+  fontSize: '11px', lineHeight: '1.4', fontFamily: 'inherit',
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{
+      fontSize: '10px', color: '#AEAEB2',
+      textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600',
+    }}>
+      {children}
+    </span>
+  )
+}
+
+// ── Draggable variable chip ───────────────────────────────────────────────────
+
+interface VarChipProps {
+  label:    string
+  type:     'numerical' | 'categorical'
+  varName:  string
+}
+
+function VarChip({ label, type, varName }: VarChipProps) {
+  const isNum  = type === 'numerical'
+  const accent = isNum ? '#007AFF' : '#5E5CE6'
+  const bg     = isNum ? '#EBF3FF' : '#F3EBFF'
+  const border = isNum ? '#A8CAFF' : '#C8A8FF'
+  const mime   = `phys-var/${type}`
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('phys-var/name', varName)
+        e.dataTransfer.setData(mime, '1')
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
+      title={`Drag to bind ${label}`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '5px',
+        background: bg, border: `1px solid ${border}`,
+        borderRadius: '7px', padding: '6px 10px',
+        fontSize: '11px', color: accent, fontWeight: '600',
+        cursor: 'grab', userSelect: 'none',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{ fontSize: '10px', opacity: 0.7 }}>{isNum ? '#' : '◈'}</span>
+      {label}
+    </div>
+  )
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
+  const [tableOpen, setTableOpen] = useState(true)
+  const totalWeight = layers.reduce((s, l) => s + Math.max(0, l.percentage), 0)
+
+  function update(id: string, field: keyof LayerData, value: string | number) {
+    onChange(layers.map((l) => (l.id === id ? { ...l, [field]: value } : l)))
+  }
+
+  function addLayer() {
+    onChange([...layers, {
+      id: nextId(),
+      name: `Layer ${layers.length + 1}`,
+      percentage: 10,
+      color: DEFAULT_COLORS[layers.length % DEFAULT_COLORS.length],
+    }])
+  }
+
+  function removeLayer(id: string) {
+    if (layers.length <= 1) return
+    onChange(layers.filter((l) => l.id !== id))
+  }
+
+  function moveTowardTop(index: number) {
+    if (index === 0) return
+    const next = [...layers]
+    ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+    onChange(next)
+  }
+
+  function moveTowardBottom(index: number) {
+    if (index === layers.length - 1) return
+    const next = [...layers]
+    ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+    onChange(next)
+  }
+
+  return (
+    <div style={{
+      padding: '14px 14px 10px', color: '#1D1D1F', fontSize: '13px',
+      display: 'flex', flexDirection: 'column', gap: '10px',
+    }}>
+
+      {/* Header */}
+      <div>
+        <div style={{
+          fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase',
+          color: '#AEAEB2', marginBottom: '3px', fontWeight: '500',
+        }}>
+          Data Encoding
+        </div>
+        <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>Data Panel</div>
+      </div>
+
+      {/* ── Data Table toggle ── */}
+      <button
+        onClick={() => setTableOpen(!tableOpen)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          background: 'none', border: 'none', cursor: 'pointer',
+          padding: '4px 0', fontFamily: 'inherit',
+          borderTop: '1px solid #E5E5EA', paddingTop: '10px', width: '100%',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{
+          fontSize: '10px', color: '#AEAEB2',
+          textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600',
+          flex: 1,
+        }}>
+          Data Table
+        </span>
+        <span style={{
+          fontSize: '11px', color: '#AEAEB2',
+          transition: 'transform 0.15s',
+          transform: tableOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
+          display: 'inline-block',
+        }}>
+          ▾
+        </span>
+      </button>
+
+      {/* ── Collapsible: table + controls ── */}
+      {tableOpen && (
+        <>
+          <div style={{ fontSize: '11px', color: '#8E8E93', marginTop: '-4px' }}>
+            Total weight: <span style={{ color: '#1D1D1F', fontWeight: '600' }}>{totalWeight.toFixed(1)}</span>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #E5E5EA' }}>
+                <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>Name</th>
+                <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '46px' }}>Wt</th>
+                <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '30px' }}>Col</th>
+                <th style={{ width: '52px' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {layers.map((layer, i) => (
+                <tr
+                  key={layer.id}
+                  style={{ borderBottom: '1px solid #F2F2F7', background: i % 2 === 0 ? 'transparent' : '#FAFAFA' }}
+                >
+                  <td style={cell}>
+                    <input
+                      type="text"
+                      value={layer.name}
+                      onChange={(e) => update(layer.id, 'name', e.target.value)}
+                      style={inputBase}
+                    />
+                  </td>
+                  <td style={cell}>
+                    <input
+                      type="number"
+                      min={0} max={9999} step={1}
+                      value={layer.percentage}
+                      onChange={(e) => update(layer.id, 'percentage', Number(e.target.value))}
+                      style={{ ...inputBase, width: '40px' }}
+                    />
+                  </td>
+                  <td style={cell}>
+                    <input
+                      type="color"
+                      value={layer.color}
+                      onChange={(e) => update(layer.id, 'color', e.target.value)}
+                      style={{
+                        width: '26px', height: '24px',
+                        border: '1px solid #D1D1D6', borderRadius: '4px',
+                        background: 'none', cursor: 'pointer', padding: '1px',
+                      }}
+                    />
+                  </td>
+                  <td style={{ ...cell, textAlign: 'right' }}>
+                    <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
+                      <button onClick={() => moveTowardTop(i)}    disabled={i === 0}                    title="Move up"   style={iconBtn}>↑</button>
+                      <button onClick={() => moveTowardBottom(i)} disabled={i === layers.length - 1}    title="Move down" style={iconBtn}>↓</button>
+                      <button onClick={() => removeLayer(layer.id)} disabled={layers.length <= 1}       title="Remove"    style={{ ...iconBtn, color: '#FF3B30' }}>×</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <button
+            onClick={addLayer}
+            style={{
+              background: '#F2F2F7', border: '1px solid #D1D1D6', color: '#6C6C70',
+              cursor: 'pointer', borderRadius: '8px', padding: '6px 12px',
+              fontSize: '12px', fontWeight: '500', alignSelf: 'flex-start',
+              fontFamily: 'inherit',
+            }}
+          >
+            + Add Layer
+          </button>
+
+        </>
+      )}
+
+      {/* ── Data Variables — at bottom for easy drag ── */}
+      <div style={{
+        border: '1px solid #E5E5EA', borderRadius: '10px',
+        overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        marginTop: 'auto',
+      }}>
+        <div style={{
+          padding: '8px 11px 6px',
+          background: '#F8F8FA', borderBottom: '1px solid #E5E5EA',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <SectionLabel>Data Variables</SectionLabel>
+          <span style={{ fontSize: '10px', color: '#C7C7CC' }}>drag to attributes</span>
+        </div>
+        <div style={{
+          padding: '10px 11px',
+          display: 'flex', gap: '7px', flexWrap: 'wrap',
+          background: '#FFFFFF',
+        }}>
+          <VarChip label="Weight"       type="numerical"   varName="weight"      />
+          <VarChip label="Garbage Type" type="categorical" varName="garbageType" />
+          <VarChip label="Count"        type="numerical"   varName="count"       />
+        </div>
+      </div>
+
+    </div>
+  )
+}
