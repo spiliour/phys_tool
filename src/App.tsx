@@ -41,6 +41,7 @@ const DEFAULT_COLLECTION1: CollectionConfig = {
   scatterCount:      50,
   scatterDimensions: { x: 4.5, y: 4, z: 3 },
   scatterDensity:    1.0,
+  pilingCount:       10,
 }
 
 const DEFAULT_COLLECTION2: CollectionConfig = {
@@ -53,6 +54,7 @@ const DEFAULT_COLLECTION2: CollectionConfig = {
   scatterCount:      30,
   scatterDimensions: { x: 20, y: 6, z: 8 },
   scatterDensity:    1.0,
+  pilingCount:       10,
 }
 
 const DEFAULT_SCENE: SceneConfig = {

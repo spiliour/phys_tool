@@ -442,6 +442,7 @@ const ARRANGEMENT_OPTIONS: { value: CollectionArrangement; label: string }[] = [
   { value: 'alignment',  label: 'Alignment'  },
   { value: 'scattering', label: 'Scattering' },
   { value: 'stacking',   label: 'Stacking'   },
+  { value: 'piling',     label: 'Piling'     },
 ]
 
 const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
@@ -840,6 +841,18 @@ function CollectionProperties({
               </DropZone>
             )}
           </>
+        )}
+
+        {/* ── Piling controls ── */}
+        {config.arrangement === 'piling' && (
+          <Row label="Mark Count">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="range" min={2} max={60} step={1} value={config.pilingCount}
+                onChange={(e) => onChange({ ...config, pilingCount: Number(e.target.value) })}
+                style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+              <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{config.pilingCount}</span>
+            </div>
+          </Row>
         )}
 
         {/* ── Color — always visible ── */}

@@ -13,6 +13,8 @@ import {
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 import { MarkMaterialElement } from './MarkMaterial'
 import { Layer, LayerLabelData } from './Layer'
+import { PilingLayer } from './PilingLayer'
+import { Physics } from '@react-three/rapier'
 
 // ── Focal length → vertical FOV ───────────────────────────────────────────────
 export function focalLengthToFov(mm: number): number {
@@ -367,7 +369,24 @@ function CollectionInstance({
       </group>
     )
   }
-  // Scattering
+
+  if (collection1Config.arrangement === 'piling') {
+    return (
+      <PilingLayer
+        key={collection1Config.pilingCount}
+        position={position}
+        count={collection1Config.pilingCount}
+        markShape={markConfig.shape}
+        markMaterial={markConfig.material}
+        markSize={markConfig.size}
+        color={color}
+        structural={markConfig.structural}
+        customModelUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
+      />
+    )
+  }
+
+  // Scattering / stacking
   const { scatterDimensions: dim, scatterCount } = collection1Config
   const h        = heightOverride ?? dim.y
   const labelData = computeLabelValues(colLabelConfig.slots, layers, layerIndex)
@@ -381,6 +400,7 @@ function CollectionInstance({
       markMaterial={markConfig.material}
       markSize={markConfig.size}
       structural={markConfig.structural}
+      customModelUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
       labelShow={colLabelConfig.show}
       labelData={labelData}
     />
@@ -845,6 +865,8 @@ export function CompositionCanvas({
       <CameraController level={level} fov={fov} focalLength={sceneConfig.focalLength} />
       <SceneEnvironment config={sceneConfig} />
 
+      <Physics gravity={[0, -9.81, 0]} timeStep="vary">
+
       {level === 1 && (
         <SingleMarkMesh
           config={markConfig} layers={layers} bindings={bindings}
@@ -877,6 +899,8 @@ export function CompositionCanvas({
       {decorations.map((dec) => (
         <DecorationMesh key={dec.id} config={dec} />
       ))}
+
+      </Physics>
 
       <OrbitControls makeDefault dampingFactor={0.08} minDistance={1} maxDistance={400} target={[0, 0, 0]} />
 

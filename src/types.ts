@@ -41,7 +41,7 @@ export interface MarkConfig {
 }
 
 // ── Collection ────────────────────────────────────────────────────────────────
-export type CollectionArrangement = 'alignment' | 'scattering' | 'stacking'
+export type CollectionArrangement = 'alignment' | 'scattering' | 'stacking' | 'piling'
 
 export interface CollectionConfig {
   arrangement:       CollectionArrangement
@@ -55,6 +55,8 @@ export interface CollectionConfig {
   scatterCount:      number    // mark count at Level 2
   scatterDimensions: Vec3      // bounding box
   scatterDensity:    number    // density multiplier (used for Level 3 layer bands)
+  // Piling — physics-settled pile
+  pilingCount:       number    // number of marks to drop (default 10)
 }
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
