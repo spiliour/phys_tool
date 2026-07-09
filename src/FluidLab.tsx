@@ -1,12 +1,13 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Suspense, useRef, useState, useCallback, useEffect, useMemo } from 'react'
+import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { OrbitControls, Environment } from '@react-three/drei'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import {
   type SceneSave, type ViewType, type DataRow, type DataField,
   DEFAULT_DATA, priBtnSt, secBtnSt, Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabDataPanel,
-  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, SpreadsheetModal,
+  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
 } from './LabShared'
 
 const SERVER = 'http://localhost:3001'
@@ -75,13 +76,54 @@ function FluidScene({ geos, fps, playing, speed, viscosity, wireframe }: {
   )
 }
 
+// ── Container preview — renders the imported GLB at the same position/scale ──
+// Mirrors the normalization Blender applies: fit to 1.5 units, center at y=-0.8
+
+function ContainerPreview({ url, scale, yOffset }: { url: string; scale: number; yOffset: number }) {
+  const gltf = useLoader(GLTFLoader, url)
+
+  // Clone once per GLB load. Compute base bounding box at unit scale so the
+  // reference dimensions don't drift as the user drags sliders.
+  const [baseScene, baseCenter, baseMaxDim] = useMemo(() => {
+    const s = gltf.scene.clone(true)
+    s.traverse(node => {
+      if ((node as THREE.Mesh).isMesh) {
+        ;(node as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+          color: '#7080c8', transparent: true, opacity: 0.28,
+          side: THREE.DoubleSide, depthWrite: false,
+        })
+      }
+    })
+    // Temporarily reset root transform to get geometry-only bounding box
+    const savedScale = s.scale.clone()
+    const savedPos   = s.position.clone()
+    s.scale.set(1, 1, 1)
+    s.position.set(0, 0, 0)
+    const box    = new THREE.Box3().setFromObject(s)
+    const sz     = box.getSize(new THREE.Vector3())
+    const center = box.getCenter(new THREE.Vector3())
+    s.scale.copy(savedScale)
+    s.position.copy(savedPos)
+    return [s, center, Math.max(sz.x, sz.y, sz.z, 0.001)] as const
+  }, [gltf])
+
+  // Direct mutation every render — R3F reads these from the Three.js object
+  // each frame, so slider changes reflect immediately without swapping objects.
+  const k = (1.5 / baseMaxDim) * scale
+  baseScene.scale.setScalar(k)
+  baseScene.position.set(-baseCenter.x * k, -baseCenter.y * k - 0.8 + yOffset, -baseCenter.z * k)
+
+  return <primitive object={baseScene} />
+}
+
 // ── Per-view canvas ───────────────────────────────────────────────────────────
 
-function ViewCanvas({ viewType, geos, fluidMeta, playing, speed }: {
+function ViewCanvas({ viewType, geos, fluidMeta, playing, speed, containerUrl, containerScale, containerY }: {
   viewType: ViewType
   geos: THREE.BufferGeometry[]
   fluidMeta: { fps: number; viscosity: Viscosity } | null
   playing: boolean; speed: number
+  containerUrl: string | null; containerScale: number; containerY: number
 }) {
   const wireframe   = viewType === 'dynamic'
   const isPlaying   = viewType === 'static' ? false : playing
@@ -92,7 +134,7 @@ function ViewCanvas({ viewType, geos, fluidMeta, playing, speed }: {
       <Canvas
         camera={{ position: [0, 2, 8], fov: 45 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}
-        style={{ background: '#04040c' }}
+        style={{ background: '#000000' }}
       >
         <ambientLight intensity={0.4} />
         <directionalLight position={[5, 8, 4]} intensity={1.8} />
@@ -106,6 +148,11 @@ function ViewCanvas({ viewType, geos, fluidMeta, playing, speed }: {
             viscosity={fluidMeta?.viscosity ?? 'water'}
             wireframe={wireframe}
           />
+        )}
+        {containerUrl && (
+          <Suspense fallback={null}>
+            <ContainerPreview url={containerUrl} scale={containerScale} yOffset={containerY} />
+          </Suspense>
         )}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]} receiveShadow>
           <planeGeometry args={[16, 16]} />
@@ -142,7 +189,7 @@ function ProgressBar({ value, label }: { value: number; label: string }) {
 
 // ── FluidLab ──────────────────────────────────────────────────────────────────
 
-export default function FluidLab() {
+export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
   const [phase,        setPhase]        = useState<Phase>('idle')
   const [progress,     setProgress]     = useState(0)
   const [phaseLabel,   setPhaseLabel]   = useState('')
@@ -155,7 +202,10 @@ export default function FluidLab() {
   const [viscosity,     setViscosity]     = useState<Viscosity>('water')
   const [resolution,    setResolution]    = useState(24)
   const [frameEnd,      setFrameEnd]      = useState(60)
-  const [obstacleFile,  setObstacleFile]  = useState<File | null>(null)
+  const [containerFile,  setContainerFile]  = useState<File | null>(null)
+  const [containerUrl,   setContainerUrl]   = useState<string | null>(null)
+  const [containerScale, setContainerScale] = useState(1.0)
+  const [containerY,     setContainerY]     = useState(0.0)
 
   // Playback
   const [playing,  setPlaying]  = useState(true)
@@ -164,12 +214,12 @@ export default function FluidLab() {
 
   // Views
   const [view1, setView1] = useState<ViewType>('effect')
-  const [view2, setView2] = useState<ViewType | null>(null)
+  // const [view2, setView2] = useState<ViewType | null>(null)
   const [showAdvanced,    setShowAdvanced]    = useState(false)
-  const [showSpreadsheet, setShowSpreadsheet] = useState(false)
+
 
   // Data
-  const [data]          = useState<DataRow[]>(DEFAULT_DATA)
+  const [data, setData] = useState<DataRow[]>(DEFAULT_DATA)
   const [draggingField, setDraggingField] = useState<DataField | null>(null)
 
   // Presets
@@ -179,6 +229,18 @@ export default function FluidLab() {
 
   const pollRef  = useRef<ReturnType<typeof setInterval> | null>(null)
   const isBaking = phase === 'baking' || phase === 'exporting'
+
+  // Manage blob URL lifecycle for container preview
+  const handleContainerFile = useCallback((file: File) => {
+    setContainerUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file) })
+    setContainerFile(file)
+  }, [])
+  const handleRemoveContainer = useCallback(() => {
+    setContainerUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null })
+    setContainerFile(null)
+    setContainerScale(1.0)
+    setContainerY(0.0)
+  }, [])
 
   const stopPoll = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
@@ -241,10 +303,12 @@ export default function FluidLab() {
       const health = await fetch(`${SERVER}/health`).catch(() => null)
       if (!health?.ok) throw new Error('Simulation server is not running. Start it with: node server/server.mjs')
       const form = new FormData()
-      form.append('resolution', resolution.toString())
-      form.append('frameEnd',   frameEnd.toString())
-      form.append('viscosity',  viscosity)
-      if (obstacleFile) form.append('obstacle', obstacleFile)
+      form.append('resolution',     resolution.toString())
+      form.append('frameEnd',       frameEnd.toString())
+      form.append('viscosity',      viscosity)
+      form.append('containerScale', containerScale.toString())
+      form.append('containerY',     containerY.toString())
+      if (containerFile) form.append('container', containerFile)
       setPhaseLabel('Starting Blender…')
       const r    = await fetch(`${SERVER}/fluid`, { method: 'POST', body: form })
       const text = await r.text()
@@ -255,7 +319,7 @@ export default function FluidLab() {
     } catch (e: unknown) {
       setPhase('error'); setErrorMsg(e instanceof Error ? e.message : 'Unknown error')
     }
-  }, [resolution, frameEnd, viscosity, obstacleFile])
+  }, [resolution, frameEnd, viscosity, containerFile, containerScale, containerY])
 
   const handleCancel = useCallback(async () => {
     if (jobId) { stopPoll(); await fetch(`${SERVER}/fluid/${jobId}`, { method: 'DELETE' }).catch(() => {}); setJobId(null) }
@@ -303,18 +367,18 @@ export default function FluidLab() {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif', background: '#131318', color: '#e0e0f0', position: 'relative' }}>
+    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: '#000000', color: '#e0e0f0', position: 'relative' }}>
 
-      {showSpreadsheet && <SpreadsheetModal data={data} onClose={() => setShowSpreadsheet(false)} />}
+
 
       {/* ── Left panel ── */}
-      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#1f1f28', position: 'relative' }}>
+      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#383858', position: 'relative' }}>
 
         <LabAdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(v => !v)} />
 
-        <div style={{ flex: 1, padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+        <div style={{ flex: 1, padding: embedded ? '52px 16px 18px' : '18px 16px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
 
-          <LabNavTitle name="Fluid Lab" href="/fluid" />
+          {!embedded && <LabNavTitle name="Fluid Lab" href="/fluid" />}
 
           <LabPresetRow
             presets={presets} selPresetId={selPresetId} saveName={saveName}
@@ -331,7 +395,7 @@ export default function FluidLab() {
               <ViscBtn v="honey" label="Honey" />
               <ViscBtn v="lava"  label="Lava"  />
             </div>
-            <div style={{ fontSize: 10, color: '#484858', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 10, color: '#9898b8', lineHeight: 1.5 }}>
               {{
                 water: 'Thin, fast-flowing liquid',
                 honey: 'Viscous, slow-moving fluid',
@@ -350,26 +414,40 @@ export default function FluidLab() {
             </div>
           </Sec>
 
-          {/* Obstacle (optional model) */}
+          {/* Container import */}
           <Sec>
-            <SLabel>Obstacle (optional)</SLabel>
+            <SLabel>Container (optional)</SLabel>
             <div
-              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setObstacleFile(f) }}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleContainerFile(f) }}
               onDragOver={e => e.preventDefault()}
-              onClick={() => document.getElementById('fluid-obstacle-input')!.click()}
+              onClick={() => !isBaking && document.getElementById('fluid-container-input')!.click()}
               style={{
-                border: `1px dashed ${obstacleFile ? '#5050cc' : '#2a2a3a'}`,
+                border: `1px dashed ${containerFile ? '#5050cc' : '#2a2a3a'}`,
                 borderRadius: 8, padding: '14px 10px', textAlign: 'center',
-                cursor: 'pointer', fontSize: 11,
-                color: obstacleFile ? '#8080d8' : '#505060', background: '#181824',
+                cursor: isBaking ? 'default' : 'pointer', fontSize: 11,
+                color: containerFile ? '#8080d8' : '#505060', background: '#303060',
               }}
             >
-              {obstacleFile?.name ?? 'Drop a GLB — liquid flows around it'}
+              {containerFile?.name ?? 'Drop a GLB — fluid fills the bowl'}
             </div>
-            <input id="fluid-obstacle-input" type="file" accept=".glb,.gltf" style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; if (f) setObstacleFile(f) }} />
-            {obstacleFile && (
-              <button onClick={() => setObstacleFile(null)} style={secBtnSt(false)}>Remove obstacle</button>
+            <input id="fluid-container-input" type="file" accept=".glb,.gltf" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleContainerFile(f) }} />
+            {containerFile && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                  <RowLabel>Scale: {containerScale.toFixed(2)}×</RowLabel>
+                  <input type="range" min={0.2} max={2.0} step={0.05} value={containerScale}
+                    onChange={e => setContainerScale(Number(e.target.value))} disabled={isBaking} style={sl} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <RowLabel>Y position: {containerY >= 0 ? '+' : ''}{containerY.toFixed(2)}</RowLabel>
+                  <input type="range" min={-1.0} max={1.2} step={0.05} value={containerY}
+                    onChange={e => setContainerY(Number(e.target.value))} disabled={isBaking} style={sl} />
+                </div>
+                <button onClick={handleRemoveContainer} disabled={isBaking} style={secBtnSt(isBaking)}>
+                  Remove container
+                </button>
+              </>
             )}
           </Sec>
 
@@ -389,8 +467,8 @@ export default function FluidLab() {
               <button onClick={handleBake} style={priBtnSt(false)}>
                 {phase === 'error' ? '↺ Retry bake' : '▶ Bake simulation'}
               </button>
-              <div style={{ fontSize: 9, color: '#2a2a3c', lineHeight: 1.4 }}>
-                Requires the simulation server: <code style={{ color: '#38384e' }}>node server/server.mjs</code>
+              <div style={{ fontSize: 9, color: '#8888b0', lineHeight: 1.4 }}>
+                Requires the simulation server: <code style={{ color: '#a0a0c8' }}>node server/server.mjs</code>
               </div>
             </div>
           )}
@@ -408,7 +486,7 @@ export default function FluidLab() {
                 }}>
                   {playing ? '⏸' : '▶'}
                 </button>
-                <div style={{ fontSize: 10, color: '#484858' }}>{geos.length} frames · {fluidMeta?.fps}fps</div>
+                <div style={{ fontSize: 10, color: '#9898b8' }}>{geos.length} frames · {fluidMeta?.fps}fps</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <RowLabel>Speed: {speed.toFixed(2)}×</RowLabel>
@@ -426,7 +504,7 @@ export default function FluidLab() {
         <LabDataPanel
           data={data} draggingField={draggingField}
           onDragStart={setDraggingField} onDragEnd={() => setDraggingField(null)}
-          onShowSpreadsheet={() => setShowSpreadsheet(true)}
+          onDataChange={setData}
         />
       </div>
 
@@ -445,7 +523,7 @@ export default function FluidLab() {
               }}>{r === 16 ? 'Fast' : r === 24 ? 'Default' : 'Quality'}</button>
             ))}
           </div>
-          <div style={{ fontSize: 9, color: '#40404e', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
             {resolution === 16 ? '~20–40s bake time' : resolution === 24 ? '~1–3min bake time' : '~3–8min bake time'}
           </div>
         </Sec>
@@ -456,7 +534,7 @@ export default function FluidLab() {
               style={{ accentColor: '#7070f5' }} />
             Wireframe
           </label>
-          <div style={{ fontSize: 9, color: '#40404e', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
             Also toggled by switching to the Dynamic view.
           </div>
         </Sec>
@@ -466,21 +544,24 @@ export default function FluidLab() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
 
         <div style={{ flex: 1, position: 'relative' }}>
-          <ViewCanvas viewType={view1} geos={geos} fluidMeta={fluidMeta} playing={playing} speed={speed} />
+          <ViewCanvas viewType={view1} geos={geos} fluidMeta={fluidMeta} playing={playing} speed={speed} containerUrl={containerUrl} containerScale={containerScale} containerY={containerY} />
         </div>
 
+        {/* LEGACY two-view split — commented out
         {view2 !== null && (
           <div style={{ flex: 1, position: 'relative', borderTop: '1px solid #1e1e2a' }}>
-            <ViewCanvas viewType={view2} geos={geos} fluidMeta={fluidMeta} playing={playing} speed={speed} />
+            <ViewCanvas viewType={view2} geos={geos} fluidMeta={fluidMeta} playing={playing} speed={speed} containerUrl={containerUrl} containerScale={containerScale} containerY={containerY} />
           </div>
         )}
-
         <LabViewSelector
           view1={view1} view2={view2}
           onView1={v => setView1(v)} onView2={v => setView2(v)}
           onAdd={() => setView2(view1 === 'effect' ? 'static' : 'effect')}
           onRemove={() => setView2(null)}
         />
+        */}
+
+        <LabViewToggle view={view1} onChange={setView1} />
       </div>
     </div>
   )

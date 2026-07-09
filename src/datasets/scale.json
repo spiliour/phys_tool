@@ -1,0 +1,7 @@
+[
+  { "category": "Micro",  "value": 0.1, "percentage": 5  },
+  { "category": "Small",  "value": 0.5, "percentage": 15 },
+  { "category": "Medium", "value": 1.0, "percentage": 30 },
+  { "category": "Large",  "value": 2.5, "percentage": 35 },
+  { "category": "Macro",  "value": 5.0, "percentage": 15 }
+]

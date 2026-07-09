@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo, Suspense } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { OrbitControls, Html } from '@react-three/drei'
 import { useLoader } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler.js'
@@ -14,7 +14,7 @@ import {
   type SceneSave, type ViewType, type DataRow, type DataField,
   DEFAULT_DATA, Sec, SLabel, RowLabel, secBtnSt,
   LabNavTitle, LabPresetRow, LabDataPanel,
-  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, SpreadsheetModal,
+  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
 } from './LabShared'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -182,15 +182,22 @@ function TrailRenderer({ simRef, count, trailLen, renderOptsRef }: {
 
 // ── Particle simulation ───────────────────────────────────────────────────────
 
-function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOptsRef, paused }: {
+function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOptsRef, paused, instanceGeo, instanceMat, instanceSize }: {
   simRef: React.MutableRefObject<SimData | null>
   sourceMesh: THREE.Mesh; count: number; size: number
   forcesRef: React.MutableRefObject<Forces>
   renderOptsRef: React.MutableRefObject<RenderOpts>
   paused?: boolean
+  instanceGeo?: THREE.BufferGeometry | null
+  instanceMat?: THREE.Material | null
+  instanceSize?: number
 }) {
-  const meshRef = useRef<THREE.InstancedMesh>(null)
-  const matRef  = useRef<THREE.MeshStandardMaterial | null>(null)
+  const meshRef    = useRef<THREE.InstancedMesh>(null)
+  const matRef     = useRef<THREE.MeshStandardMaterial | null>(null)
+  const rotRef     = useRef<Float32Array | null>(null)
+  const defaultGeo = useMemo(() => new THREE.IcosahedronGeometry(1, 0), [])
+  const effectiveGeo  = instanceGeo ?? defaultGeo
+  const effectiveSize = (instanceGeo && instanceSize != null) ? instanceSize : size
 
   useEffect(() => {
     const pos = new Float32Array(count * 3); const vel = new Float32Array(count * 3)
@@ -213,6 +220,50 @@ function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOpts
       pos[i3]+=vel[i3]*age; pos[i3+1]+=vel[i3+1]*age; pos[i3+2]+=vel[i3+2]*age
     }
     simRef.current = { pos, vel, origin, normal }
+
+    // Generate one random quaternion per particle (used when custom instanceGeo is active)
+    const rots = new Float32Array(count * 4)
+    const _q = new THREE.Quaternion()
+    for (let i = 0; i < count; i++) {
+      _q.set(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).normalize()
+      rots[i*4]=_q.x; rots[i*4+1]=_q.y; rots[i*4+2]=_q.z; rots[i*4+3]=_q.w
+    }
+    rotRef.current = rots
+
+    // When paused, useFrame never runs so instanceMatrix stays all-zero (invisible).
+    // Write instance transforms + blending once here so the static snapshot is visible.
+    if (paused) {
+      const mesh = meshRef.current
+      if (mesh) {
+        const { colorMode, brightness, solidColor, blending } = renderOptsRef.current
+        const mat = matRef.current
+        if (mat && !instanceMat) {
+          const wantAdd = blending === 'additive'
+          mat.blending   = wantAdd ? THREE.AdditiveBlending : THREE.NormalBlending
+          mat.depthWrite  = !wantAdd
+          mat.needsUpdate = true
+        }
+        const rots = rotRef.current
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3
+          _dummy.position.set(pos[i3], pos[i3+1], pos[i3+2])
+          _dummy.scale.setScalar(effectiveSize)
+          if (instanceGeo && rots) {
+            const i4 = i * 4
+            _dummy.quaternion.set(rots[i4], rots[i4+1], rots[i4+2], rots[i4+3])
+          } else {
+            _dummy.quaternion.set(0, 0, 0, 1)
+          }
+          _dummy.updateMatrix(); mesh.setMatrixAt(i, _dummy.matrix)
+          if (!instanceMat) {
+            const [cr, cg, cb] = getColor(vel[i3], vel[i3+1], vel[i3+2], pos[i3+1], colorMode, brightness, solidColor)
+            _icolor.setRGB(cr, cg, cb); mesh.setColorAt(i, _icolor)
+          }
+        }
+        mesh.instanceMatrix.needsUpdate = true
+        if (!instanceMat && mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+      }
+    }
   }, [sourceMesh, count]) // eslint-disable-line
 
   useFrame(({ clock }, delta) => {
@@ -266,42 +317,62 @@ function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOpts
       pos[i3]=px; pos[i3+1]=py; pos[i3+2]=pz
       vel[i3]=vx; vel[i3+1]=vy; vel[i3+2]=vz
 
-      _dummy.position.set(px, py, pz); _dummy.updateMatrix(); mesh.setMatrixAt(i, _dummy.matrix)
-      const [cr, cg, cb] = getColor(vx, vy, vz, py, colorMode, brightness, solidColor)
-      _icolor.setRGB(cr, cg, cb); mesh.setColorAt(i, _icolor)
+      _dummy.position.set(px, py, pz)
+      _dummy.scale.setScalar(effectiveSize)
+      const rots = rotRef.current
+      if (instanceGeo && rots) {
+        const i4 = i * 4
+        _dummy.quaternion.set(rots[i4], rots[i4+1], rots[i4+2], rots[i4+3])
+      } else {
+        _dummy.quaternion.set(0, 0, 0, 1)
+      }
+      _dummy.updateMatrix(); mesh.setMatrixAt(i, _dummy.matrix)
+      if (!instanceMat) {
+        const [cr, cg, cb] = getColor(vx, vy, vz, py, colorMode, brightness, solidColor)
+        _icolor.setRGB(cr, cg, cb); mesh.setColorAt(i, _icolor)
+      }
     }
 
     mesh.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    if (!instanceMat && mesh.instanceColor) mesh.instanceColor.needsUpdate = true
   })
 
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, count]}>
-      <icosahedronGeometry args={[size, 0]} />
-      <meshStandardMaterial ref={matRef} roughness={0.05} metalness={0.4} toneMapped={false} transparent />
+      <primitive object={effectiveGeo} attach="geometry" />
+      {instanceMat
+        ? <primitive object={instanceMat} attach="material" />
+        : <meshStandardMaterial ref={matRef} roughness={0.05} metalness={0.4} toneMapped={false} transparent />
+      }
     </instancedMesh>
   )
 }
 
 // ── Shape wrappers ────────────────────────────────────────────────────────────
 
-function BuiltinParticles({ shape, simRef, count, size, forcesRef, renderOptsRef, paused }: {
+function BuiltinParticles({ shape, simRef, count, size, forcesRef, renderOptsRef, paused, xOffset = 0, instanceGeo, instanceMat, instanceSize }: {
   shape: 'sphere' | 'cube'; simRef: React.MutableRefObject<SimData | null>
   count: number; size: number; forcesRef: React.MutableRefObject<Forces>
-  renderOptsRef: React.MutableRefObject<RenderOpts>; paused?: boolean
+  renderOptsRef: React.MutableRefObject<RenderOpts>; paused?: boolean; xOffset?: number
+  instanceGeo?: THREE.BufferGeometry | null
+  instanceMat?: THREE.Material | null
+  instanceSize?: number
 }) {
   const mesh = useMemo(() => {
     const geo = shape === 'sphere' ? new THREE.SphereGeometry(1, 32, 16) : new THREE.BoxGeometry(2, 2, 2, 8, 8, 8)
-    return new THREE.Mesh(geo)
-  }, [shape])
+    const m = new THREE.Mesh(geo)
+    m.position.set(xOffset, 0, 0)
+    m.updateMatrixWorld(true)
+    return m
+  }, [shape, xOffset])
 
-  return <ParticleSystem key={shape+count} simRef={simRef} sourceMesh={mesh} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} />
+  return <ParticleSystem key={shape+count+xOffset} simRef={simRef} sourceMesh={mesh} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} instanceGeo={instanceGeo} instanceMat={instanceMat} instanceSize={instanceSize} />
 }
 
-function ModelParticles({ url, simRef, count, size, forcesRef, renderOptsRef, paused }: {
+function ModelParticles({ url, simRef, count, size, forcesRef, renderOptsRef, paused, xOffset = 0 }: {
   url: string; simRef: React.MutableRefObject<SimData | null>
   count: number; size: number; forcesRef: React.MutableRefObject<Forces>
-  renderOptsRef: React.MutableRefObject<RenderOpts>; paused?: boolean
+  renderOptsRef: React.MutableRefObject<RenderOpts>; paused?: boolean; xOffset?: number
 }) {
   const gltf = useLoader(GLTFLoader, url)
   const mesh = useMemo<THREE.Mesh | null>(() => {
@@ -310,11 +381,134 @@ function ModelParticles({ url, simRef, count, size, forcesRef, renderOptsRef, pa
       const m = n as THREE.Mesh
       if (m.isMesh && m.geometry.attributes.position.count > maxV) { maxV = m.geometry.attributes.position.count; best = m }
     })
-    return best
-  }, [gltf])
+    if (!best) return null
+    const bestMesh = best as THREE.Mesh
+    // Standalone mesh: bake the model's world transform + apply xOffset
+    const standalone = new THREE.Mesh(bestMesh.geometry)
+    bestMesh.matrixWorld.decompose(standalone.position, standalone.quaternion, standalone.scale)
+    standalone.position.x += xOffset
+    standalone.updateMatrix()
+    standalone.updateMatrixWorld(true)
+    return standalone
+  }, [gltf, xOffset])
 
   if (!mesh) return null
-  return <ParticleSystem key={mesh.uuid+count} simRef={simRef} sourceMesh={mesh} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} />
+  return <ParticleSystem key={mesh.uuid+count+xOffset} simRef={simRef} sourceMesh={mesh} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} />
+}
+
+// ── Multi-instance comparison: 4 side-by-side with fixed counts ──────────────
+// Used by both the static view (paused) and the dynamic view (animated).
+
+const STATIC_COUNTS = [50, 300, 1000, 3000]
+const STATIC_X      = [-4.5, -1.5, 1.5, 4.5]
+
+function MultiScene({ shape, modelUrl, size, forcesRef, renderOptsRef, paused, instanceGeoUrl, instanceSize }: {
+  shape: ParticleShape; modelUrl: string | null
+  size: number
+  forcesRef: React.MutableRefObject<Forces>
+  renderOptsRef: React.MutableRefObject<RenderOpts>
+  paused: boolean
+  instanceGeoUrl?: string | null
+  instanceSize?: number
+}) {
+  const sim0 = useRef<SimData | null>(null)
+  const sim1 = useRef<SimData | null>(null)
+  const sim2 = useRef<SimData | null>(null)
+  const sim3 = useRef<SimData | null>(null)
+  const simRefs = [sim0, sim1, sim2, sim3]
+  const builtinShape = shape === 'model' ? 'sphere' : shape
+
+  const [instanceGeo, setInstanceGeo] = useState<THREE.BufferGeometry | null>(null)
+  const [instanceMat, setInstanceMat] = useState<THREE.Material | null>(null)
+  const handleShape = useCallback((geo: THREE.BufferGeometry, mat: THREE.Material) => {
+    setInstanceGeo(geo); setInstanceMat(mat)
+  }, [])
+  useEffect(() => { if (!instanceGeoUrl) { setInstanceGeo(null); setInstanceMat(null) } }, [instanceGeoUrl])
+
+  // Only apply custom shape in static (paused) view
+  const activeInstanceGeo = paused ? instanceGeo : null
+  const activeInstanceMat = paused ? instanceMat : null
+
+  return (
+    <>
+      {paused && instanceGeoUrl && (
+        <Suspense fallback={null}>
+          <InstanceGeoLoader url={instanceGeoUrl} onLoad={handleShape} />
+        </Suspense>
+      )}
+      {STATIC_COUNTS.map((count, i) => (
+        <group key={i}>
+          {shape === 'model' && modelUrl ? (
+            <Suspense fallback={null}>
+              <ModelParticles
+                url={modelUrl} simRef={simRefs[i]} count={count} size={size}
+                forcesRef={forcesRef} renderOptsRef={renderOptsRef}
+                paused={paused} xOffset={STATIC_X[i]}
+              />
+            </Suspense>
+          ) : (
+            <BuiltinParticles
+              shape={builtinShape} simRef={simRefs[i]}
+              count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef}
+              paused={paused} xOffset={STATIC_X[i]}
+              instanceGeo={activeInstanceGeo} instanceMat={activeInstanceMat}
+              instanceSize={instanceSize}
+            />
+          )}
+          <Html center position={[STATIC_X[i], -1.7, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={{ textAlign: 'center', whiteSpace: 'nowrap', userSelect: 'none' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#c0c0e0', letterSpacing: 0.3 }}>
+                {count.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 9, color: '#6060a0', marginTop: 2 }}>particles</div>
+            </div>
+          </Html>
+        </group>
+      ))}
+    </>
+  )
+}
+
+// ── Instance geometry loader (static view only) ───────────────────────────────
+// Loads a GLB, extracts the largest mesh, normalises to unit size, calls onLoad.
+
+function InstanceGeoLoader({ url, onLoad }: {
+  url: string
+  onLoad: (geo: THREE.BufferGeometry, mat: THREE.Material) => void
+}) {
+  const gltf = useLoader(GLTFLoader, url)
+  const cbRef = useRef(onLoad)
+  useEffect(() => { cbRef.current = onLoad })
+  useEffect(() => {
+    let best: THREE.Mesh | null = null; let maxV = 0
+    gltf.scene.traverse(n => {
+      const m = n as THREE.Mesh
+      if (m.isMesh && m.geometry.attributes.position.count > maxV) {
+        maxV = m.geometry.attributes.position.count; best = m
+      }
+    })
+    if (!best) return
+    const bestMesh = best as THREE.Mesh
+
+    // Clone material (take first if array)
+    const srcMat = Array.isArray(bestMesh.material) ? bestMesh.material[0] : bestMesh.material
+    const mat = (srcMat as THREE.Material).clone()
+
+    // Clone and normalise geometry
+    const geo = bestMesh.geometry.clone()
+    geo.computeBoundingBox()
+    const c = new THREE.Vector3(); geo.boundingBox!.getCenter(c)
+    geo.translate(-c.x, -c.y, -c.z)
+    const sz = new THREE.Vector3(); geo.boundingBox!.getSize(sz)
+    const s = 2 / Math.max(sz.x, sz.y, sz.z, 0.001)
+    const arr = geo.attributes.position.array as Float32Array
+    for (let i = 0; i < arr.length; i++) arr[i] *= s
+    geo.attributes.position.needsUpdate = true
+    geo.computeBoundingBox(); geo.computeBoundingSphere()
+
+    cbRef.current(geo, mat)
+  }, [gltf])
+  return null
 }
 
 // ── Bloom ─────────────────────────────────────────────────────────────────────
@@ -407,33 +601,48 @@ function SceneContent({ shape, modelUrl, count, size, forcesRef, renderOptsRef, 
 
 // ── Per-view canvas ───────────────────────────────────────────────────────────
 
-function ViewCanvas({ viewType, shape, modelUrl, count, size, forcesRef, renderOptsRef }: {
+function ViewCanvas({ viewType, shape, modelUrl, count, size, forcesRef, renderOptsRef, instanceGeoUrl, instanceSize }: {
   viewType: ViewType; shape: ParticleShape; modelUrl: string | null
   count: number; size: number
   forcesRef: React.MutableRefObject<Forces>
   renderOptsRef: React.MutableRefObject<RenderOpts>
+  instanceGeoUrl?: string | null
+  instanceSize?: number
 }) {
   const dynamicForcesRef = useRef<Forces>({ ...FORCE_PRESETS.Swarm })
-  const activeForcesRef  = viewType === 'effect' ? forcesRef : dynamicForcesRef
+  const isStatic  = viewType === 'static'
+  const isDynamic = viewType === 'dynamic'
+  const isMulti   = isStatic || isDynamic
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
       <Canvas
-        camera={{ position: [0, 0, 5], fov: 50 }}
+        camera={isMulti ? { position: [0, 0, 9], fov: 60 } : { position: [0, 0, 5], fov: 50 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}
-        style={{ background: '#04040c' }}
+        style={{ background: '#000000' }}
       >
         <ambientLight intensity={0.1} />
         <pointLight position={[0,  4,  0]} intensity={1.2} color="#6666ff" />
         <pointLight position={[4, -2,  2]} intensity={0.7} color="#ff8844" />
         <pointLight position={[-4, 0, -3]} intensity={0.5} color="#44ffaa" />
         <OrbitControls makeDefault />
-        <SceneContent
-          shape={shape} modelUrl={modelUrl} count={count} size={size}
-          forcesRef={activeForcesRef} renderOptsRef={renderOptsRef}
-          paused={viewType === 'static'}
-        />
-        {viewType === 'dynamic' && <DynamicForcesCycler forcesRef={dynamicForcesRef} />}
+        {isMulti ? (
+          <MultiScene
+            shape={shape} modelUrl={modelUrl} size={size}
+            forcesRef={isDynamic ? dynamicForcesRef : forcesRef}
+            renderOptsRef={renderOptsRef}
+            paused={isStatic}
+            instanceGeoUrl={instanceGeoUrl}
+            instanceSize={instanceSize}
+          />
+        ) : (
+          <SceneContent
+            shape={shape} modelUrl={modelUrl} count={count} size={size}
+            forcesRef={forcesRef} renderOptsRef={renderOptsRef}
+            paused={false}
+          />
+        )}
+        {isDynamic && <DynamicForcesCycler forcesRef={dynamicForcesRef} />}
         <BloomController renderOptsRef={renderOptsRef} />
       </Canvas>
     </div>
@@ -482,10 +691,13 @@ const FORCE_SLIDERS: [string, keyof Forces, number, number, number][] = [
 
 // ── ParticleLab ───────────────────────────────────────────────────────────────
 
-export default function ParticleLab() {
-  const [shape,    setShape]    = useState<ParticleShape>('sphere')
-  const [fileName, setFileName] = useState('')
-  const [modelUrl, setModelUrl] = useState<string | null>(null)
+export default function ParticleLab({ embedded }: { embedded?: boolean } = {}) {
+  const [shape,          setShape]          = useState<ParticleShape>('sphere')
+  const [fileName,       setFileName]       = useState('')
+  const [modelUrl,       setModelUrl]       = useState<string | null>(null)
+  const [instanceGeoUrl,  setInstanceGeoUrl]  = useState<string | null>(null)
+  const [instanceGeoName, setInstanceGeoName] = useState('')
+  const [instanceSize,    setInstanceSize]    = useState(0.3)
   const [count,    setCount]    = useState(3000)
   const [size,     setSize]     = useState(0.04)
   const [forces,   setForces]   = useState<Forces>(DEFAULT_FORCES)
@@ -497,11 +709,11 @@ export default function ParticleLab() {
   useEffect(() => { renderOptsRef.current = render }, [render])
 
   const [view1, setView1] = useState<ViewType>('effect')
-  const [view2, setView2] = useState<ViewType | null>(null)
+  // const [view2, setView2] = useState<ViewType | null>(null)
   const [showAdvanced,    setShowAdvanced]    = useState(false)
-  const [showSpreadsheet, setShowSpreadsheet] = useState(false)
 
-  const [data]          = useState<DataRow[]>(DEFAULT_DATA)
+
+  const [data, setData] = useState<DataRow[]>(DEFAULT_DATA)
   const [draggingField, setDraggingField] = useState<DataField | null>(null)
   const [presets,       setPresets]       = useState<SceneSave[]>(() => loadPresets())
   const [selPresetId,   setSelPresetId]   = useState('')
@@ -548,18 +760,18 @@ export default function ParticleLab() {
   const sl: React.CSSProperties = { width: '100%', accentColor: '#7070f5' }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif', background: '#131318', color: '#e0e0f0', position: 'relative' }}>
+    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: '#000000', color: '#e0e0f0', position: 'relative' }}>
 
-      {showSpreadsheet && <SpreadsheetModal data={data} onClose={() => setShowSpreadsheet(false)} />}
+
 
       {/* ── Left panel ── */}
-      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#1f1f28', position: 'relative' }}>
+      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#383858', position: 'relative' }}>
 
         <LabAdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(v => !v)} />
 
-        <div style={{ flex: 1, padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+        <div style={{ flex: 1, padding: embedded ? '52px 16px 18px' : '18px 16px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
 
-          <LabNavTitle name="Particle Lab" href="/particles" />
+          {!embedded && <LabNavTitle name="Particle Lab" href="/particles" />}
 
           <LabPresetRow
             presets={presets} selPresetId={selPresetId} saveName={saveName}
@@ -596,7 +808,7 @@ export default function ParticleLab() {
                 border: `1px dashed ${shape === 'model' ? '#5050cc' : '#2a2a3a'}`,
                 borderRadius: 8, padding: '14px 10px', textAlign: 'center',
                 cursor: 'pointer', fontSize: 11,
-                color: shape === 'model' ? '#8080d8' : '#505060', background: '#181824',
+                color: shape === 'model' ? '#8080d8' : '#505060', background: '#303060',
               }}
             >
               {fileName || 'Drop GLB or click to browse'}
@@ -616,6 +828,47 @@ export default function ParticleLab() {
               <RowLabel>Size: {size.toFixed(3)}</RowLabel>
               <input type="range" min={0.01} max={0.15} step={0.005} value={size} onChange={e => setSize(Number(e.target.value))} style={sl} />
             </div>
+            {/* Custom instance geometry — static view only */}
+            <div style={{ fontSize: 9, color: '#9090c0', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, marginTop: 4 }}>Instance shape (static)</div>
+            <div
+              onDrop={e => {
+                e.preventDefault()
+                const f = e.dataTransfer.files[0]
+                if (!f) return
+                if (instanceGeoUrl) URL.revokeObjectURL(instanceGeoUrl)
+                setInstanceGeoUrl(URL.createObjectURL(f))
+                setInstanceGeoName(f.name)
+              }}
+              onDragOver={e => e.preventDefault()}
+              onClick={() => document.getElementById('glb-instance-input')!.click()}
+              style={{
+                border: `1px dashed ${instanceGeoUrl ? '#5050cc' : '#2a2a3a'}`,
+                borderRadius: 8, padding: '10px', textAlign: 'center',
+                cursor: 'pointer', fontSize: 10,
+                color: instanceGeoUrl ? '#8080d8' : '#505060', background: '#303060',
+              }}
+            >
+              {instanceGeoName || 'Drop GLB or click to browse'}
+            </div>
+            <input id="glb-instance-input" type="file" accept=".glb,.gltf" style={{ display: 'none' }}
+              onChange={e => {
+                const f = e.target.files?.[0]; if (!f) return
+                if (instanceGeoUrl) URL.revokeObjectURL(instanceGeoUrl)
+                setInstanceGeoUrl(URL.createObjectURL(f))
+                setInstanceGeoName(f.name)
+              }} />
+            {instanceGeoUrl && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                  <RowLabel>Instance size: {instanceSize.toFixed(2)}</RowLabel>
+                  <input type="range" min={0.05} max={2.0} step={0.05} value={instanceSize} onChange={e => setInstanceSize(Number(e.target.value))} style={sl} />
+                </div>
+                <button onClick={() => { URL.revokeObjectURL(instanceGeoUrl); setInstanceGeoUrl(null); setInstanceGeoName('') }}
+                  style={{ fontSize: 10, padding: '4px 0', background: 'none', border: '1px solid #2c2c3c', borderRadius: 6, color: '#8888a8', cursor: 'pointer' }}>
+                  Remove
+                </button>
+              </>
+            )}
           </Sec>
 
           {/* Forces */}
@@ -634,7 +887,7 @@ export default function ParticleLab() {
         <LabDataPanel
           data={data} draggingField={draggingField}
           onDragStart={setDraggingField} onDragEnd={() => setDraggingField(null)}
-          onShowSpreadsheet={() => setShowSpreadsheet(true)}
+          onDataChange={setData}
         />
       </div>
 
@@ -711,21 +964,24 @@ export default function ParticleLab() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
 
         <div style={{ flex: 1, position: 'relative' }}>
-          <ViewCanvas viewType={view1} shape={shape} modelUrl={modelUrl} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} />
+          <ViewCanvas viewType={view1} shape={shape} modelUrl={modelUrl} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} instanceGeoUrl={instanceGeoUrl} instanceSize={instanceSize} />
         </div>
 
+        {/* LEGACY two-view split — commented out
         {view2 !== null && (
           <div style={{ flex: 1, position: 'relative', borderTop: '1px solid #1e1e2a' }}>
-            <ViewCanvas viewType={view2} shape={shape} modelUrl={modelUrl} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} />
+            <ViewCanvas viewType={view2} shape={shape} modelUrl={modelUrl} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} instanceGeoUrl={instanceGeoUrl} />
           </div>
         )}
-
         <LabViewSelector
           view1={view1} view2={view2}
           onView1={v => setView1(v)} onView2={v => setView2(v)}
           onAdd={() => setView2(view1 === 'effect' ? 'dynamic' : 'effect')}
           onRemove={() => setView2(null)}
         />
+        */}
+
+        <LabViewToggle view={view1} onChange={setView1} />
       </div>
     </div>
   )

@@ -48,6 +48,18 @@ else:
     meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
     if not meshes:
         print("ERROR: no meshes in GLB"); sys.exit(1)
+    # Bake each mesh's full world transform before joining.
+    # GLB imports often carry parent empties/armatures; without clearing
+    # parents first, transform_apply only touches the local offset and
+    # leaves the parent contribution in the matrix — causing the geometry
+    # to appear off-centre after the bounds-centering step below.
+    for m in meshes:
+        bpy.ops.object.select_all(action='DESELECT')
+        m.select_set(True)
+        bpy.context.view_layer.objects.active = m
+        if m.parent is not None:
+            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     bpy.ops.object.select_all(action='DESELECT')
     for m in meshes: m.select_set(True)
     bpy.context.view_layer.objects.active = meshes[0]
@@ -69,14 +81,39 @@ source.location = (0, 0, 0)
 bpy.ops.object.transform_apply(location=True)
 
 # Voxel remesh for file imports (makes mesh solid/manifold for clean cuts)
+uv_donor = None
 if input_path not in ('SPHERE', 'CUBE'):
+    original_mats = list(source.data.materials)
+
+    # Duplicate source BEFORE remesh to keep original geometry + UVs for later projection
+    if source.data.uv_layers:
+        bpy.ops.object.select_all(action='DESELECT')
+        source.select_set(True)
+        bpy.context.view_layer.objects.active = source
+        bpy.ops.object.duplicate(linked=False)
+        uv_donor = bpy.context.active_object
+        uv_donor.name = 'UVDonor'
+        uv_donor.select_set(False)
+        # Restore source as active so the remesh goes onto the right object
+        bpy.context.view_layer.objects.active = source
+        source.select_set(True)
+        print(f"[shatter] UV donor saved ({len(uv_donor.data.uv_layers)} UV layer(s))")
+
     mod = source.modifiers.new('Remesh', type='REMESH')
     mod.mode         = 'VOXEL'
     mod.voxel_size   = 2.0 / voxel_div
     mod.adaptivity   = max(0.0, min(1.0, adaptivity))
     mod.use_smooth_shade = False
     bpy.ops.object.modifier_apply(modifier=mod.name)
-    print(f"[shatter] After remesh: {len(source.data.vertices)} verts")
+
+    # Restore materials (bisect duplicates inherit them; voronoi cells get assigned below)
+    source.data.materials.clear()
+    for mat in original_mats:
+        source.data.materials.append(mat)
+
+    print(f"[shatter] After remesh: {len(source.data.vertices)} verts, {len(original_mats)} material(s) restored")
+else:
+    original_mats = []
 
 print(f"[shatter] Source ready: {len(source.data.vertices)} verts")
 
@@ -189,7 +226,7 @@ def voronoi_cell_mesh(seed_idx, seeds):
     return cell_obj
 
 
-def fracture_voronoi(source, n_pieces, cut_spread):
+def fracture_voronoi(source, n_pieces, cut_spread, original_mats=None):
     # Generate seed points.
     # cut_spread controls distribution: 0 = clustered at centre, 1 = spread across full object.
     spread = 0.1 + cut_spread * 0.85   # map [0,1] → [0.1, 0.95]
@@ -225,6 +262,11 @@ def fracture_voronoi(source, n_pieces, cut_spread):
             continue
 
         if len(cell_obj.data.vertices) > 0:
+            # Assign original material so fragments match the source appearance
+            if original_mats:
+                cell_obj.data.materials.clear()
+                for mat in original_mats:
+                    cell_obj.data.materials.append(mat)
             fragments.append(cell_obj)
         else:
             bpy.data.objects.remove(cell_obj)
@@ -236,17 +278,101 @@ def fracture_voronoi(source, n_pieces, cut_spread):
     return fragments
 
 
-# ── Run chosen method ─────────────────────────────────────────────────────────
+# ── UV transfer helper ────────────────────────────────────────────────────────
+# Projects UV coordinates from the pre-remesh donor mesh onto each fragment using
+# nearest-polygon interpolation. Handles both bisect (remeshed topology) and
+# voronoi (brand-new boolean geometry). Interior cut faces get UVs from the
+# nearest original surface face — not perfect, but far better than no UVs.
 
-if fracture_method == 'voronoi':
-    pieces = fracture_voronoi(source, n_pieces, cut_spread)
+def transfer_uvs(fragment, donor):
+    if donor is None or not donor.data.uv_layers:
+        return
+
+    # DATA_TRANSFER silently does nothing if the target has no UV layer at all.
+    # Pre-create matching empty slots so the modifier has somewhere to write into.
+    existing = {l.name for l in fragment.data.uv_layers}
+    for uv_layer in donor.data.uv_layers:
+        if uv_layer.name not in existing:
+            fragment.data.uv_layers.new(name=uv_layer.name)
+
+    bpy.ops.object.select_all(action='DESELECT')
+    fragment.select_set(True)
+    bpy.context.view_layer.objects.active = fragment
+    dt = fragment.modifiers.new('UVTransfer', type='DATA_TRANSFER')
+    dt.object         = donor
+    dt.use_loop_data  = True
+    dt.data_types_loops = {'UV'}
+    dt.loop_mapping   = 'POLYINTERP_NEAREST'
+    try:
+        bpy.ops.object.modifier_apply(modifier=dt.name)
+        print(f"  UV OK: {fragment.name} ({len(fragment.data.uv_layers)} layer(s))")
+    except Exception as e:
+        print(f"  UV FAILED: {fragment.name}: {e}")
+        try: fragment.modifiers.remove(dt)
+        except Exception: pass
+
+
+# ── Run ──────────────────────────────────────────────────────────────────────
+
+mode = args[8] if len(args) > 8 else 'single'
+
+COMPARE_PIECES = [1, 5, 15, 50]
+COMPARE_X      = [-6, -2, 2, 6]
+
+if mode == 'compare':
+    all_compare = []
+    for count, xpos in zip(COMPARE_PIECES, COMPARE_X):
+        print(f"[shatter] compare: pieces={count} at x={xpos}")
+        bpy.ops.object.select_all(action='DESELECT')
+        source.select_set(True)
+        bpy.context.view_layer.objects.active = source
+        bpy.ops.object.duplicate(linked=False)
+        src_copy = bpy.context.active_object
+
+        if fracture_method == 'voronoi':
+            frags = fracture_voronoi(src_copy, count, cut_spread, original_mats)
+        else:
+            frags = fracture_bisect(src_copy, count, cut_spread, cut_strategy)
+
+        if not frags:
+            print(f"  [compare] no fragments for count={count}, skipping")
+            continue
+
+        for frag in frags:
+            transfer_uvs(frag, uv_donor)
+            frag.location.x += xpos
+
+        for j, frag in enumerate(frags):
+            frag.name = f'g{count}_{j}'
+
+        all_compare.extend(frags)
+        print(f"  → {len(frags)} fragment(s) at x={xpos}")
+
+    bpy.data.objects.remove(source, do_unlink=True)
+    if uv_donor:
+        bpy.data.objects.remove(uv_donor, do_unlink=True)
+        uv_donor = None
+
+    pieces = all_compare
+
 else:
-    pieces = fracture_bisect(source, n_pieces, cut_spread, cut_strategy)
+    if fracture_method == 'voronoi':
+        pieces = fracture_voronoi(source, n_pieces, cut_spread, original_mats)
+    else:
+        pieces = fracture_bisect(source, n_pieces, cut_spread, cut_strategy)
+
+    if uv_donor:
+        print(f"[shatter] Projecting UVs onto {len(pieces)} fragments…")
+        for piece in pieces:
+            transfer_uvs(piece, uv_donor)
+        bpy.data.objects.remove(uv_donor, do_unlink=True)
+        uv_donor = None
+        print("[shatter] UV transfer complete")
 
 if not pieces:
     print("ERROR: no fragments produced"); sys.exit(1)
 
-print(f"[shatter] DONE: {len(pieces)} pieces")
+print(f"[shatter] DONE: {len(pieces)} piece(s)")
 
 # ── Export ────────────────────────────────────────────────────────────────────
 
@@ -259,6 +385,9 @@ bpy.ops.export_scene.gltf(
     export_format='GLB',
     use_selection=True,
     export_animations=False,
+    export_materials='EXPORT',
+    export_texcoords=True,
+    export_image_format='AUTO',
 )
 
 print(f"[shatter] SUCCESS → {output_path}")

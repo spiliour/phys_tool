@@ -1,0 +1,7 @@
+[
+  { "category": "Gravity",    "value": 9.81, "percentage": 45 },
+  { "category": "Friction",   "value": 3.2,  "percentage": 20 },
+  { "category": "Air Drag",   "value": 1.1,  "percentage": 10 },
+  { "category": "Elasticity", "value": 6.5,  "percentage": 15 },
+  { "category": "Impulse",    "value": 4.8,  "percentage": 10 }
+]

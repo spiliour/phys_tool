@@ -1,0 +1,9 @@
+[
+  { "category": "Glass",    "value": 5.5,  "percentage": 12 },
+  { "category": "Rubber",   "value": 1.2,  "percentage": 8  },
+  { "category": "Steel",    "value": 9.8,  "percentage": 35 },
+  { "category": "Wood",     "value": 3.2,  "percentage": 18 },
+  { "category": "Plastic",  "value": 2.1,  "percentage": 15 },
+  { "category": "Ceramic",  "value": 7.4,  "percentage": 7  },
+  { "category": "Foam",     "value": 0.5,  "percentage": 5  }
+]

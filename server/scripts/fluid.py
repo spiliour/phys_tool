@@ -1,6 +1,6 @@
 """
 fluid.py — Blender 4.x headless Mantaflow liquid simulation
-Usage: blender --background --python fluid.py -- <output.json> <resolution> <frame_end> <viscosity> [obstacle_glb]
+Usage: blender --background --python fluid.py -- <output.json> <resolution> <frame_end> <viscosity>
 
 viscosity: water | honey | lava
 Prints: FLUID_BAKING, FLUID_BAKE_DONE, FLUID_PROGRESS:n/total, FLUID_DONE
@@ -22,13 +22,15 @@ try:
 except ValueError:
     print("ERROR: no args after '--'"); sys.exit(1)
 
-output_json   = args[0]
-resolution    = int(args[1])   if len(args) > 1 else 24
-frame_end     = int(args[2])   if len(args) > 2 else 60
-viscosity     = args[3]        if len(args) > 3 else 'water'
-obstacle_path = args[4]        if len(args) > 4 else None
+output_json      = args[0]
+resolution       = int(args[1])   if len(args) > 1 else 24
+frame_end        = int(args[2])   if len(args) > 2 else 60
+viscosity        = args[3]        if len(args) > 3 else 'water'
+container_path   = args[4]        if len(args) > 4 and args[4] else None
+container_scale  = float(args[5]) if len(args) > 5 else 1.0
+container_y      = float(args[6]) if len(args) > 6 else 0.0   # Three.js Y offset → Blender Z
 
-print(f"[fluid] resolution={resolution}  frames={frame_end}  viscosity={viscosity}  obstacle={obstacle_path}", flush=True)
+print(f"[fluid] resolution={resolution}  frames={frame_end}  viscosity={viscosity}  container_scale={container_scale}  container_y={container_y}", flush=True)
 
 VISC = {
     'water': (1, 6),
@@ -70,11 +72,11 @@ domain.name = 'FluidDomain'
 
 fluid_mod = add_fluid(domain, 'DOMAIN')
 ds = fluid_mod.domain_settings
-ds.domain_type        = 'LIQUID'
-ds.resolution_max     = resolution
+ds.domain_type         = 'LIQUID'
+ds.resolution_max      = resolution
 ds.use_adaptive_domain = False
-ds.cache_directory    = cache_dir
-ds.cache_type         = 'MODULAR'
+ds.cache_directory     = cache_dir
+ds.cache_type          = 'MODULAR'
 
 if viscosity in ('honey', 'lava'):
     ds.use_viscosity      = True
@@ -84,63 +86,79 @@ if viscosity in ('honey', 'lava'):
 print(f"[fluid] domain ready  cache={cache_dir}", flush=True)
 
 # ── Inflow ────────────────────────────────────────────────────────────────────
+# Sphere emitter near the top of the domain. No initial velocity — Blender's
+# default gravity (-Z) pulls the fluid straight down.
 
-bpy.ops.mesh.primitive_uv_sphere_add(radius=0.4, location=(0.2, 0.1, 1.5))
+bpy.ops.mesh.primitive_uv_sphere_add(radius=0.3, location=(0.0, 0.0, 1.4))
 inflow = bpy.context.active_object
 inflow.name = 'Inflow'
 
 inflow_mod = add_fluid(inflow, 'FLOW')
 fs = inflow_mod.flow_settings
-fs.flow_type          = 'LIQUID'
-fs.flow_behavior      = 'INFLOW'
-fs.use_initial_velocity = True
-fs.velocity_factor    = -2.0
+fs.flow_type     = 'LIQUID'
+fs.flow_behavior = 'INFLOW'
 
 print(f"[fluid] inflow ready", flush=True)
 
-# ── Optional obstacle ─────────────────────────────────────────────────────────
+# ── Optional container ────────────────────────────────────────────────────────
+# Imported as a Mantaflow EFFECTOR/COLLISION so fluid fills the bowl shape.
+# Normalised to 1.5 units, centred in XY, seated in the lower half of the domain.
+# A Solidify modifier gives thin-shell meshes the wall thickness Mantaflow needs.
 
-if obstacle_path and os.path.exists(obstacle_path):
-    # Record existing objects so we can identify imported ones
+if container_path and os.path.exists(container_path):
     before = {o.name for o in scene.objects}
+    bpy.ops.import_scene.gltf(filepath=container_path)
 
-    bpy.ops.import_scene.gltf(filepath=obstacle_path)
-
-    # Collect newly imported MESH objects (GLTF root is often an EMPTY — skip it)
-    imported_meshes = [
-        o for o in scene.objects
-        if o.name not in before and o.type == 'MESH'
-    ]
-
-    if not imported_meshes:
-        print(f"WARNING: no mesh objects found in {obstacle_path}, skipping obstacle", flush=True)
+    imported = [o for o in scene.objects if o.name not in before and o.type == 'MESH']
+    if not imported:
+        print('WARNING: no mesh in container GLB — skipping', flush=True)
     else:
-        # Deselect all, select only the imported meshes, then join
         bpy.ops.object.select_all(action='DESELECT')
-        for o in imported_meshes:
+        for o in imported:
             o.select_set(True)
-        bpy.context.view_layer.objects.active = imported_meshes[0]
-
-        if len(imported_meshes) > 1:
+        bpy.context.view_layer.objects.active = imported[0]
+        if len(imported) > 1:
             bpy.ops.object.join()
 
-        obs = bpy.context.active_object
-        obs.name = 'Obstacle'
+        cont = bpy.context.active_object
+        cont.name = 'Container'
 
-        # Normalise scale
-        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-        bbox = [obs.matrix_world @ Vector(c) for c in obs.bound_box]
-        mn = Vector(map(min, zip(*bbox)))
-        mx = Vector(map(max, zip(*bbox)))
-        sz = mx - mn
-        sc = 1.4 / max(sz.x, sz.y, sz.z, 0.001)
-        obs.scale *= sc
+        # Bake any parent offsets into mesh coords
+        if cont.parent:
+            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+        # Normalise: fit to 1.5 units × user scale, centre horizontally, seat at z = -0.8 + Y offset
+        # container_y is in Three.js Y space; Three.js Y = Blender Z, so add it to the Z component.
+        bbox    = [cont.matrix_world @ Vector(c) for c in cont.bound_box]
+        xs      = [v.x for v in bbox]; ys = [v.y for v in bbox]; zs = [v.z for v in bbox]
+        max_dim = max(max(xs)-min(xs), max(ys)-min(ys), max(zs)-min(zs), 0.001)
+        cont.scale = (1.5 / max_dim * container_scale,) * 3
         bpy.ops.object.transform_apply(scale=True)
-        obs.location = (0, 0, -0.5)
+        bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
+        cont.location = (0, 0, -0.8 + container_y)
+        bpy.ops.object.transform_apply(location=True)
 
-        obs_mod = add_fluid(obs, 'EFFECTOR')
-        obs_mod.effector_settings.effector_type = 'COLLISION'
-        print(f"[fluid] obstacle ready  meshes={len(imported_meshes)}", flush=True)
+        # Recalculate normals consistently outward so Mantaflow sees a clean surface
+        bpy.context.view_layer.objects.active = cont
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.normals_make_consistent(inside=False)
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Solidify walls to at least 3× the voxel size so the collision grid can see them.
+        # Domain = 4 units; voxel = 4 / resolution.  E.g. res=24 → voxel≈0.167 → thickness≥0.5
+        voxel = 4.0 / resolution
+        solid = cont.modifiers.new('Solidify', type='SOLIDIFY')
+        solid.thickness = max(0.2, voxel * 3)
+        bpy.ops.object.modifier_apply(modifier=solid.name)
+
+        cont_mod = add_fluid(cont, 'EFFECTOR')
+        cont_mod.effector_settings.effector_type = 'COLLISION'
+        print(f'[fluid] container ready  verts={len(cont.data.vertices)}', flush=True)
+else:
+    if container_path:
+        print(f'WARNING: container path not found: {container_path}', flush=True)
 
 # ── Bake ──────────────────────────────────────────────────────────────────────
 
@@ -187,7 +205,8 @@ for i, frame in enumerate(range(1, frame_end + 1)):
     bm.free()
     mesh.update()
 
-    positions = [round(c, 3) for v in mesh.vertices for c in (v.co.x, v.co.y, v.co.z)]
+    # Blender is Z-up; Three.js is Y-up. Remap: Three(x,y,z) = Blender(x, z, -y)
+    positions = [round(c, 3) for v in mesh.vertices for c in (v.co.x, v.co.z, -v.co.y)]
     indices   = [vi for poly in mesh.polygons if len(poly.vertices) == 3 for vi in poly.vertices]
 
     all_frames.append({'p': positions, 'i': indices})

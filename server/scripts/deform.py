@@ -52,6 +52,18 @@ else:
     meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
     if not meshes:
         print("ERROR: no meshes in GLB"); sys.exit(1)
+    # Bake each mesh's full world transform before joining.
+    # GLB imports often carry parent empties/armatures; without clearing
+    # parents first, transform_apply only touches the local offset and
+    # leaves the parent contribution in the matrix — causing the geometry
+    # to appear off-centre after the bounds-centering step below.
+    for m in meshes:
+        bpy.ops.object.select_all(action='DESELECT')
+        m.select_set(True)
+        bpy.context.view_layer.objects.active = m
+        if m.parent is not None:
+            bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     bpy.ops.object.select_all(action='DESELECT')
     for m in meshes: m.select_set(True)
     bpy.context.view_layer.objects.active = meshes[0]

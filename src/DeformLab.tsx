@@ -7,9 +7,9 @@ import * as THREE from 'three'
 import {
   type SceneSave, type Shape, type ViewType, type DataField, type DataRow,
   DEFAULT_DATA, VIEW_LABELS, secBtnSt, priBtnSt, floatSelSt, floatIcoSt,
-  Sec, SLabel, RowLabel, SpreadsheetModal,
+  Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabModelSection, LabDataPanel,
-  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector,
+  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
 } from './LabShared'
 
 const SERVER = 'http://localhost:3001'
@@ -398,7 +398,7 @@ function ViewCanvas({ viewType, resultUrl, animSpeed, data, bindings, bindingRan
 }) {
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
-      <Canvas camera={{ fov: 35 }} gl={{ antialias: true }} style={{ background: '#0d0d14' }}>
+      <Canvas camera={{ fov: 35 }} gl={{ antialias: true }} style={{ background: '#000000' }}>
         <ambientLight intensity={0.7} />
         <directionalLight position={[5, 10, 5]} intensity={1.4} />
         <Environment preset="city" />
@@ -443,7 +443,7 @@ function ModeBtn({ active, onClick, children }: { active: boolean; onClick: () =
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function DeformLab() {
+export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
   const [status,    setStatus]    = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [message,   setMessage]   = useState('')
   const [resultUrl, setResultUrl] = useState<string | null>(null)
@@ -457,7 +457,7 @@ export default function DeformLab() {
   const [animSpeed,  setAnimSpeed]  = useState(0.8)
   const [subdivs,    setSubdivs]    = useState(0)
 
-  const [data]                          = useState<DataRow[]>(DEFAULT_DATA)
+  const [data,          setData]        = useState<DataRow[]>(DEFAULT_DATA)
   const [bindings,     setBindings]     = useState<BindingMap>({})
   const [bindingRange, setBindingRange] = useState<BindingRange>({ outMin: 0, outMax: 1 })
 
@@ -480,13 +480,12 @@ export default function DeformLab() {
   const [lastShape,      setLastShape]      = useState<Shape | null>(null)
   const [pendingAutoRun, setPendingAutoRun] = useState<Shape | null>(null)
 
-  const [showSpreadsheet, setShowSpreadsheet] = useState(false)
   const [draggingField,   setDraggingField]   = useState<DataField | null>(null)
   const [dragOverProp,    setDragOverProp]    = useState<string | null>(null)
   const [showAdvanced,    setShowAdvanced]    = useState(false)
 
   const [view1, setView1] = useState<ViewType>('effect')
-  const [view2, setView2] = useState<ViewType | null>(null)
+  // const [view2, setView2] = useState<ViewType | null>(null)
 
   const fileRef   = useRef<File | null>(null)
   const info      = MODE_INFO[deformMode]
@@ -670,18 +669,18 @@ export default function DeformLab() {
   const factorHighlight = draggingField !== null
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif', background: '#131318', color: '#e0e0f0', position: 'relative' }}>
+    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: '#000000', color: '#e0e0f0', position: 'relative' }}>
 
-      {showSpreadsheet && <SpreadsheetModal data={data} onClose={() => setShowSpreadsheet(false)} />}
+
 
       {/* ── Left panel ── */}
-      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#1f1f28', position: 'relative' }}>
+      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#383858', position: 'relative' }}>
 
         <LabAdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(v => !v)} />
 
-        <div style={{ flex: 1, padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+        <div style={{ flex: 1, padding: embedded ? '52px 16px 18px' : '18px 16px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
 
-          <LabNavTitle name="Deform Lab" href="/deform" />
+          {!embedded && <LabNavTitle name="Deform Lab" href="/deform" />}
 
           <LabPresetRow
             presets={presets} selPresetId={selPresetId} saveName={saveName}
@@ -698,7 +697,7 @@ export default function DeformLab() {
                 <ModeBtn key={m} active={deformMode===m} onClick={() => handleModeChange(m)}>{MODE_INFO[m].label}</ModeBtn>
               ))}
             </div>
-            <div style={{ fontSize: 10, color: '#484858', lineHeight: 1.5 }}>{info.hint}</div>
+            <div style={{ fontSize: 10, color: '#9898b8', lineHeight: 1.5 }}>{info.hint}</div>
 
             {/* Factor — drop target */}
             <div
@@ -794,7 +793,7 @@ export default function DeformLab() {
                 ) : (
                   <>
                     <select value={cutTextureName} onChange={e => setCutTextureName(e.target.value)}
-                      style={{ width: '100%', background: '#181824', border: '1px solid #2c2c3c', borderRadius: 6, color: '#c0c0e8', fontSize: 10, padding: '5px 7px', outline: 'none', fontFamily: 'inherit' }}>
+                      style={{ width: '100%', background: '#303060', border: '1px solid #2c2c3c', borderRadius: 6, color: '#c0c0e8', fontSize: 10, padding: '5px 7px', outline: 'none', fontFamily: 'inherit' }}>
                       {cutTextures.map(t => <option key={t} value={t}>{texLabel(t)}</option>)}
                     </select>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -842,7 +841,7 @@ export default function DeformLab() {
         <LabDataPanel
           data={data} draggingField={draggingField}
           onDragStart={setDraggingField} onDragEnd={() => setDraggingField(null)}
-          onShowSpreadsheet={() => setShowSpreadsheet(true)}
+          onDataChange={setData}
         />
       </div>
 
@@ -854,7 +853,7 @@ export default function DeformLab() {
             <input type="range" min={0} max={4} step={1} value={subdivs}
               onChange={e => setSubdivs(Number(e.target.value))}
               style={{ width: '100%', accentColor: '#7070f5' }} />
-            <div style={{ fontSize: 9, color: '#40404e', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
               Adds edge loops before deforming. Try 2–3 for smoother curves.
             </div>
           </div>
@@ -865,7 +864,7 @@ export default function DeformLab() {
             <button onClick={() => run('sphere')} disabled={isLoading} style={secBtnSt(isLoading)}>Sphere</button>
             <button onClick={() => run('cube')}   disabled={isLoading} style={secBtnSt(isLoading)}>Cube</button>
           </div>
-          <div style={{ fontSize: 9, color: '#40404e', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
             Run the simulation on a built-in shape without uploading a model.
           </div>
         </Sec>
@@ -879,19 +878,22 @@ export default function DeformLab() {
             data={data} bindings={bindings} bindingRange={bindingRange} deformMode={deformMode} axis={axis} />
         </div>
 
+        {/* LEGACY two-view split — commented out
         {view2 !== null && (
           <div style={{ flex: 1, position: 'relative', borderTop: '1px solid #1e1e2a' }}>
             <ViewCanvas viewType={view2} resultUrl={resultUrl} animSpeed={animSpeed}
               data={data} bindings={bindings} bindingRange={bindingRange} deformMode={deformMode} axis={axis} />
           </div>
         )}
-
         <LabViewSelector
           view1={view1} view2={view2}
           onView1={v => setView1(v)} onView2={v => setView2(v)}
           onAdd={() => setView2(view1 === 'effect' ? 'static' : 'effect')}
           onRemove={() => setView2(null)}
         />
+        */}
+
+        <LabViewToggle view={view1} onChange={setView1} />
 
       </div>
     </div>

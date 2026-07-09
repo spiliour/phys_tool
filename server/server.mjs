@@ -31,10 +31,10 @@ app.use('/models', express.static(MODELS_DIR))
 // Body: multipart with field "model" (GLB file) and optional "pieces" (number)
 // Returns: animated GLB file
 
-function runBlender(inputPath, outputPath, { pieces, cutSpread, voxelDiv, cutStrategy, adaptivity, fractureMethod }, res) {
+function runBlender(inputPath, outputPath, { pieces, cutSpread, voxelDiv, cutStrategy, adaptivity, fractureMethod, mode }, res) {
   const scriptPath = path.join(SCRIPTS, 'shatter.py')
   const jobId = Date.now().toString()
-  console.log(`\n[${jobId}] input=${inputPath}  pieces=${pieces}  spread=${cutSpread}  strategy=${cutStrategy}`)
+  console.log(`\n[${jobId}] input=${inputPath}  pieces=${pieces}  spread=${cutSpread}  strategy=${cutStrategy}  mode=${mode ?? 'single'}`)
 
   const blenderArgs = [
     '--background', '--python', scriptPath,
@@ -45,6 +45,7 @@ function runBlender(inputPath, outputPath, { pieces, cutSpread, voxelDiv, cutStr
     (cutStrategy    ?? 'random'),
     (adaptivity     ?? 0).toString(),
     (fractureMethod ?? 'bisect'),
+    (mode           ?? 'single'),
   ]
 
   const blender = spawn(BLENDER, blenderArgs)
@@ -73,6 +74,7 @@ function paramsFromBody(body) {
     cutStrategy:     body.cutStrategy             || 'random',
     adaptivity:      Number(body.adaptivity)      || 0,
     fractureMethod:  body.fractureMethod          || 'bisect',
+    mode:            body.mode                    || 'single',
   }
 }
 
@@ -159,16 +161,18 @@ app.get('/deform/cube', (req, res) => {
 
 const fluidJobs = new Map()  // jobId → { status, phase, progress, resultPath, proc, error }
 
-app.post('/fluid', upload.single('obstacle'), (req, res) => {
-  const jobId      = Date.now().toString()
-  const outputJson = path.join(JOBS_DIR, `${jobId}-fluid.json`)
-  const obstaclePath = req.file?.path ?? null
+app.post('/fluid', upload.single('container'), (req, res) => {
+  const jobId         = Date.now().toString()
+  const outputJson    = path.join(JOBS_DIR, `${jobId}-fluid.json`)
+  const containerPath = req.file?.path ?? null
 
-  const resolution = Number(req.body.resolution) || 24
-  const frameEnd   = Number(req.body.frameEnd)   || 60
-  const viscosity  = req.body.viscosity           || 'water'
+  const resolution     = Number(req.body.resolution)     || 24
+  const frameEnd       = Number(req.body.frameEnd)       || 60
+  const viscosity      = req.body.viscosity              || 'water'
+  const containerScale = Number(req.body.containerScale) || 1.0
+  const containerY     = Number(req.body.containerY)     || 0.0
 
-  console.log(`\n[fluid:${jobId}] resolution=${resolution} frames=${frameEnd} viscosity=${viscosity} obstacle=${obstaclePath ?? 'none'}`)
+  console.log(`\n[fluid:${jobId}] resolution=${resolution} frames=${frameEnd} viscosity=${viscosity} container=${containerPath ?? 'none'} scale=${containerScale} y=${containerY}`)
 
   const job = { status: 'pending', phase: 'queued', progress: 0, resultPath: outputJson, proc: null, error: null }
   fluidJobs.set(jobId, job)
@@ -176,7 +180,9 @@ app.post('/fluid', upload.single('obstacle'), (req, res) => {
   const blenderArgs = [
     '--background', '--python', path.join(SCRIPTS, 'fluid.py'),
     '--', outputJson, resolution.toString(), frameEnd.toString(), viscosity,
-    ...(obstaclePath ? [obstaclePath] : []),
+    containerPath || '',         // args[4]: container GLB path or empty string
+    containerScale.toString(),   // args[5]: uniform scale multiplier
+    containerY.toString(),       // args[6]: Y position offset (Three.js Y = Blender Z)
   ]
 
   const proc = spawn(BLENDER, blenderArgs)
@@ -193,7 +199,7 @@ app.post('/fluid', upload.single('obstacle'), (req, res) => {
   proc.stderr.on('data', d => process.stderr.write(`  [fluid:${jobId}] ${d}`))
 
   proc.on('close', code => {
-    if (obstaclePath) fs.unlink(obstaclePath, () => {})
+    if (containerPath) fs.unlink(containerPath, () => {})
     if (code !== 0 || !fs.existsSync(outputJson)) {
       job.status = 'error'
       job.error  = `Blender exited with code ${code}`

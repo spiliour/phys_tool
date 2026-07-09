@@ -9,10 +9,13 @@ import SoftLab from './SoftLab'
 import RippleLab from './RippleLab'
 // import JellyLab from './JellyLab'
 import FluidLab from './FluidLab'
+import LabHub from './LabHub'
 import './index.css'
 
 const path = window.location.pathname
-const root = path === '/sim'
+const root = path === '/lab'
+  ? <LabHub />
+  : path === '/sim'
   ? <SimulationLab />
   : path === '/shatter'
   ? <ShatterLab />

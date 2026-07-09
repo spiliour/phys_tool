@@ -1,0 +1,38 @@
+[
+  {"timeframe": "1983-1987", "acresBurnedMillions": 10.5,"avgTempAnomalyC": 0.25},
+  {
+    "timeframe": "1988-1992",
+    "acresBurnedMillions": 16.5,
+    "avgTempAnomalyC": 0.35
+  },
+  {
+    "timeframe": "1993-1997",
+    "acresBurnedMillions": 16.6,
+    "avgTempAnomalyC": 0.4
+  },
+  {
+    "timeframe": "1998-2002",
+    "acresBurnedMillions": 25.1,
+    "avgTempAnomalyC": 0.55
+  },
+  {
+    "timeframe": "2003-2007",
+    "acresBurnedMillions": 39.9,
+    "avgTempAnomalyC": 0.65
+  },
+  {
+    "timeframe": "2008-2012",
+    "acresBurnedMillions": 32.7,
+    "avgTempAnomalyC": 0.7
+  },
+  {
+    "timeframe": "2013-2017",
+    "acresBurnedMillions": 33.6,
+    "avgTempAnomalyC": 0.85
+  },
+  {
+    "timeframe": "2018-2022",
+    "acresBurnedMillions": 38.2,
+    "avgTempAnomalyC": 0.95
+  }
+]
