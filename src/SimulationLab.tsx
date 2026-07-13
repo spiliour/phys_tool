@@ -7,6 +7,7 @@ import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier'
 import type { RapierRigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 
+import { serverFetch } from './LabShared'
 const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
 type ViewMode = 'exploded' | 'physics'
 type Shape    = 'model' | 'sphere' | 'cube'
@@ -216,9 +217,9 @@ export default function SimulationLab() {
       let res: Response
       const qs = `pieces=${pieces}&cutSpread=${cutSpread}&cutStrategy=${cutStrategy}&adaptivity=${adaptivity}&fractureMethod=${fractureMethod}`
       if (shape === 'sphere') {
-        res = await fetch(`${SERVER}/shatter/sphere?${qs}`)
+        res = await serverFetch(`${SERVER}/shatter/sphere?${qs}`)
       } else if (shape === 'cube') {
-        res = await fetch(`${SERVER}/shatter/cube?${qs}`)
+        res = await serverFetch(`${SERVER}/shatter/cube?${qs}`)
       } else {
         const form = new FormData()
         form.append('model',       fileRef.current!)
@@ -228,7 +229,7 @@ export default function SimulationLab() {
         form.append('fractureMethod', fractureMethod)
         form.append('voxelDiv',       voxelDiv.toString())
         form.append('adaptivity',  adaptivity.toString())
-        res = await fetch(`${SERVER}/shatter`, { method: 'POST', body: form })
+        res = await serverFetch(`${SERVER}/shatter`, { method: 'POST', body: form })
       }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))

@@ -8,6 +8,7 @@ import {
   DEFAULT_DATA, priBtnSt, secBtnSt, Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabDataPanel,
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
+  serverFetch,
 } from './LabShared'
 
 const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
@@ -266,7 +267,7 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
     if (!jobId) return
     pollRef.current = setInterval(async () => {
       try {
-        const r = await fetch(`${SERVER}/fluid/status/${jobId}`)
+        const r = await serverFetch(`${SERVER}/fluid/status/${jobId}`)
         const d = await r.json().catch(() => null)
         if (!d) return
         if (d.status === 'running') {
@@ -277,7 +278,7 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
         if (d.status === 'done') {
           stopPoll()
           setProgress(100); setPhaseLabel('Loading result…')
-          const res  = await fetch(`${SERVER}/fluid/result/${jobId}`)
+          const res  = await serverFetch(`${SERVER}/fluid/result/${jobId}`)
           const text = await res.text()
           let parsed: FluidData
           try { parsed = JSON.parse(text) }
@@ -300,7 +301,7 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
     setPhase('baking'); setProgress(0); setPhaseLabel('Connecting to server…')
     setErrorMsg(''); setGeos([])
     try {
-      const health = await fetch(`${SERVER}/health`).catch(() => null)
+      const health = await serverFetch(`${SERVER}/health`).catch(() => null)
       if (!health?.ok) throw new Error('Simulation server is not running. Start it with: node server/server.mjs')
       const form = new FormData()
       form.append('resolution',     resolution.toString())
@@ -310,7 +311,7 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
       form.append('containerY',     containerY.toString())
       if (containerFile) form.append('container', containerFile)
       setPhaseLabel('Starting Blender…')
-      const r    = await fetch(`${SERVER}/fluid`, { method: 'POST', body: form })
+      const r    = await serverFetch(`${SERVER}/fluid`, { method: 'POST', body: form })
       const text = await r.text()
       let data: { jobId?: string; error?: string }
       try { data = JSON.parse(text) } catch { throw new Error(`Server error ${r.status}: ${text.slice(0, 120)}`) }
@@ -322,7 +323,7 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
   }, [resolution, frameEnd, viscosity, containerFile, containerScale, containerY])
 
   const handleCancel = useCallback(async () => {
-    if (jobId) { stopPoll(); await fetch(`${SERVER}/fluid/${jobId}`, { method: 'DELETE' }).catch(() => {}); setJobId(null) }
+    if (jobId) { stopPoll(); await serverFetch(`${SERVER}/fluid/${jobId}`, { method: 'DELETE' }).catch(() => {}); setJobId(null) }
     setPhase('idle'); setProgress(0)
   }, [jobId, stopPoll])
 

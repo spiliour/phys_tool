@@ -8,6 +8,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { type SceneSave } from './SaveLoadModal'
 
+// ── Server fetch (adds ngrok bypass header) ───────────────────────────────────
+
+export function serverFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, {
+    ...init,
+    headers: { 'ngrok-skip-browser-warning': '1', ...(init?.headers ?? {}) },
+  })
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type { SceneSave }

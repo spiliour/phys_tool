@@ -10,6 +10,7 @@ import {
   Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabModelSection, LabDataPanel,
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
+  serverFetch,
 } from './LabShared'
 
 const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
@@ -468,7 +469,7 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
   const [cutTextureTiling, setCutTextureTiling] = useState(1)
 
   useEffect(() => {
-    fetch(`${SERVER}/textures`).then(r => r.json()).then((files: string[]) => {
+    serverFetch(`${SERVER}/textures`).then(r => r.json()).then((files: string[]) => {
       setCutTextures(files)
       setCutTextureName(prev => prev || files[0] || '')
     }).catch(() => {})
@@ -541,7 +542,7 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
       // Try to fetch any saved filename from the server's /models static route.
       // Falls back to "re-upload" only if the server returns a non-OK response.
       setStatus('loading'); setMessage(`Loading ${savedFile}…`)
-      fetch(`${SERVER}/models/${encodeURIComponent(savedFile)}`)
+      serverFetch(`${SERVER}/models/${encodeURIComponent(savedFile)}`)
         .then(r => { if (!r.ok) throw new Error('not found'); return r.blob() })
         .then(blob => {
           const file = new File([blob], savedFile, { type: 'model/gltf-binary' })
@@ -608,19 +609,19 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
         fd.append('cutColor', cutColor)
         fd.append('cutTextureName', cutFaceMode === 'texture' ? cutTextureName : '')
         fd.append('cutTextureTiling', cutTextureTiling.toString())
-        res = await fetch(`${SERVER}/slice`, { method: 'POST', body: fd })
+        res = await serverFetch(`${SERVER}/slice`, { method: 'POST', body: fd })
       } else {
         const bf = isAngle ? (factor * Math.PI) / 180 : factor
         const qs = `deformMode=${deformMode}&factor=${bf}&axis=${axis}&limitMin=${limitMin}&limitMax=${limitMax}&subdivs=${subdivs}`
-        if (shape === 'sphere')    res = await fetch(`${SERVER}/deform/sphere?${qs}`)
-        else if (shape === 'cube') res = await fetch(`${SERVER}/deform/cube?${qs}`)
+        if (shape === 'sphere')    res = await serverFetch(`${SERVER}/deform/sphere?${qs}`)
+        else if (shape === 'cube') res = await serverFetch(`${SERVER}/deform/cube?${qs}`)
         else {
           const fd = new FormData()
           fd.append('model', fileRef.current!)
           fd.append('deformMode', deformMode); fd.append('factor', bf.toString())
           fd.append('axis', axis); fd.append('limitMin', limitMin.toString())
           fd.append('limitMax', limitMax.toString()); fd.append('subdivs', subdivs.toString())
-          res = await fetch(`${SERVER}/deform`, { method: 'POST', body: fd })
+          res = await serverFetch(`${SERVER}/deform`, { method: 'POST', body: fd })
         }
       }
       if (!res.ok) {

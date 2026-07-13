@@ -11,6 +11,7 @@ import {
   secBtnSt, Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabModelSection, LabDataPanel,
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
+  serverFetch,
 } from './LabShared'
 
 const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
@@ -366,13 +367,13 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
           const p = { pieces: pc, cutSpread, cutStrategy, fractureMethod, voxelDiv, adaptivity }
           const qs = new URLSearchParams(Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)]))).toString()
           let res: Response
-          if (shape === 'sphere')    res = await fetch(`${SERVER}/shatter/sphere?${qs}`)
-          else if (shape === 'cube') res = await fetch(`${SERVER}/shatter/cube?${qs}`)
+          if (shape === 'sphere')    res = await serverFetch(`${SERVER}/shatter/sphere?${qs}`)
+          else if (shape === 'cube') res = await serverFetch(`${SERVER}/shatter/cube?${qs}`)
           else {
             const fd = new FormData()
             fd.append('model', fileForCompare!)
             Object.entries(p).forEach(([k, v]) => fd.append(k, String(v)))
-            res = await fetch(`${SERVER}/shatter`, { method: 'POST', body: fd })
+            res = await serverFetch(`${SERVER}/shatter`, { method: 'POST', body: fd })
           }
           if (res.ok) return URL.createObjectURL(await res.blob())
           console.error(`[compare ${pc}] server error:`, res.status)
@@ -390,14 +391,14 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
       const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))).toString()
       let res: Response
       if (shape === 'sphere') {
-        res = await fetch(`${SERVER}/shatter/sphere?${qs}`)
+        res = await serverFetch(`${SERVER}/shatter/sphere?${qs}`)
       } else if (shape === 'cube') {
-        res = await fetch(`${SERVER}/shatter/cube?${qs}`)
+        res = await serverFetch(`${SERVER}/shatter/cube?${qs}`)
       } else {
         const fd = new FormData()
         fd.append('model', fileRef.current!)
         Object.entries(params).forEach(([k, v]) => fd.append(k, String(v)))
-        res = await fetch(`${SERVER}/shatter`, { method: 'POST', body: fd })
+        res = await serverFetch(`${SERVER}/shatter`, { method: 'POST', body: fd })
       }
       if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error ?? res.statusText) }
       setResultUrl(URL.createObjectURL(await res.blob()))
