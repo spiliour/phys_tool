@@ -422,6 +422,8 @@ export default function App() {
           onLoad={handleLoad}
           onDelete={handleDeleteSave}
           onClose={() => setModalMode('none')}
+          currentName={currentSaveName ?? 'scene'}
+          currentData={captureState()}
         />
       )}
 

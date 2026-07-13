@@ -7,6 +7,32 @@ export interface SceneSave {
   data:      Record<string, unknown>
 }
 
+// ── Preset auto-discovery ─────────────────────────────────────────────────────
+
+const _presetMods = import.meta.glob<{ default: Record<string, unknown> }>(
+  './presets/*.json',
+  { eager: true },
+)
+
+export const PRESETS: SceneSave[] = Object.entries(_presetMods).map(([path, mod]) => {
+  const raw  = path.replace(/^.*\//, '').replace(/\.json$/, '')
+  const name = raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return { id: `preset_${raw}`, name, createdAt: '', data: mod.default }
+})
+
+// ── Export helper ─────────────────────────────────────────────────────────────
+
+export function exportScene(name: string, data: Record<string, unknown>) {
+  const payload = JSON.stringify(data, null, 2)
+  const blob    = new Blob([payload], { type: 'application/json' })
+  const url     = URL.createObjectURL(blob)
+  const a       = document.createElement('a')
+  a.href        = url
+  a.download    = name.trim().replace(/\s+/g, '_') + '.json'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Shared styles ─────────────────────────────────────────────────────────────
 
 const btnBase: React.CSSProperties = {
@@ -94,18 +120,72 @@ export function SaveDialog({ initialName, onSave, onClose }: SaveDialogProps) {
 // ── Load dialog ───────────────────────────────────────────────────────────────
 
 interface LoadDialogProps {
-  saves:    SceneSave[]
-  onLoad:   (save: SceneSave) => void
-  onDelete: (id: string) => void
-  onClose:  () => void
+  saves:       SceneSave[]
+  onLoad:      (save: SceneSave) => void
+  onDelete:    (id: string) => void
+  onClose:     () => void
+  currentName: string
+  currentData: Record<string, unknown>
 }
 
-export function LoadDialog({ saves, onLoad, onDelete, onClose }: LoadDialogProps) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      padding: '8px 20px 4px', fontSize: '10px', fontWeight: '700',
+      letterSpacing: '0.08em', textTransform: 'uppercase', color: '#AEAEB2',
+    }}>
+      {children}
+    </div>
+  )
+}
+
+export function LoadDialog({ saves, onLoad, onDelete, onClose, currentName, currentData }: LoadDialogProps) {
   const [hoverId, setHoverId] = useState<string | null>(null)
+
+  function row(s: SceneSave, showDelete: boolean, last: boolean) {
+    return (
+      <div
+        key={s.id}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: '11px 20px', cursor: 'pointer',
+          background: hoverId === s.id ? '#F8F8FA' : 'transparent',
+          borderBottom: last ? 'none' : '1px solid #F2F2F7',
+          transition: 'background 0.08s',
+        }}
+        onClick={() => onLoad(s)}
+        onMouseEnter={() => setHoverId(s.id)}
+        onMouseLeave={() => setHoverId(null)}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '13px', fontWeight: '600', color: '#1D1D1F' }}>{s.name}</div>
+          {s.createdAt && (
+            <div style={{ fontSize: '10px', color: '#8E8E93', marginTop: '2px' }}>
+              {new Date(s.createdAt).toLocaleString()}
+            </div>
+          )}
+        </div>
+        {showDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(s.id) }}
+            title="Delete"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: '#FF3B30', fontSize: '17px', lineHeight: 1,
+              padding: '4px 6px', flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <ModalOverlay onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
+
         {/* Header */}
         <div style={{
           padding: '16px 20px', borderBottom: '1px solid #E5E5EA',
@@ -114,49 +194,44 @@ export function LoadDialog({ saves, onLoad, onDelete, onClose }: LoadDialogProps
           Load Scene
         </div>
 
-        {/* List */}
-        <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
-          {saves.length === 0 ? (
+        {/* Scrollable list */}
+        <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+
+          {/* Presets */}
+          {PRESETS.length > 0 && (
+            <>
+              <SectionLabel>Presets</SectionLabel>
+              {PRESETS.map((s, i) => row(s, false, i === PRESETS.length - 1))}
+            </>
+          )}
+
+          {/* User saves */}
+          {saves.length > 0 && (
+            <>
+              <SectionLabel>My Saves</SectionLabel>
+              {saves.map((s, i) => row(s, true, i === saves.length - 1))}
+            </>
+          )}
+
+          {PRESETS.length === 0 && saves.length === 0 && (
             <div style={{ padding: '36px 20px', textAlign: 'center', color: '#8E8E93', fontSize: '13px' }}>
               No saved scenes yet
             </div>
-          ) : saves.map((s, i) => (
-            <div
-              key={s.id}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '10px',
-                padding: '12px 20px', cursor: 'pointer',
-                background: hoverId === s.id ? '#F8F8FA' : 'transparent',
-                borderBottom: i < saves.length - 1 ? '1px solid #F2F2F7' : 'none',
-                transition: 'background 0.08s',
-              }}
-              onClick={() => onLoad(s)}
-              onMouseEnter={() => setHoverId(s.id)}
-              onMouseLeave={() => setHoverId(null)}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#1D1D1F' }}>{s.name}</div>
-                <div style={{ fontSize: '10px', color: '#8E8E93', marginTop: '2px' }}>
-                  {new Date(s.createdAt).toLocaleString()}
-                </div>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDelete(s.id) }}
-                title="Delete save"
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#FF3B30', fontSize: '17px', lineHeight: 1,
-                  padding: '4px 6px', flexShrink: 0, fontFamily: 'inherit',
-                }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
+          )}
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 20px', borderTop: '1px solid #E5E5EA', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{
+          padding: '12px 20px', borderTop: '1px solid #E5E5EA',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <button
+            onClick={() => exportScene(currentName, currentData)}
+            title="Export current scene as JSON"
+            style={{ ...btnBase, background: '#F2F2F7', color: '#007AFF', padding: '7px 12px' }}
+          >
+            Export scene
+          </button>
           <button onClick={onClose} style={{ ...btnBase, background: '#F2F2F7', color: '#6C6C70' }}>
             Close
           </button>
