@@ -12,7 +12,7 @@ import {
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
 } from './LabShared'
 
-const SERVER = 'http://localhost:3001'
+const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
 
 type DeformMode = 'STRETCH' | 'TWIST' | 'SLICE'
 // | 'BEND' | 'TAPER' | 'TWIST_STRETCH' | 'INFLATE'

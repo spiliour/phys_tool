@@ -13,7 +13,7 @@ import {
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
 } from './LabShared'
 
-const SERVER = 'http://localhost:3001'
+const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
 
 type FractureMethod = 'bisect' | 'voronoi'
 type CutStrategy   = 'random' | 'largest'

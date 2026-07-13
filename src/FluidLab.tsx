@@ -10,7 +10,7 @@ import {
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
 } from './LabShared'
 
-const SERVER = 'http://localhost:3001'
+const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
 
 type Viscosity = 'water' | 'honey' | 'lava'
 type Phase     = 'idle' | 'baking' | 'exporting' | 'ready' | 'error'

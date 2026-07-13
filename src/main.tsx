@@ -12,7 +12,8 @@ import FluidLab from './FluidLab'
 import LabHub from './LabHub'
 import './index.css'
 
-const path = window.location.pathname
+const base = import.meta.env.BASE_URL.replace(/\/$/, '') // e.g. '/phys_tool' or ''
+const path = window.location.pathname.slice(base.length) || '/'
 const root = path === '/lab'
   ? <LabHub />
   : path === '/sim'

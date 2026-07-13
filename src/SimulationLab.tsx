@@ -7,7 +7,7 @@ import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier'
 import type { RapierRigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 
-const SERVER = 'http://localhost:3001'
+const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
 type ViewMode = 'exploded' | 'physics'
 type Shape    = 'model' | 'sphere' | 'cube'
 
