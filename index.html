@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Physically-Inspired Visualization</title>
+  <script>
+    (function() {
+      var p = new URLSearchParams(window.location.search).get('p');
+      if (p) {
+        var base = window.location.pathname.replace(/\/$/, '');
+        history.replaceState(null, null, base + p);
+      }
+    })();
+  </script>
     <script type="module" crossorigin src="/phys_tool/assets/index-1un8O-7I.js"></script>
     <link rel="stylesheet" crossorigin href="/phys_tool/assets/index-BfOCg_I_.css">
   </head>
