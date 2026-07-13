@@ -20,6 +20,8 @@ jobs:
 
       - run: npm install --legacy-peer-deps
 
+      - run: chmod +x node_modules/.bin/*
+
       - name: Build
         run: npm run build
         env:
