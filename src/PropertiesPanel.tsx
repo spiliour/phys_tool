@@ -466,19 +466,13 @@ const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
 
 // ── Panel header ──────────────────────────────────────────────────────────────
 
-function PanelHeader({ title, subtitle, color }: {
-  title: string; subtitle: string; color: string
-}) {
+function PanelHeader({ title }: { title: string }) {
   return (
     <div>
       <div style={{ fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#AEAEB2', marginBottom: '3px', fontWeight: '500' }}>
         Properties
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: color, flexShrink: 0 }} />
-        <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>{title}</div>
-      </div>
-      <div style={{ fontSize: '11px', color: '#8E8E93', marginTop: '2px', paddingLeft: '18px' }}>{subtitle}</div>
+      <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>{title}</div>
     </div>
   )
 }
@@ -641,7 +635,7 @@ function MarkProperties({
 
   return (
     <>
-      <PanelHeader title="Mark" subtitle="individual particle" color="#F06951" />
+      <PanelHeader title="Mark" />
 
       {/* ── Spatial ── */}
       <AttributeCategory icon={ICONS.spatial} title="Spatial" open={acc.isOpen('Spatial')} onToggle={() => acc.toggle('Spatial')}>
@@ -738,11 +732,7 @@ function CollectionProperties({
 
   return (
     <>
-      <PanelHeader
-        title={isL2 ? 'Collection Lv2' : 'Collection'}
-        subtitle={isL2 ? 'group of collections' : 'group of marks'}
-        color={isL2 ? '#9D9BF4' : '#5E5CE6'}
-      />
+      <PanelHeader title="Collection" />
 
       <AttributeCategory icon={ICONS.populations} title="Groups & Populations" open={acc.isOpen('Groups & Populations')} onToggle={() => acc.toggle('Groups & Populations')}>
 
@@ -903,7 +893,7 @@ function DecorationProperties({
 
   return (
     <>
-      <PanelHeader title="Decoration" subtitle="decorative element" color="#FF9500" />
+      <PanelHeader title="Decoration" />
 
       {/* ── Spatial ── */}
       <AttributeCategory icon={ICONS.spatial} title="Spatial" open={acc.isOpen('Spatial')} onToggle={() => acc.toggle('Spatial')}>
@@ -967,7 +957,7 @@ function SceneProperties({
 }: { config: SceneConfig; onChange: (c: SceneConfig) => void }) {
   return (
     <>
-      <PanelHeader title="Scene" subtitle="global framing" color="#34C759" />
+      <PanelHeader title="Scene" />
 
       {/* Environment */}
       <div style={{ border: '1px solid #E5E5EA', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -1114,9 +1104,6 @@ export function PropertiesPanel({
         </div>
       </div>
 
-      <div style={{ fontSize: '10px', color: '#C7C7CC', lineHeight: 1.7, paddingBottom: '4px' }}>
-        Drag to orbit · Scroll to zoom · Right-drag to pan
-      </div>
     </div>
   )
 }
