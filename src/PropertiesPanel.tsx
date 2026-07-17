@@ -5,9 +5,10 @@ import {
   MarkShape, MarkMaterial, HdriPreset, Vec3,
   StructuralDeformation, CollectionArrangement,
   DataBindings, DataVariable, LabelConfig, LabelPosition,
-  DecorationConfig,
+  DecorationConfig, LayerData,
 } from './types'
 import { MODEL_PRESETS } from './models'
+import { VarChip } from './LeftDataPanel'
 
 // ── Focal length utility ──────────────────────────────────────────────────────
 export function focalLengthToFov(mm: number): number {
@@ -1014,6 +1015,8 @@ interface PropertiesPanelProps {
   compositionLevel:    CompositionLevel
   markConfig:          MarkConfig
   onMarkChange:        (c: MarkConfig) => void
+  layers:              LayerData[]
+  onOpenData:          () => void
   collection1Config:   CollectionConfig
   onCollection1Change: (c: CollectionConfig) => void
   collection2Config:   CollectionConfig
@@ -1041,6 +1044,7 @@ export function PropertiesPanel({
   markLabelConfig, onMarkLabelChange,
   colLabelConfig,  onColLabelChange,
   activeDecorationId, decorations, onDecorationChange,
+  layers, onOpenData,
 }: PropertiesPanelProps) {
   const activeDec = activeDecorationId !== null
     ? decorations.find((d) => d.id === activeDecorationId) ?? null
@@ -1074,7 +1078,31 @@ export function PropertiesPanel({
       ) : activeElement === 'scene' ? (
         <SceneProperties config={sceneConfig} onChange={onSceneChange} />
       ) : null}
-      <div style={{ marginTop: 'auto', fontSize: '10px', color: '#C7C7CC', lineHeight: 1.7, paddingBottom: '4px' }}>
+      {/* ── Data Variables ── */}
+      <div style={{ marginTop: 'auto', borderTop: '1px solid #E5E5EA', paddingTop: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
+            Data Variables
+          </span>
+          <button
+            onClick={onOpenData}
+            style={{
+              background: 'none', border: '1px solid #D1D1D6', borderRadius: '6px',
+              padding: '3px 8px', fontSize: '11px', color: '#6C6C70',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            Open Data
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <VarChip label="Weight"       type="numerical"   varName="weight"      />
+          <VarChip label="Garbage Type" type="categorical" varName="garbageType" />
+          <VarChip label="Count"        type="numerical"   varName="count"       />
+        </div>
+      </div>
+
+      <div style={{ fontSize: '10px', color: '#C7C7CC', lineHeight: 1.7, paddingBottom: '4px' }}>
         Drag to orbit · Scroll to zoom · Right-drag to pan
       </div>
     </div>

@@ -88,6 +88,9 @@ export default function App() {
   const [decorations,        setDecorations]        = useState<DecorationConfig[]>([])
   const [activeDecorationId, setActiveDecorationId] = useState<string | null>(null)
 
+  // Data modal
+  const [showDataModal, setShowDataModal] = useState(false)
+
   // Save / load
   const [currentSaveId,   setCurrentSaveId]   = useState<string | null>(null)
   const [currentSaveName, setCurrentSaveName] = useState<string | null>(null)
@@ -405,6 +408,8 @@ export default function App() {
           activeDecorationId={activeDecorationId}
           decorations={decorations}
           onDecorationChange={handleUpdateDecoration}
+          layers={layers}
+          onOpenData={() => setShowDataModal(true)}
         />
       </div>
 
@@ -416,6 +421,50 @@ export default function App() {
           onClose={() => setModalMode('none')}
         />
       )}
+      {/* Data layers modal */}
+      {showDataModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}
+          onClick={() => setShowDataModal(false)}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: '14px', width: '380px', maxWidth: '90vw', boxShadow: '0 16px 48px rgba(0,0,0,0.28)', overflow: 'hidden', fontFamily: 'inherit' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E5EA', fontSize: '15px', fontWeight: '700', color: '#1D1D1F' }}>
+              Data Layers
+            </div>
+            <div style={{ overflowY: 'auto', maxHeight: '360px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #E5E5EA' }}>
+                    {['Name', 'Weight', 'Color'].map(h => (
+                      <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontWeight: '600', color: '#8E8E93', fontSize: '11px' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {layers.map((l, i) => (
+                    <tr key={l.id} style={{ borderBottom: i < layers.length - 1 ? '1px solid #F2F2F7' : 'none' }}>
+                      <td style={{ padding: '10px 16px', color: '#1D1D1F', fontWeight: '500' }}>{l.name}</td>
+                      <td style={{ padding: '10px 16px', color: '#3C3C43' }}>{l.percentage}</td>
+                      <td style={{ padding: '10px 16px' }}>
+                        <span style={{ display: 'inline-block', width: 16, height: 16, borderRadius: 4, background: l.color, verticalAlign: 'middle', border: '1px solid #E5E5EA' }} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #E5E5EA', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowDataModal(false)} style={{ background: '#F2F2F7', color: '#6C6C70', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: '500', cursor: 'pointer', fontFamily: 'inherit' }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalMode === 'load' && (
         <LoadDialog
           saves={loadSaves()}

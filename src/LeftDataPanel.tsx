@@ -49,7 +49,7 @@ interface VarChipProps {
   varName:  string
 }
 
-function VarChip({ label, type, varName }: VarChipProps) {
+export function VarChip({ label, type, varName }: VarChipProps) {
   const isNum  = type === 'numerical'
   const accent = isNum ? '#007AFF' : '#5E5CE6'
   const bg     = isNum ? '#EBF3FF' : '#F3EBFF'
@@ -240,31 +240,6 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
 
         </>
       )}
-
-      {/* ── Data Variables — at bottom for easy drag ── */}
-      <div style={{
-        border: '1px solid #E5E5EA', borderRadius: '10px',
-        overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        marginTop: 'auto',
-      }}>
-        <div style={{
-          padding: '8px 11px 6px',
-          background: '#F8F8FA', borderBottom: '1px solid #E5E5EA',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <SectionLabel>Data Variables</SectionLabel>
-          <span style={{ fontSize: '10px', color: '#C7C7CC' }}>drag to attributes</span>
-        </div>
-        <div style={{
-          padding: '10px 11px',
-          display: 'flex', gap: '7px', flexWrap: 'wrap',
-          background: '#FFFFFF',
-        }}>
-          <VarChip label="Weight"       type="numerical"   varName="weight"      />
-          <VarChip label="Garbage Type" type="categorical" varName="garbageType" />
-          <VarChip label="Count"        type="numerical"   varName="count"       />
-        </div>
-      </div>
 
     </div>
   )
