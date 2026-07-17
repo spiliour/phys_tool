@@ -337,6 +337,47 @@ export default function App() {
           />
         </div>
 
+        {/* Pinned data variables section */}
+        <div style={{ borderTop: '1px solid #E5E5EA', padding: '12px 14px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
+              Data Variables
+            </span>
+            <button
+              onClick={() => setShowDataModal(true)}
+              style={{ background: 'none', border: '1px solid #D1D1D6', borderRadius: '6px', padding: '3px 8px', fontSize: '11px', color: '#6C6C70', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Open Data
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {VAR_LIST.map(v => {
+              const activeKeys = (Object.keys(bindings) as Array<keyof DataBindings>)
+                .filter(k => bindings[k] === v.varName)
+              return (
+                <div key={v.varName} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <VarChip label={v.label} type={v.type} varName={v.varName} />
+                  {activeKeys.map(k => (
+                    <div key={k} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '3px',
+                      background: '#F2F2F7', border: '1px solid #D1D1D6',
+                      borderRadius: '5px', padding: '3px 5px 3px 8px',
+                      fontSize: '10px', color: '#6C6C70', fontWeight: '600',
+                    }}>
+                      <span style={{ color: '#AEAEB2', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>
+                      {BINDING_LABELS[k]}
+                      <button
+                        onClick={() => handleBind(k, null)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#AEAEB2', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
       </div>
 
       {/* Center: 3D canvas */}
@@ -459,47 +500,6 @@ export default function App() {
             decorations={decorations}
             onDecorationChange={handleUpdateDecoration}
           />
-        </div>
-
-        {/* Pinned data variables section */}
-        <div style={{ borderTop: '1px solid #E5E5EA', padding: '12px 14px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
-              Data Variables
-            </span>
-            <button
-              onClick={() => setShowDataModal(true)}
-              style={{ background: 'none', border: '1px solid #D1D1D6', borderRadius: '6px', padding: '3px 8px', fontSize: '11px', color: '#6C6C70', cursor: 'pointer', fontFamily: 'inherit' }}
-            >
-              Open Data
-            </button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {VAR_LIST.map(v => {
-              const activeKeys = (Object.keys(bindings) as Array<keyof DataBindings>)
-                .filter(k => bindings[k] === v.varName)
-              return (
-                <div key={v.varName} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  <VarChip label={v.label} type={v.type} varName={v.varName} />
-                  {activeKeys.map(k => (
-                    <div key={k} style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '3px',
-                      background: '#F2F2F7', border: '1px solid #D1D1D6',
-                      borderRadius: '5px', padding: '3px 5px 3px 8px',
-                      fontSize: '10px', color: '#6C6C70', fontWeight: '600',
-                    }}>
-                      <span style={{ color: '#AEAEB2', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>
-                      {BINDING_LABELS[k]}
-                      <button
-                        onClick={() => handleBind(k, null)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#AEAEB2', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
-                      >×</button>
-                    </div>
-                  ))}
-                </div>
-              )
-            })}
-          </div>
         </div>
 
       </div>
