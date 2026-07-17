@@ -9,6 +9,7 @@ import { PropertiesPanel }   from './PropertiesPanel'
 import { CompositionCanvas } from './CompositionCanvas'
 import { SceneSave, SaveDialog, LoadDialog, loadSaves, persistSaves } from './SaveLoadModal'
 import { LeftDataPanel } from './LeftDataPanel'
+import { RadialBindMenu } from './RadialBindMenu'
 import { resolveCustomModel } from './models'
 
 // ── Default state ─────────────────────────────────────────────────────────────
@@ -91,6 +92,12 @@ export default function App() {
   // Data modal
   const [showDataModal, setShowDataModal] = useState(false)
 
+  // Radial bind menu (drag-to-canvas)
+  const [radialMenu, setRadialMenu] = useState<{
+    x: number; y: number
+    varName: DataVariable; varType: 'numerical' | 'categorical'
+  } | null>(null)
+
   // Save / load
   const [currentSaveId,   setCurrentSaveId]   = useState<string | null>(null)
   const [currentSaveName, setCurrentSaveName] = useState<string | null>(null)
@@ -112,6 +119,15 @@ export default function App() {
       }
       return next
     })
+  }
+
+  function handleBindLabel(section: 'mark' | 'collection', variable: DataVariable) {
+    const updater = (prev: LabelConfig) => ({
+      ...prev, show: true,
+      slots: { ...prev.slots, top: variable },
+    })
+    if (section === 'mark') setMarkLabelConfig(updater)
+    else setColLabelConfig(updater)
   }
 
   function handleAddDecoration() {
@@ -296,7 +312,17 @@ export default function App() {
       </div>
 
       {/* Center: 3D canvas */}
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div
+        style={{ flex: 1, position: 'relative' }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault()
+          const varName = e.dataTransfer.getData('phys-var/name') as DataVariable
+          if (!varName) return
+          const varType = e.dataTransfer.types.includes('phys-var/numerical') ? 'numerical' : 'categorical'
+          setRadialMenu({ x: e.clientX, y: e.clientY, varName, varType })
+        }}
+      >
         <CompositionCanvas
           level={level}
           markConfig={markConfig}
@@ -442,6 +468,20 @@ export default function App() {
           onClose={() => setModalMode('none')}
           currentName={currentSaveName ?? 'scene'}
           currentData={captureState()}
+        />
+      )}
+
+      {/* Radial bind menu — appears when user drops a var chip onto the canvas */}
+      {radialMenu && (
+        <RadialBindMenu
+          x={radialMenu.x}
+          y={radialMenu.y}
+          varName={radialMenu.varName}
+          varType={radialMenu.varType}
+          level={level}
+          onBind={handleBind}
+          onBindLabel={handleBindLabel}
+          onClose={() => setRadialMenu(null)}
         />
       )}
 
