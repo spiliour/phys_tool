@@ -17,8 +17,8 @@ import { resolveCustomModel } from './models'
 const BINDING_LABELS: Record<keyof DataBindings, string> = {
   markColor:    'Color',
   scatterSize:  'Scatter',
-  c1AlignCount: 'Count L1',
-  c2AlignCount: 'Count L2',
+  c1AlignCount: 'Count',
+  c2AlignCount: 'Count',
   markSizeX:    'Size X',
   markSizeY:    'Size Y',
   markSizeZ:    'Size Z',
