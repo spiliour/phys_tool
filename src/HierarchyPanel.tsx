@@ -8,10 +8,10 @@ interface ElementMeta {
 }
 
 const META: Record<ActiveElement, ElementMeta> = {
-  mark:        { label: 'Mark',           badge: 'L1'  },
-  collection1: { label: 'Collection',     badge: 'L2'  },
-  collection2: { label: 'Collection Lv2', badge: 'L3'  },
-  scene:       { label: 'Scene',          badge: 'Env' },
+  mark:        { label: 'Mark',       badge: 'L1'  },
+  collection1: { label: 'Collection', badge: 'L2'  },
+  collection2: { label: 'Collection', badge: 'L3'  },
+  scene:       { label: 'Scene',      badge: 'Env' },
 }
 
 // Which elements are visible at each composition level
@@ -65,15 +65,8 @@ export function HierarchyPanel({
 
       {/* Header */}
       <div style={{ borderTop: '1px solid #E5E5EA', paddingTop: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>Visualization Hierarchy</div>
-          <span style={{
-            fontSize: '11px', color: '#8E8E93',
-            background: '#F2F2F7', padding: '2px 8px',
-            borderRadius: '6px', fontFamily: 'inherit',
-          }}>
-            Lv {level}
-          </span>
+        <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>
+          Visualization Hierarchy
         </div>
       </div>
 
@@ -134,7 +127,7 @@ export function HierarchyPanel({
               color: '#8E8E93',
             }}
           >
-            {level === 1 ? '+ Add Collection' : '+ Add Collection Lv2'}
+            + Add Collection
           </button>
         )}
 
@@ -144,11 +137,11 @@ export function HierarchyPanel({
             style={{
               ...levelBtnBase,
               background: 'transparent',
-              border: '1.5px dashed #FFCCC7',
-              color: '#FF6B60',
+              border: '1.5px dashed #C7C7CC',
+              color: '#8E8E93',
             }}
           >
-            {level === 2 ? '− Remove Collection' : '− Remove Collection Lv2'}
+            − Remove Collection
           </button>
         )}
 
@@ -180,10 +173,6 @@ export function HierarchyPanel({
                 }}
               >
                 <span style={{
-                  width: '8px', height: '8px', borderRadius: '50%',
-                  background: dec.color, flexShrink: 0,
-                }} />
-                <span style={{
                   fontSize: '12px', color: '#1D1D1F',
                   fontWeight: isActive ? '600' : '400', flex: 1,
                 }}>
@@ -202,7 +191,7 @@ export function HierarchyPanel({
                 title="Remove decoration"
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#FF3B30', fontSize: '16px', lineHeight: 1,
+                  color: '#AEAEB2', fontSize: '16px', lineHeight: 1,
                   padding: '4px 6px', flexShrink: 0, fontFamily: 'inherit',
                 }}
               >
