@@ -256,8 +256,8 @@ export default function App() {
               onClick={handleSaveClick}
               title={currentSaveName ? `Save to "${currentSaveName}"` : 'Save scene'}
               style={{
-                flex: 1, background: '#007AFF', color: '#fff',
-                border: 'none', borderRadius: '7px', padding: '6px 8px',
+                flex: 1, background: '#F2F2F7', color: '#1D1D1F',
+                border: '1px solid #D1D1D6', borderRadius: '7px', padding: '6px 8px',
                 fontSize: '12px', fontWeight: '600', cursor: 'pointer',
                 fontFamily: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -281,9 +281,9 @@ export default function App() {
             onClick={() => { setPathTracingActive(true); setPathTracerSamples(0) }}
             disabled={pathTracingActive}
             style={{
-              background: pathTracingActive ? '#E5E5EA' : '#1D1D1F',
-              color: pathTracingActive ? '#AEAEB2' : '#FFFFFF',
-              border: 'none', borderRadius: '7px', padding: '7px 8px',
+              background: '#F2F2F7',
+              color: pathTracingActive ? '#AEAEB2' : '#1D1D1F',
+              border: '1px solid #D1D1D6', borderRadius: '7px', padding: '7px 8px',
               fontSize: '12px', fontWeight: '600',
               cursor: pathTracingActive ? 'default' : 'pointer',
               fontFamily: 'inherit', width: '100%',
