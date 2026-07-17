@@ -464,6 +464,24 @@ const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
   { value: 'apartment', label: 'Apartment' },
 ]
 
+// ── Data variable list + binding labels ───────────────────────────────────────
+
+const BINDING_LABELS: Record<keyof DataBindings, string> = {
+  markColor:    'Color',
+  scatterSize:  'Scatter',
+  c1AlignCount: 'Count L1',
+  c2AlignCount: 'Count L2',
+  markSizeX:    'Size X',
+  markSizeY:    'Size Y',
+  markSizeZ:    'Size Z',
+}
+
+const VAR_LIST: Array<{ label: string; type: 'numerical' | 'categorical'; varName: DataVariable }> = [
+  { label: 'Weight',       type: 'numerical',   varName: 'weight'      },
+  { label: 'Garbage Type', type: 'categorical',  varName: 'garbageType' },
+  { label: 'Count',        type: 'numerical',    varName: 'count'       },
+]
+
 // ── Panel header ──────────────────────────────────────────────────────────────
 
 function PanelHeader({ title }: { title: string }) {
@@ -850,17 +868,6 @@ function CollectionProperties({
           </Row>
         )}
 
-        {/* ── Color — always visible ── */}
-        <Row label="Color">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <input type="color" value={config.color}
-              onChange={(e) => onChange({ ...config, color: e.target.value })}
-              style={{ width: '36px', height: '32px', border: '1px solid #D1D1D6', borderRadius: '6px', background: 'none', cursor: 'pointer', padding: '2px' }}
-            />
-            <span style={{ fontSize: '12px', color: '#8E8E93', fontFamily: 'monospace' }}>{config.color}</span>
-          </div>
-        </Row>
-
       </AttributeCategory>
 
       {/* ── Labels (level 1 only) ── */}
@@ -1092,10 +1099,34 @@ export function PropertiesPanel({
             Open Data
           </button>
         </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          <VarChip label="Weight"       type="numerical"   varName="weight"      />
-          <VarChip label="Garbage Type" type="categorical" varName="garbageType" />
-          <VarChip label="Count"        type="numerical"   varName="count"       />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {VAR_LIST.map(v => {
+            const activeKeys = (Object.keys(bindings) as Array<keyof DataBindings>)
+              .filter(k => bindings[k] === v.varName)
+            return (
+              <div key={v.varName} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <VarChip label={v.label} type={v.type} varName={v.varName} />
+                {activeKeys.map(k => (
+                  <div key={k} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+                    background: '#F2F2F7', border: '1px solid #D1D1D6',
+                    borderRadius: '5px', padding: '3px 5px 3px 8px',
+                    fontSize: '10px', color: '#6C6C70', fontWeight: '600',
+                  }}>
+                    {BINDING_LABELS[k]}
+                    <button
+                      onClick={() => onBind(k, null)}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: '#AEAEB2', padding: '0 1px',
+                        fontSize: '13px', lineHeight: 1, fontFamily: 'inherit',
+                      }}
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+            )
+          })}
         </div>
       </div>
 
