@@ -244,10 +244,10 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
       )}
       {markLabelConfig.show && (
         <>
-          {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
-          {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
-          {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
-          {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
+          {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[50, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
+          {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[50, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
+          {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[50, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
+          {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[50, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
         </>
       )}
     </group>
@@ -324,10 +324,10 @@ function AlignedMarks({
             )}
             {markLabelConfig.show && (
               <>
-                {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
-                {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
-                {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
-                {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
+                {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[50, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
+                {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[50, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
+                {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[50, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
+                {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[50, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
               </>
             )}
           </group>

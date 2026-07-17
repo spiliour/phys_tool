@@ -703,13 +703,14 @@ function MarkProperties({
         </Row>
       </AttributeCategory>
 
-      {/* ── Structural ── */}
+      {/* ── Structural ── (temporarily hidden)
       <AttributeCategory icon={ICONS.structural} title="Structural" open={acc.isOpen('Structural')} onToggle={() => acc.toggle('Structural')}>
         <StructuralSection
           structural={config.structural}
           onChange={(s) => onChange({ ...config, structural: s })}
         />
       </AttributeCategory>
+      */}
 
       {/* ── Labels ── */}
       <AttributeCategory icon={ICONS.labels} title="Labels" open={acc.isOpen('Labels')} onToggle={() => acc.toggle('Labels')}>
@@ -947,13 +948,14 @@ function DecorationProperties({
         </Row>
       </AttributeCategory>
 
-      {/* ── Structural ── */}
+      {/* ── Structural ── (temporarily hidden)
       <AttributeCategory icon={ICONS.structural} title="Structural" open={acc.isOpen('Structural')} onToggle={() => acc.toggle('Structural')}>
         <StructuralSection
           structural={config.structural}
           onChange={(s) => onChange({ ...config, structural: s })}
         />
       </AttributeCategory>
+      */}
     </>
   )
 }
