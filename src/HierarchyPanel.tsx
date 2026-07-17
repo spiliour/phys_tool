@@ -4,16 +4,14 @@ import { CompositionLevel, ActiveElement, DecorationConfig } from './types'
 
 interface ElementMeta {
   label: string
-  subtitle: string
-  color: string
   badge: string
 }
 
 const META: Record<ActiveElement, ElementMeta> = {
-  mark:        { label: 'Mark',           subtitle: 'individual particle',   color: '#F06951', badge: 'L1'  },
-  collection1: { label: 'Collection',     subtitle: 'group of marks',        color: '#5E5CE6', badge: 'L2'  },
-  collection2: { label: 'Collection Lv2', subtitle: 'group of collections',  color: '#9D9BF4', badge: 'L3'  },
-  scene:       { label: 'Scene',          subtitle: 'global framing',        color: '#34C759', badge: 'Env' },
+  mark:        { label: 'Mark',           badge: 'L1'  },
+  collection1: { label: 'Collection',     badge: 'L2'  },
+  collection2: { label: 'Collection Lv2', badge: 'L3'  },
+  scene:       { label: 'Scene',          badge: 'Env' },
 }
 
 // Which elements are visible at each composition level
@@ -67,14 +65,8 @@ export function HierarchyPanel({
 
       {/* Header */}
       <div style={{ borderTop: '1px solid #E5E5EA', paddingTop: '12px' }}>
-        <div style={{
-          fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase',
-          color: '#AEAEB2', marginBottom: '3px', fontWeight: '500',
-        }}>
-          Composition
-        </div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>Hierarchy</div>
+          <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>Visualization Hierarchy</div>
           <span style={{
             fontSize: '11px', color: '#8E8E93',
             background: '#F2F2F7', padding: '2px 8px',
@@ -97,21 +89,13 @@ export function HierarchyPanel({
               style={{
                 display: 'flex', alignItems: 'center', gap: '10px',
                 padding: '9px 12px', width: '100%', textAlign: 'left',
-                background: isActive ? `${m.color}14` : '#FAFAFA',
-                border: `1.5px solid ${isActive ? m.color : '#E5E5EA'}`,
+                background: isActive ? '#F2F2F7' : '#FAFAFA',
+                border: `1.5px solid ${isActive ? '#1D1D1F' : '#E5E5EA'}`,
                 borderRadius: '10px', cursor: 'pointer',
                 transition: 'border-color 0.15s, background 0.15s',
                 fontFamily: 'inherit',
               }}
             >
-              {/* Type dot */}
-              <span style={{
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: m.color, flexShrink: 0,
-                boxShadow: isActive ? `0 0 0 3px ${m.color}28` : 'none',
-                transition: 'box-shadow 0.15s',
-              }} />
-
               {/* Labels */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
@@ -120,16 +104,13 @@ export function HierarchyPanel({
                 }}>
                   {m.label}
                 </div>
-                <div style={{ fontSize: '10px', color: '#8E8E93', marginTop: '1px' }}>
-                  {m.subtitle}
-                </div>
               </div>
 
               {/* Level badge */}
               <span style={{
                 fontSize: '9px', letterSpacing: '0.06em', fontWeight: '500',
-                color: isActive ? m.color : '#8E8E93',
-                border: `1px solid ${isActive ? m.color : '#D1D1D6'}`,
+                color: isActive ? '#1D1D1F' : '#8E8E93',
+                border: `1px solid ${isActive ? '#1D1D1F' : '#D1D1D6'}`,
                 borderRadius: '4px', padding: '1px 5px', flexShrink: 0,
                 transition: 'color 0.15s, border-color 0.15s',
               }}>
@@ -140,10 +121,9 @@ export function HierarchyPanel({
         })}
       </div>
 
-      {/* Level transition buttons — always present */}
+      {/* Level transition buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingTop: '2px' }}>
 
-        {/* Advance button: shown at levels 1 and 2 */}
         {level < 3 && (
           <button
             onClick={onAdvanceLevel}
@@ -158,7 +138,6 @@ export function HierarchyPanel({
           </button>
         )}
 
-        {/* Downgrade button: shown at levels 2 and 3 */}
         {level > 1 && (
           <button
             onClick={onDowngradeLevel}
@@ -194,8 +173,8 @@ export function HierarchyPanel({
                 style={{
                   flex: 1, display: 'flex', alignItems: 'center', gap: '8px',
                   padding: '7px 10px', textAlign: 'left',
-                  background: isActive ? '#FF950014' : '#FAFAFA',
-                  border: `1.5px solid ${isActive ? '#FF9500' : '#E5E5EA'}`,
+                  background: isActive ? '#F2F2F7' : '#FAFAFA',
+                  border: `1.5px solid ${isActive ? '#1D1D1F' : '#E5E5EA'}`,
                   borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit',
                   transition: 'border-color 0.15s, background 0.15s',
                 }}
@@ -203,7 +182,6 @@ export function HierarchyPanel({
                 <span style={{
                   width: '8px', height: '8px', borderRadius: '50%',
                   background: dec.color, flexShrink: 0,
-                  boxShadow: isActive ? '0 0 0 3px rgba(255,149,0,0.2)' : 'none',
                 }} />
                 <span style={{
                   fontSize: '12px', color: '#1D1D1F',
@@ -212,8 +190,8 @@ export function HierarchyPanel({
                   Decoration {idx + 1}
                 </span>
                 <span style={{
-                  fontSize: '9px', color: isActive ? '#FF9500' : '#8E8E93',
-                  border: `1px solid ${isActive ? '#FF9500' : '#D1D1D6'}`,
+                  fontSize: '9px', color: isActive ? '#1D1D1F' : '#8E8E93',
+                  border: `1px solid ${isActive ? '#1D1D1F' : '#D1D1D6'}`,
                   borderRadius: '4px', padding: '1px 5px',
                 }}>
                   Dec
@@ -239,17 +217,14 @@ export function HierarchyPanel({
           style={{
             ...levelBtnBase,
             background: 'transparent',
-            border: '1.5px dashed #FF9500',
-            color: '#FF9500',
+            border: '1.5px dashed #C7C7CC',
+            color: '#8E8E93',
           }}
         >
           + Add Decoration
         </button>
       </div>
 
-      <div style={{ fontSize: '10px', color: '#C7C7CC', lineHeight: 1.5 }}>
-        Click an element to edit its properties →
-      </div>
     </div>
   )
 }
