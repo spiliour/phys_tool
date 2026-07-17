@@ -5,10 +5,9 @@ import {
   MarkShape, MarkMaterial, HdriPreset, Vec3,
   StructuralDeformation, CollectionArrangement,
   DataBindings, DataVariable, LabelConfig, LabelPosition,
-  DecorationConfig, LayerData,
+  DecorationConfig,
 } from './types'
 import { MODEL_PRESETS } from './models'
-import { VarChip } from './LeftDataPanel'
 
 // ── Focal length utility ──────────────────────────────────────────────────────
 export function focalLengthToFov(mm: number): number {
@@ -462,24 +461,6 @@ const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
   { value: 'night',     label: 'Night'     },
   { value: 'studio',    label: 'Studio'    },
   { value: 'apartment', label: 'Apartment' },
-]
-
-// ── Data variable list + binding labels ───────────────────────────────────────
-
-const BINDING_LABELS: Record<keyof DataBindings, string> = {
-  markColor:    'Color',
-  scatterSize:  'Scatter',
-  c1AlignCount: 'Count L1',
-  c2AlignCount: 'Count L2',
-  markSizeX:    'Size X',
-  markSizeY:    'Size Y',
-  markSizeZ:    'Size Z',
-}
-
-const VAR_LIST: Array<{ label: string; type: 'numerical' | 'categorical'; varName: DataVariable }> = [
-  { label: 'Weight',       type: 'numerical',   varName: 'weight'      },
-  { label: 'Garbage Type', type: 'categorical',  varName: 'garbageType' },
-  { label: 'Count',        type: 'numerical',    varName: 'count'       },
 ]
 
 // ── Panel header ──────────────────────────────────────────────────────────────
@@ -1019,8 +1000,6 @@ interface PropertiesPanelProps {
   compositionLevel:    CompositionLevel
   markConfig:          MarkConfig
   onMarkChange:        (c: MarkConfig) => void
-  layers:              LayerData[]
-  onOpenData:          () => void
   collection1Config:   CollectionConfig
   onCollection1Change: (c: CollectionConfig) => void
   collection2Config:   CollectionConfig
@@ -1048,7 +1027,6 @@ export function PropertiesPanel({
   markLabelConfig, onMarkLabelChange,
   colLabelConfig,  onColLabelChange,
   activeDecorationId, decorations, onDecorationChange,
-  layers, onOpenData,
 }: PropertiesPanelProps) {
   const activeDec = activeDecorationId !== null
     ? decorations.find((d) => d.id === activeDecorationId) ?? null
@@ -1082,53 +1060,6 @@ export function PropertiesPanel({
       ) : activeElement === 'scene' ? (
         <SceneProperties config={sceneConfig} onChange={onSceneChange} />
       ) : null}
-      {/* ── Data Variables ── */}
-      <div style={{ marginTop: 'auto', borderTop: '1px solid #E5E5EA', paddingTop: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
-            Data Variables
-          </span>
-          <button
-            onClick={onOpenData}
-            style={{
-              background: 'none', border: '1px solid #D1D1D6', borderRadius: '6px',
-              padding: '3px 8px', fontSize: '11px', color: '#6C6C70',
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            Open Data
-          </button>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {VAR_LIST.map(v => {
-            const activeKeys = (Object.keys(bindings) as Array<keyof DataBindings>)
-              .filter(k => bindings[k] === v.varName)
-            return (
-              <div key={v.varName} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                <VarChip label={v.label} type={v.type} varName={v.varName} />
-                {activeKeys.map(k => (
-                  <div key={k} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '3px',
-                    background: '#F2F2F7', border: '1px solid #D1D1D6',
-                    borderRadius: '5px', padding: '3px 5px 3px 8px',
-                    fontSize: '10px', color: '#6C6C70', fontWeight: '600',
-                  }}>
-                    {BINDING_LABELS[k]}
-                    <button
-                      onClick={() => onBind(k, null)}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: '#AEAEB2', padding: '0 1px',
-                        fontSize: '13px', lineHeight: 1, fontFamily: 'inherit',
-                      }}
-                    >×</button>
-                  </div>
-                ))}
-              </div>
-            )
-          })}
-        </div>
-      </div>
 
     </div>
   )

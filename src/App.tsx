@@ -8,9 +8,37 @@ import { HierarchyPanel }    from './HierarchyPanel'
 import { PropertiesPanel }   from './PropertiesPanel'
 import { CompositionCanvas } from './CompositionCanvas'
 import { SceneSave, SaveDialog, LoadDialog, loadSaves, persistSaves } from './SaveLoadModal'
-import { LeftDataPanel } from './LeftDataPanel'
+import { LeftDataPanel, VarChip } from './LeftDataPanel'
 import { RadialBindMenu } from './RadialBindMenu'
 import { resolveCustomModel } from './models'
+
+// ── Data variable definitions ─────────────────────────────────────────────────
+
+const BINDING_LABELS: Record<keyof DataBindings, string> = {
+  markColor:    'Color',
+  scatterSize:  'Scatter',
+  c1AlignCount: 'Count L1',
+  c2AlignCount: 'Count L2',
+  markSizeX:    'Size X',
+  markSizeY:    'Size Y',
+  markSizeZ:    'Size Z',
+}
+
+const BINDING_LEVEL: Record<keyof DataBindings, string> = {
+  markColor:    'Lv1',
+  markSizeX:    'Lv1',
+  markSizeY:    'Lv1',
+  markSizeZ:    'Lv1',
+  scatterSize:  'Lv2',
+  c1AlignCount: 'Lv2',
+  c2AlignCount: 'Lv3',
+}
+
+const VAR_LIST: Array<{ label: string; type: 'numerical' | 'categorical'; varName: DataVariable }> = [
+  { label: 'Weight',       type: 'numerical',  varName: 'weight'      },
+  { label: 'Garbage Type', type: 'categorical', varName: 'garbageType' },
+  { label: 'Count',        type: 'numerical',  varName: 'count'       },
+]
 
 // ── Default state ─────────────────────────────────────────────────────────────
 
@@ -407,28 +435,73 @@ export default function App() {
         )}
       </div>
 
-      {/* Right: properties panel */}
+      {/* Right: properties panel + pinned data variables */}
       <div style={{
         width: '260px', flexShrink: 0,
         borderLeft: '1px solid #E5E5EA',
-        background: '#FFFFFF', overflowY: 'auto',
+        background: '#FFFFFF',
+        display: 'flex', flexDirection: 'column',
       }}>
-        <PropertiesPanel
-          activeElement={activeElement}
-          compositionLevel={level}
-          markConfig={markConfig}        onMarkChange={setMarkConfig}
-          collection1Config={col1Config} onCollection1Change={setCol1Config}
-          collection2Config={col2Config} onCollection2Change={setCol2Config}
-          sceneConfig={sceneConfig}      onSceneChange={setSceneConfig}
-          bindings={bindings}            onBind={handleBind}
-          markLabelConfig={markLabelConfig}  onMarkLabelChange={setMarkLabelConfig}
-          colLabelConfig={colLabelConfig}    onColLabelChange={setColLabelConfig}
-          activeDecorationId={activeDecorationId}
-          decorations={decorations}
-          onDecorationChange={handleUpdateDecoration}
-          layers={layers}
-          onOpenData={() => setShowDataModal(true)}
-        />
+
+        {/* Scrollable properties */}
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          <PropertiesPanel
+            activeElement={activeElement}
+            compositionLevel={level}
+            markConfig={markConfig}        onMarkChange={setMarkConfig}
+            collection1Config={col1Config} onCollection1Change={setCol1Config}
+            collection2Config={col2Config} onCollection2Change={setCol2Config}
+            sceneConfig={sceneConfig}      onSceneChange={setSceneConfig}
+            bindings={bindings}            onBind={handleBind}
+            markLabelConfig={markLabelConfig}  onMarkLabelChange={setMarkLabelConfig}
+            colLabelConfig={colLabelConfig}    onColLabelChange={setColLabelConfig}
+            activeDecorationId={activeDecorationId}
+            decorations={decorations}
+            onDecorationChange={handleUpdateDecoration}
+          />
+        </div>
+
+        {/* Pinned data variables section */}
+        <div style={{ borderTop: '1px solid #E5E5EA', padding: '12px 14px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
+              Data Variables
+            </span>
+            <button
+              onClick={() => setShowDataModal(true)}
+              style={{ background: 'none', border: '1px solid #D1D1D6', borderRadius: '6px', padding: '3px 8px', fontSize: '11px', color: '#6C6C70', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Open Data
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {VAR_LIST.map(v => {
+              const activeKeys = (Object.keys(bindings) as Array<keyof DataBindings>)
+                .filter(k => bindings[k] === v.varName)
+              return (
+                <div key={v.varName} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <VarChip label={v.label} type={v.type} varName={v.varName} />
+                  {activeKeys.map(k => (
+                    <div key={k} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '3px',
+                      background: '#F2F2F7', border: '1px solid #D1D1D6',
+                      borderRadius: '5px', padding: '3px 5px 3px 8px',
+                      fontSize: '10px', color: '#6C6C70', fontWeight: '600',
+                    }}>
+                      <span style={{ color: '#AEAEB2', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>
+                      {BINDING_LABELS[k]}
+                      <button
+                        onClick={() => handleBind(k, null)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#AEAEB2', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
       </div>
 
       {/* Modals */}
