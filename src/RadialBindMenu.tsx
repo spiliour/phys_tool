@@ -65,25 +65,33 @@ export function RadialBindMenu({
   const colOpts:  MenuOption[] = []
 
   if (varType === 'categorical') {
-    markOpts.push({ action: 'bind', bindKey: 'markColor', label: 'Color', icon: '●', section: 'mark' })
-  } else {
     markOpts.push(
-      { action: 'bind', bindKey: 'markSizeX', label: 'X', icon: '↔', section: 'mark' },
-      { action: 'bind', bindKey: 'markSizeY', label: 'Y', icon: '↕', section: 'mark' },
+      { action: 'bind', bindKey: 'markColor', label: 'Color', icon: '●', section: 'mark' },
+      { action: 'label', label: 'Label', icon: 'Aa', section: 'mark' },
+    )
+  } else {
+    // Pushed bottom-first so arc renders X=top, Y, Z, Label=bottom
+    markOpts.push(
+      { action: 'label', label: 'Label', icon: 'Aa', section: 'mark' },
       { action: 'bind', bindKey: 'markSizeZ', label: 'Z', icon: '⊙', section: 'mark' },
+      { action: 'bind', bindKey: 'markSizeY', label: 'Y', icon: '↕', section: 'mark' },
+      { action: 'bind', bindKey: 'markSizeX', label: 'X', icon: '↔', section: 'mark' },
     )
     if (level >= 2) {
       colOpts.push(
-        { action: 'bind', bindKey: 'scatterSize',  label: 'Scatter Size', icon: '⊞', section: 'collection' },
-        { action: 'bind', bindKey: 'c1AlignCount', label: 'Align Count',  icon: '#',  section: 'collection' },
+        { action: 'bind', bindKey: 'scatterSize',  label: 'Scatter',  icon: '⊞', section: 'collection' },
+        { action: 'bind', bindKey: 'c1AlignCount', label: 'Count L1', icon: '#',  section: 'collection' },
       )
+      if (level >= 3) {
+        colOpts.push(
+          { action: 'bind', bindKey: 'c2AlignCount', label: 'Count L2', icon: '#', section: 'collection' },
+        )
+      }
     }
   }
 
-  markOpts.push({ action: 'label', label: 'Label', icon: 'Aa', section: 'mark' })
-
   const markPos = arcPositions(markOpts.length, 180, 100, RADIUS)
-  const colPos  = arcPositions(colOpts.length,  0,   80,  RADIUS)
+  const colPos  = arcPositions(colOpts.length,  0,   90,  RADIUS)
 
   const allItems = [
     ...markOpts.map((o, i) => ({ opt: o, pos: markPos[i] })),
