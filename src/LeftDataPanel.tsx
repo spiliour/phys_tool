@@ -124,17 +124,6 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
       display: 'flex', flexDirection: 'column', gap: '10px',
     }}>
 
-      {/* Header */}
-      <div>
-        <div style={{
-          fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase',
-          color: '#AEAEB2', marginBottom: '3px', fontWeight: '500',
-        }}>
-          Data Encoding
-        </div>
-        <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>Data Panel</div>
-      </div>
-
       {/* ── Data Table toggle ── */}
       <button
         onClick={() => setTableOpen(!tableOpen)}
