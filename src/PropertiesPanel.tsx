@@ -468,12 +468,7 @@ const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
 
 function PanelHeader({ title }: { title: string }) {
   return (
-    <div>
-      <div style={{ fontSize: '10px', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#AEAEB2', marginBottom: '3px', fontWeight: '500' }}>
-        Properties
-      </div>
-      <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>{title}</div>
-    </div>
+    <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>{title}</div>
   )
 }
 
