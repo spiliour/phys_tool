@@ -7,7 +7,6 @@ import {
   DataBindings, DataVariable, LabelConfig, LabelPosition,
   DecorationConfig,
 } from './types'
-import { MarkPreview } from './MarkPreview'
 import { MODEL_PRESETS } from './models'
 
 // ── Focal length utility ──────────────────────────────────────────────────────
@@ -16,14 +15,15 @@ export function focalLengthToFov(mm: number): number {
 }
 
 // ── Icon paths ────────────────────────────────────────────────────────────────
+const BASE = import.meta.env.BASE_URL
 const ICONS = {
-  spatial:     '/assets/icons/spatial.png',
-  shape:       '/assets/icons/shape.png',
-  material:    '/assets/icons/material.png',
-  structural:  '/assets/icons/structural.png',
-  populations: '/assets/icons/populations.png',
-  framing:     '/assets/icons/framing.png',
-  labels:      '/assets/icons/labels.png',
+  spatial:     `${BASE}assets/icons/spatial.png`,
+  shape:       `${BASE}assets/icons/shape.png`,
+  material:    `${BASE}assets/icons/material.png`,
+  structural:  `${BASE}assets/icons/structural.png`,
+  populations: `${BASE}assets/icons/populations.png`,
+  framing:     `${BASE}assets/icons/framing.png`,
+  labels:      `${BASE}assets/icons/labels.png`,
 }
 
 // ── Shared UI primitives ──────────────────────────────────────────────────────
@@ -633,7 +633,6 @@ function MarkProperties({
   return (
     <>
       <PanelHeader title="Mark" subtitle="individual particle" color="#F06951" />
-      <MarkPreview shape={config.shape} material={config.material} color={config.color} />
 
       {/* ── Spatial ── */}
       <AttributeCategory icon={ICONS.spatial} title="Spatial">
@@ -893,7 +892,6 @@ function DecorationProperties({
   return (
     <>
       <PanelHeader title="Decoration" subtitle="decorative element" color="#FF9500" />
-      <MarkPreview shape={config.shape} material={config.material} color={config.color} />
 
       {/* ── Spatial ── */}
       <AttributeCategory icon={ICONS.spatial} title="Spatial">
