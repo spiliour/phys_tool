@@ -83,8 +83,6 @@ export function VarChip({ label, type, varName }: VarChipProps) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
-  const [tableOpen, setTableOpen] = useState(true)
-  const totalWeight = layers.reduce((s, l) => s + Math.max(0, l.percentage), 0)
 
   function update(id: string, field: keyof LayerData, value: string | number) {
     onChange(layers.map((l) => (l.id === id ? { ...l, [field]: value } : l)))
@@ -124,111 +122,73 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
       display: 'flex', flexDirection: 'column', gap: '10px',
     }}>
 
-      {/* ── Data Table toggle ── */}
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #E5E5EA' }}>
+            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>Name</th>
+            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '46px' }}>Wt</th>
+            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '30px' }}>Col</th>
+            <th style={{ width: '52px' }} />
+          </tr>
+        </thead>
+        <tbody>
+          {layers.map((layer, i) => (
+            <tr
+              key={layer.id}
+              style={{ borderBottom: '1px solid #F2F2F7', background: i % 2 === 0 ? 'transparent' : '#FAFAFA' }}
+            >
+              <td style={cell}>
+                <input
+                  type="text"
+                  value={layer.name}
+                  onChange={(e) => update(layer.id, 'name', e.target.value)}
+                  style={inputBase}
+                />
+              </td>
+              <td style={cell}>
+                <input
+                  type="number"
+                  min={0} max={9999} step={1}
+                  value={layer.percentage}
+                  onChange={(e) => update(layer.id, 'percentage', Number(e.target.value))}
+                  style={{ ...inputBase, width: '40px' }}
+                />
+              </td>
+              <td style={cell}>
+                <input
+                  type="color"
+                  value={layer.color}
+                  onChange={(e) => update(layer.id, 'color', e.target.value)}
+                  style={{
+                    width: '26px', height: '24px',
+                    border: '1px solid #D1D1D6', borderRadius: '4px',
+                    background: 'none', cursor: 'pointer', padding: '1px',
+                  }}
+                />
+              </td>
+              <td style={{ ...cell, textAlign: 'right' }}>
+                <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
+                  <button onClick={() => moveTowardTop(i)}    disabled={i === 0}                    title="Move up"   style={iconBtn}>↑</button>
+                  <button onClick={() => moveTowardBottom(i)} disabled={i === layers.length - 1}    title="Move down" style={iconBtn}>↓</button>
+                  <button onClick={() => removeLayer(layer.id)} disabled={layers.length <= 1}       title="Remove"    style={{ ...iconBtn, color: '#FF3B30' }}>×</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
       <button
-        onClick={() => setTableOpen(!tableOpen)}
+        onClick={addLayer}
         style={{
-          display: 'flex', alignItems: 'center', gap: '6px',
-          background: 'none', border: 'none', cursor: 'pointer',
-          padding: '4px 0', fontFamily: 'inherit',
-          borderTop: '1px solid #E5E5EA', paddingTop: '10px', width: '100%',
-          textAlign: 'left',
+          background: '#F2F2F7', border: '1px solid #D1D1D6', color: '#6C6C70',
+          cursor: 'pointer', borderRadius: '8px', padding: '6px 12px',
+          fontSize: '12px', fontWeight: '500', alignSelf: 'flex-start',
+          fontFamily: 'inherit',
         }}
       >
-        <span style={{
-          fontSize: '10px', color: '#AEAEB2',
-          textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600',
-          flex: 1,
-        }}>
-          Data Table
-        </span>
-        <span style={{
-          fontSize: '11px', color: '#AEAEB2',
-          transition: 'transform 0.15s',
-          transform: tableOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
-          display: 'inline-block',
-        }}>
-          ▾
-        </span>
+        + Add Layer
       </button>
-
-      {/* ── Collapsible: table + controls ── */}
-      {tableOpen && (
-        <>
-          <div style={{ fontSize: '11px', color: '#8E8E93', marginTop: '-4px' }}>
-            Total weight: <span style={{ color: '#1D1D1F', fontWeight: '600' }}>{totalWeight.toFixed(1)}</span>
-          </div>
-
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #E5E5EA' }}>
-                <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>Name</th>
-                <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '46px' }}>Wt</th>
-                <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '30px' }}>Col</th>
-                <th style={{ width: '52px' }} />
-              </tr>
-            </thead>
-            <tbody>
-              {layers.map((layer, i) => (
-                <tr
-                  key={layer.id}
-                  style={{ borderBottom: '1px solid #F2F2F7', background: i % 2 === 0 ? 'transparent' : '#FAFAFA' }}
-                >
-                  <td style={cell}>
-                    <input
-                      type="text"
-                      value={layer.name}
-                      onChange={(e) => update(layer.id, 'name', e.target.value)}
-                      style={inputBase}
-                    />
-                  </td>
-                  <td style={cell}>
-                    <input
-                      type="number"
-                      min={0} max={9999} step={1}
-                      value={layer.percentage}
-                      onChange={(e) => update(layer.id, 'percentage', Number(e.target.value))}
-                      style={{ ...inputBase, width: '40px' }}
-                    />
-                  </td>
-                  <td style={cell}>
-                    <input
-                      type="color"
-                      value={layer.color}
-                      onChange={(e) => update(layer.id, 'color', e.target.value)}
-                      style={{
-                        width: '26px', height: '24px',
-                        border: '1px solid #D1D1D6', borderRadius: '4px',
-                        background: 'none', cursor: 'pointer', padding: '1px',
-                      }}
-                    />
-                  </td>
-                  <td style={{ ...cell, textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
-                      <button onClick={() => moveTowardTop(i)}    disabled={i === 0}                    title="Move up"   style={iconBtn}>↑</button>
-                      <button onClick={() => moveTowardBottom(i)} disabled={i === layers.length - 1}    title="Move down" style={iconBtn}>↓</button>
-                      <button onClick={() => removeLayer(layer.id)} disabled={layers.length <= 1}       title="Remove"    style={{ ...iconBtn, color: '#FF3B30' }}>×</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <button
-            onClick={addLayer}
-            style={{
-              background: '#F2F2F7', border: '1px solid #D1D1D6', color: '#6C6C70',
-              cursor: 'pointer', borderRadius: '8px', padding: '6px 12px',
-              fontSize: '12px', fontWeight: '500', alignSelf: 'flex-start',
-              fontFamily: 'inherit',
-            }}
-          >
-            + Add Layer
-          </button>
-
-        </>
-      )}
 
     </div>
   )

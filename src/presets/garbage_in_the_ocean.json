@@ -1,0 +1,124 @@
+{
+  "level": 3,
+  "activeElement": "mark",
+  "markConfig": {
+    "shape": "box",
+    "material": "metal",
+    "color": "#F06951",
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "size": {
+      "x": 4.6,
+      "y": 4.6,
+      "z": 4.6
+    },
+    "orientation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "structural": {
+      "deformation": "none",
+      "fluidDistort": 0.35,
+      "fluidSpeed": 1.5
+    }
+  },
+  "col1Config": {
+    "arrangement": "scattering",
+    "color": "#5E5CE6",
+    "alignCount": 5,
+    "alignAxis": "X",
+    "alignSpacing": 1.5,
+    "alignAnchor": "center",
+    "scatterCount": 310,
+    "scatterDimensions": {
+      "x": 13,
+      "y": 4,
+      "z": 8
+    },
+    "scatterDensity": 1
+  },
+  "col2Config": {
+    "arrangement": "alignment",
+    "color": "#9D9BF4",
+    "alignCount": 3,
+    "alignAxis": "Y",
+    "alignSpacing": 0.5,
+    "alignAnchor": "center",
+    "scatterCount": 30,
+    "scatterDimensions": {
+      "x": 20,
+      "y": 6,
+      "z": 8
+    },
+    "scatterDensity": 1
+  },
+  "sceneConfig": {
+    "background": "dark",
+    "hdriPreset": "sunset",
+    "focalLength": 130
+  },
+  "bindings": {
+    "markColor": "garbageType",
+    "scatterSize": "weight",
+    "c1AlignCount": null,
+    "c2AlignCount": "count",
+    "markSizeX": null,
+    "markSizeY": null,
+    "markSizeZ": null
+  },
+  "markLabelConfig": {
+    "show": false,
+    "slots": {
+      "top": null,
+      "bottom": null,
+      "left": null,
+      "right": null
+    }
+  },
+  "colLabelConfig": {
+    "show": true,
+    "slots": {
+      "top": null,
+      "bottom": null,
+      "left": "garbageType",
+      "right": "weight"
+    }
+  },
+  "decorations": [],
+  "layers": [
+    {
+      "id": "1",
+      "name": "Microplastics",
+      "percentage": 40,
+      "color": "#aaaaaa"
+    },
+    {
+      "id": "2",
+      "name": "Synthetic Fibres",
+      "percentage": 35,
+      "color": "#3355cc"
+    },
+    {
+      "id": "3",
+      "name": "Tyre Abrasion",
+      "percentage": 28,
+      "color": "#bbbb33"
+    },
+    {
+      "id": "4",
+      "name": "City Dust",
+      "percentage": 24,
+      "color": "#cc4422"
+    },
+    {
+      "id": "5",
+      "name": "Road Markings",
+      "percentage": 7,
+      "color": "#2233aa"
+    }
+  ]
+}

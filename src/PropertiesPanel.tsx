@@ -250,19 +250,18 @@ function LabelSlotsEditor({ config, onChange }: {
 
 interface AttributeCategoryProps {
   icon: string; title: string
-  defaultOpen?: boolean; children?: React.ReactNode; empty?: boolean
+  open?: boolean; onToggle?: () => void
+  children?: React.ReactNode; empty?: boolean
 }
 
-function AttributeCategory({ icon, title, defaultOpen = true, children, empty = false }: AttributeCategoryProps) {
-  const [open, setOpen] = useState(defaultOpen)
-
+function AttributeCategory({ icon, title, open = false, onToggle, children, empty = false }: AttributeCategoryProps) {
   return (
     <div style={{
       border: '1px solid #E5E5EA', borderRadius: '10px', overflow: 'hidden',
       boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
     }}>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={onToggle}
         style={{
           display: 'flex', alignItems: 'center', gap: '9px',
           padding: '9px 12px', width: '100%', textAlign: 'left',
@@ -284,6 +283,14 @@ function AttributeCategory({ icon, title, defaultOpen = true, children, empty = 
       )}
     </div>
   )
+}
+
+function useAccordion(initial: string) {
+  const [open, setOpen] = useState(initial)
+  return {
+    isOpen: (s: string) => open === s,
+    toggle: (s: string) => setOpen(o => o === s ? '' : s),
+  }
 }
 
 // ── Vec3 input with optional aspect-ratio lock and per-axis data binding ───────
@@ -630,13 +637,14 @@ function MarkProperties({
   const materialOptions: MarkMaterial[] = config.shape === 'custom' && config.customModelHasMat
     ? ['original', 'plastic', 'fluid', 'metal', 'emissive']
     : MATERIAL_OPTIONS
+  const acc = useAccordion('Spatial')
 
   return (
     <>
       <PanelHeader title="Mark" subtitle="individual particle" color="#F06951" />
 
       {/* ── Spatial ── */}
-      <AttributeCategory icon={ICONS.spatial} title="Spatial">
+      <AttributeCategory icon={ICONS.spatial} title="Spatial" open={acc.isOpen('Spatial')} onToggle={() => acc.toggle('Spatial')}>
         <Vec3Input label="Position"    value={config.position}    onChange={(v) => onChange({ ...config, position: v })}    min={-10} max={10}  step={0.1} />
         <Vec3Input
           label="Size"
@@ -653,7 +661,7 @@ function MarkProperties({
       </AttributeCategory>
 
       {/* ── Geometry ── */}
-      <AttributeCategory icon={ICONS.shape} title="Geometry">
+      <AttributeCategory icon={ICONS.shape} title="Geometry" open={acc.isOpen('Geometry')} onToggle={() => acc.toggle('Geometry')}>
         <Row label="Shape">
           <ShapeDropdown
             config={config}
@@ -663,7 +671,7 @@ function MarkProperties({
       </AttributeCategory>
 
       {/* ── Material ── */}
-      <AttributeCategory icon={ICONS.material} title="Material">
+      <AttributeCategory icon={ICONS.material} title="Material" open={acc.isOpen('Material')} onToggle={() => acc.toggle('Material')}>
         <Row label="Type">
           <select
             value={config.material}
@@ -696,7 +704,7 @@ function MarkProperties({
       </AttributeCategory>
 
       {/* ── Structural ── */}
-      <AttributeCategory icon={ICONS.structural} title="Structural" defaultOpen={false}>
+      <AttributeCategory icon={ICONS.structural} title="Structural" open={acc.isOpen('Structural')} onToggle={() => acc.toggle('Structural')}>
         <StructuralSection
           structural={config.structural}
           onChange={(s) => onChange({ ...config, structural: s })}
@@ -704,7 +712,7 @@ function MarkProperties({
       </AttributeCategory>
 
       {/* ── Labels ── */}
-      <AttributeCategory icon={ICONS.labels} title="Labels" defaultOpen={false}>
+      <AttributeCategory icon={ICONS.labels} title="Labels" open={acc.isOpen('Labels')} onToggle={() => acc.toggle('Labels')}>
         <LabelSlotsEditor config={labelConfig} onChange={onLabelChange} />
       </AttributeCategory>
     </>
@@ -725,6 +733,7 @@ function CollectionProperties({
   onLabelChange?:  (c: LabelConfig) => void
 }) {
   const isL2 = collectionLevel === 2
+  const acc = useAccordion('Groups & Populations')
 
   return (
     <>
@@ -734,7 +743,7 @@ function CollectionProperties({
         color={isL2 ? '#9D9BF4' : '#5E5CE6'}
       />
 
-      <AttributeCategory icon={ICONS.populations} title="Groups & Populations">
+      <AttributeCategory icon={ICONS.populations} title="Groups & Populations" open={acc.isOpen('Groups & Populations')} onToggle={() => acc.toggle('Groups & Populations')}>
 
         <Row label="Arrangement">
           <select
@@ -870,7 +879,7 @@ function CollectionProperties({
 
       {/* ── Labels (level 1 only) ── */}
       {collectionLevel === 1 && labelConfig && onLabelChange && (
-        <AttributeCategory icon={ICONS.labels} title="Labels" defaultOpen={false}>
+        <AttributeCategory icon={ICONS.labels} title="Labels" open={acc.isOpen('Labels')} onToggle={() => acc.toggle('Labels')}>
           <LabelSlotsEditor config={labelConfig} onChange={onLabelChange} />
         </AttributeCategory>
       )}
@@ -889,20 +898,21 @@ function DecorationProperties({
   const materialOptions: MarkMaterial[] = config.shape === 'custom' && config.customModelHasMat
     ? ['original', 'plastic', 'fluid', 'metal', 'emissive']
     : MATERIAL_OPTIONS
+  const acc = useAccordion('Spatial')
 
   return (
     <>
       <PanelHeader title="Decoration" subtitle="decorative element" color="#FF9500" />
 
       {/* ── Spatial ── */}
-      <AttributeCategory icon={ICONS.spatial} title="Spatial">
+      <AttributeCategory icon={ICONS.spatial} title="Spatial" open={acc.isOpen('Spatial')} onToggle={() => acc.toggle('Spatial')}>
         <Vec3Input label="Position"    value={config.position}    onChange={(v) => onChange({ ...config, position: v })}    min={-20} max={20}  step={0.1} />
         <Vec3Input label="Size"        value={config.size}        onChange={(v) => onChange({ ...config, size: v })}        min={0.1} max={10}  step={0.1} lockable />
         <Vec3Input label="Orientation" value={config.orientation} onChange={(v) => onChange({ ...config, orientation: v })} min={-180} max={180} step={1} />
       </AttributeCategory>
 
       {/* ── Geometry ── */}
-      <AttributeCategory icon={ICONS.shape} title="Geometry">
+      <AttributeCategory icon={ICONS.shape} title="Geometry" open={acc.isOpen('Geometry')} onToggle={() => acc.toggle('Geometry')}>
         <Row label="Shape">
           <ShapeDropdown
             config={config}
@@ -912,7 +922,7 @@ function DecorationProperties({
       </AttributeCategory>
 
       {/* ── Material ── */}
-      <AttributeCategory icon={ICONS.material} title="Material">
+      <AttributeCategory icon={ICONS.material} title="Material" open={acc.isOpen('Material')} onToggle={() => acc.toggle('Material')}>
         <Row label="Type">
           <select
             value={config.material}
@@ -938,7 +948,7 @@ function DecorationProperties({
       </AttributeCategory>
 
       {/* ── Structural ── */}
-      <AttributeCategory icon={ICONS.structural} title="Structural" defaultOpen={false}>
+      <AttributeCategory icon={ICONS.structural} title="Structural" open={acc.isOpen('Structural')} onToggle={() => acc.toggle('Structural')}>
         <StructuralSection
           structural={config.structural}
           onChange={(s) => onChange({ ...config, structural: s })}
