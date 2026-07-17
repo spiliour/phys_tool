@@ -68,9 +68,9 @@ export function RadialBindMenu({
     markOpts.push({ action: 'bind', bindKey: 'markColor', label: 'Color', icon: '●', section: 'mark' })
   } else {
     markOpts.push(
-      { action: 'bind', bindKey: 'markSizeX', label: 'Width',  icon: '↔', section: 'mark' },
-      { action: 'bind', bindKey: 'markSizeY', label: 'Height', icon: '↕', section: 'mark' },
-      { action: 'bind', bindKey: 'markSizeZ', label: 'Depth',  icon: '⊙', section: 'mark' },
+      { action: 'bind', bindKey: 'markSizeX', label: 'X', icon: '↔', section: 'mark' },
+      { action: 'bind', bindKey: 'markSizeY', label: 'Y', icon: '↕', section: 'mark' },
+      { action: 'bind', bindKey: 'markSizeZ', label: 'Z', icon: '⊙', section: 'mark' },
     )
     if (level >= 2) {
       colOpts.push(
@@ -125,9 +125,9 @@ export function RadialBindMenu({
           }} />
         )}
 
-        {/* Section labels */}
+        {/* Section labels — flanking center */}
         <div style={{
-          position: 'absolute', left: -(RADIUS + 16), top: -(RADIUS + 28),
+          position: 'absolute', left: -6, top: -22,
           fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
           textTransform: 'uppercase', color: '#007AFF',
           whiteSpace: 'nowrap', textAlign: 'right',
@@ -138,7 +138,7 @@ export function RadialBindMenu({
 
         {hasCollection && (
           <div style={{
-            position: 'absolute', left: (RADIUS + 16), top: -(RADIUS + 28),
+            position: 'absolute', left: 6, top: -22,
             fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
             textTransform: 'uppercase', color: '#5E5CE6',
             whiteSpace: 'nowrap',
