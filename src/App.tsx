@@ -146,6 +146,10 @@ export default function App() {
       }
       return next
     })
+    // Auto-sync alignment count to number of data rows when any binding is made
+    if (variable !== null) {
+      setCol1Config((prev) => ({ ...prev, alignCount: layers.length }))
+    }
   }
 
   function handleBindLabel(section: 'mark' | 'collection', variable: DataVariable) {
@@ -483,15 +487,15 @@ export default function App() {
                   {activeKeys.map(k => (
                     <div key={k} style={{
                       display: 'inline-flex', alignItems: 'center', gap: '3px',
-                      background: '#F2F2F7', border: '1px solid #D1D1D6',
+                      background: '#EBF3FF', border: '1px solid #A8CAFF',
                       borderRadius: '5px', padding: '3px 5px 3px 8px',
-                      fontSize: '10px', color: '#6C6C70', fontWeight: '600',
+                      fontSize: '10px', color: '#007AFF', fontWeight: '600',
                     }}>
-                      <span style={{ color: '#AEAEB2', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>
+                      <span style={{ color: '#60A0EE', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>
                       {BINDING_LABELS[k]}
                       <button
                         onClick={() => handleBind(k, null)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#AEAEB2', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60A0EE', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
                       >×</button>
                     </div>
                   ))}

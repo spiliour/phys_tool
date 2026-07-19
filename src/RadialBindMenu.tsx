@@ -79,12 +79,13 @@ export function RadialBindMenu({
     )
     if (level >= 2) {
       colOpts.push(
-        { action: 'bind', bindKey: 'scatterSize',  label: 'Scatter',  icon: '⊞', section: 'collection' },
-        { action: 'bind', bindKey: 'c1AlignCount', label: 'Count L1', icon: '#',  section: 'collection' },
+        { action: 'label', label: 'Label', icon: 'Aa', section: 'collection' },
+        { action: 'bind', bindKey: 'scatterSize',  label: 'Scatter', icon: '⊞', section: 'collection' },
+        { action: 'bind', bindKey: 'c1AlignCount', label: 'Count',   icon: '#',  section: 'collection' },
       )
       if (level >= 3) {
         colOpts.push(
-          { action: 'bind', bindKey: 'c2AlignCount', label: 'Count L2', icon: '#', section: 'collection' },
+          { action: 'bind', bindKey: 'c2AlignCount', label: 'Count', icon: '#', section: 'collection' },
         )
       }
     }
