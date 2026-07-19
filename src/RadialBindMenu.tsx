@@ -192,9 +192,18 @@ export function RadialBindMenu({
   // ── Sub-step: Label position card ─────────────────────────────────────────
 
   if (step === 'labelPos') {
+    const btnStyle: React.CSSProperties = {
+      ...subBtnBase,
+      justifyContent: 'center',
+      width: '88px', height: '34px',
+      padding: '0 8px',
+      whiteSpace: 'nowrap',
+      flexShrink: 0,
+    }
     const posBtn = (key: keyof LabelSlots, icon: string, label: string) => (
       <button
-        style={{ ...subBtnBase, justifyContent: 'center', gap: '4px', padding: '7px 10px' }}
+        key={key}
+        style={btnStyle}
         onClick={() => { onBindLabel(pendingSection, varName, key); onClose() }}
         onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
         onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
@@ -205,7 +214,7 @@ export function RadialBindMenu({
     return (
       <>
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }} onClick={() => setStep('radial')} />
-        <div style={{ ...cardStyle, left: x - 75, top: y - 110 }}>
+        <div style={{ ...cardStyle, left: x - 100, top: y - 110 }}>
           <CardHeader>Label position</CardHeader>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
             {posBtn('top', '↑', 'Top')}
