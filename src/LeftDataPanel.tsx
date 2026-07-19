@@ -50,11 +50,7 @@ interface VarChipProps {
 }
 
 export function VarChip({ label, type, varName }: VarChipProps) {
-  const isNum  = type === 'numerical'
-  const accent = isNum ? '#007AFF' : '#5E5CE6'
-  const bg     = isNum ? '#EBF3FF' : '#F3EBFF'
-  const border = isNum ? '#A8CAFF' : '#C8A8FF'
-  const mime   = `phys-var/${type}`
+  const mime = `phys-var/${type}`
 
   return (
     <div
@@ -67,13 +63,12 @@ export function VarChip({ label, type, varName }: VarChipProps) {
       title={`Drag to bind ${label}`}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: '5px',
-        background: bg, border: `1px solid ${border}`,
+        background: '#F2F2F7', border: '1px solid #D1D1D6',
         borderRadius: '7px', padding: '6px 10px',
-        fontSize: '11px', color: accent, fontWeight: '600',
+        fontSize: '11px', color: '#1D1D1F', fontWeight: '600',
         cursor: 'grab', userSelect: 'none', whiteSpace: 'nowrap',
       }}
     >
-      <span style={{ fontSize: '10px', opacity: 0.7 }}>{isNum ? '#' : '◈'}</span>
       {label}
     </div>
   )
