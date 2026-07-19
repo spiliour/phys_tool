@@ -113,7 +113,9 @@ export default function App() {
   })
   const [markLabelConfig, setMarkLabelConfig] = useState<LabelConfig>(DEFAULT_LABEL)
   const [colLabelConfig,  setColLabelConfig]  = useState<LabelConfig>(DEFAULT_LABEL)
-  const [colorMode, setColorMode] = useState<'distinct' | 'continuous'>('distinct')
+  const [colorMode,     setColorMode]     = useState<'distinct' | 'continuous'>('distinct')
+  const [colorGradient, setColorGradient] = useState({ from: '#EE6655', to: '#4488EE' })
+  const [markOpenSection, setMarkOpenSection] = useState<string | undefined>(undefined)
   const [decorations,        setDecorations]        = useState<DecorationConfig[]>([])
   const [activeDecorationId, setActiveDecorationId] = useState<string | null>(null)
 
@@ -156,6 +158,10 @@ export default function App() {
   function handleColorBind(variable: DataVariable, mode: 'distinct' | 'continuous') {
     setColorMode(mode)
     handleBind('markColor', variable)
+    if (mode === 'continuous') {
+      setActiveElement('mark')
+      setMarkOpenSection('Material')
+    }
   }
 
   function handleBindLabel(section: 'mark' | 'collection', variable: DataVariable, position: keyof LabelSlots) {
@@ -467,6 +473,10 @@ export default function App() {
             activeDecorationId={activeDecorationId}
             decorations={decorations}
             onDecorationChange={handleUpdateDecoration}
+            colorMode={colorMode}
+            colorGradient={colorGradient}
+            onColorGradientChange={setColorGradient}
+            markOpenSection={markOpenSection}
           />
         </div>
 

@@ -192,29 +192,28 @@ export function RadialBindMenu({
   // ── Sub-step: Label position card ─────────────────────────────────────────
 
   if (step === 'labelPos') {
-    const positions: { key: keyof LabelSlots; label: string; icon: string }[] = [
-      { key: 'top',    label: 'Top',    icon: '↑' },
-      { key: 'right',  label: 'Right',  icon: '→' },
-      { key: 'bottom', label: 'Bottom', icon: '↓' },
-      { key: 'left',   label: 'Left',   icon: '←' },
-    ]
+    const posBtn = (key: keyof LabelSlots, icon: string, label: string) => (
+      <button
+        style={{ ...subBtnBase, justifyContent: 'center', gap: '4px', padding: '7px 10px' }}
+        onClick={() => { onBindLabel(pendingSection, varName, key); onClose() }}
+        onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
+        onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+      >
+        {icon} {label}
+      </button>
+    )
     return (
       <>
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }} onClick={() => setStep('radial')} />
-        <div style={{ ...cardStyle, left: x - 75, top: y - 100 }}>
+        <div style={{ ...cardStyle, left: x - 75, top: y - 110 }}>
           <CardHeader>Label position</CardHeader>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
-            {positions.map(p => (
-              <button
-                key={p.key}
-                style={{ ...subBtnBase, justifyContent: 'center', gap: '5px' }}
-                onClick={() => { onBindLabel(pendingSection, varName, p.key); onClose() }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
-                onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
-              >
-                <span>{p.icon}</span> {p.label}
-              </button>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+            {posBtn('top', '↑', 'Top')}
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {posBtn('left',  '←', 'Left')}
+              {posBtn('right', '→', 'Right')}
+            </div>
+            {posBtn('bottom', '↓', 'Bottom')}
           </div>
         </div>
       </>

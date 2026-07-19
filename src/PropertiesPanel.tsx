@@ -1,12 +1,18 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   ActiveElement, CompositionLevel,
   MarkConfig, CollectionConfig, SceneConfig,
   MarkShape, MarkMaterial, HdriPreset, Vec3,
   StructuralDeformation, CollectionArrangement,
   DataBindings, DataVariable, LabelConfig, LabelPosition,
-  DecorationConfig,
+  LabelSlots, DecorationConfig,
 } from './types'
+
+const VAR_LABELS: Record<string, { label: string; type: 'numerical' | 'categorical' }> = {
+  weight:      { label: 'Weight',       type: 'numerical'   },
+  garbageType: { label: 'Garbage Type', type: 'categorical' },
+  count:       { label: 'Count',        type: 'numerical'   },
+}
 import { MODEL_PRESETS } from './models'
 
 // ── Focal length utility ──────────────────────────────────────────────────────
@@ -129,20 +135,17 @@ function DropZone({ children, accepts, onDrop }: {
 function BoundChip({ label, type, onClear }: {
   label: string; type: 'numerical' | 'categorical'; onClear: () => void
 }) {
-  const isNum  = type === 'numerical'
-  const accent = isNum ? '#007AFF' : '#5E5CE6'
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: '6px',
-      background: isNum ? '#EBF3FF' : '#F3EBFF',
-      border: `1px solid ${isNum ? '#A8CAFF' : '#C8A8FF'}`,
+      background: '#EBF3FF', border: '1px solid #A8CAFF',
       borderRadius: '7px', padding: '6px 10px',
-      fontSize: '12px', color: accent, fontWeight: '500',
+      fontSize: '12px', color: '#007AFF', fontWeight: '500',
     }}>
-      <span>{isNum ? '#' : '◈'} {label}</span>
+      <span>{type === 'numerical' ? '#' : '◈'} {label}</span>
       <button onClick={onClear} style={{
         background: 'none', border: 'none', cursor: 'pointer',
-        color: '#AEAEB2', padding: '0 0 0 2px',
+        color: '#60A0EE', padding: '0 0 0 2px',
         fontSize: '14px', lineHeight: 1, fontFamily: 'inherit',
       }}>×</button>
     </div>
@@ -284,8 +287,11 @@ function AttributeCategory({ icon, title, open = false, onToggle, children, empt
   )
 }
 
-function useAccordion(initial: string) {
+function useAccordion(initial: string, jumpTo?: string) {
   const [open, setOpen] = useState(initial)
+  useEffect(() => {
+    if (jumpTo !== undefined) setOpen(jumpTo)
+  }, [jumpTo])
   return {
     isOpen: (s: string) => open === s,
     toggle: (s: string) => setOpen(o => o === s ? '' : s),
@@ -614,6 +620,7 @@ function ShapeDropdown({ config, onChange }: {
 
 function MarkProperties({
   config, onChange, bindings, onBind, labelConfig, onLabelChange,
+  colorMode, colorGradient, onColorGradientChange, openSection,
 }: {
   config:         MarkConfig
   onChange:       (c: MarkConfig) => void
@@ -621,11 +628,15 @@ function MarkProperties({
   onBind:         (attr: keyof DataBindings, v: DataVariable | null) => void
   labelConfig:    LabelConfig
   onLabelChange:  (c: LabelConfig) => void
+  colorMode?:              'distinct' | 'continuous'
+  colorGradient?:          { from: string; to: string }
+  onColorGradientChange?:  (g: { from: string; to: string }) => void
+  openSection?:            string
 }) {
   const materialOptions: MarkMaterial[] = config.shape === 'custom' && config.customModelHasMat
     ? ['original', 'plastic', 'fluid', 'metal', 'emissive']
     : MATERIAL_OPTIONS
-  const acc = useAccordion('Spatial')
+  const acc = useAccordion('Spatial', openSection)
 
   return (
     <>
@@ -674,10 +685,30 @@ function MarkProperties({
         </Row>
 
         <Row label="Color">
-          {bindings.markColor === 'garbageType' ? (
-            <BoundChip label="Garbage Type" type="categorical" onClear={() => onBind('markColor', null)} />
+          {bindings.markColor !== null ? (
+            <>
+              <BoundChip
+                label={VAR_LABELS[bindings.markColor]?.label ?? bindings.markColor}
+                type={VAR_LABELS[bindings.markColor]?.type ?? 'categorical'}
+                onClear={() => onBind('markColor', null)}
+              />
+              {colorMode === 'continuous' && colorGradient && onColorGradientChange && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+                  <input type="color" value={colorGradient.from}
+                    onChange={(e) => onColorGradientChange({ ...colorGradient, from: e.target.value })}
+                    style={{ width: '32px', height: '28px', border: '1px solid #D1D1D6', borderRadius: '5px', background: 'none', cursor: 'pointer', padding: '1px' }}
+                  />
+                  <span style={{ fontSize: '12px', color: '#AEAEB2', fontWeight: '500' }}>→</span>
+                  <input type="color" value={colorGradient.to}
+                    onChange={(e) => onColorGradientChange({ ...colorGradient, to: e.target.value })}
+                    style={{ width: '32px', height: '28px', border: '1px solid #D1D1D6', borderRadius: '5px', background: 'none', cursor: 'pointer', padding: '1px' }}
+                  />
+                  <span style={{ fontSize: '11px', color: '#8E8E93' }}>Gradient</span>
+                </div>
+              )}
+            </>
           ) : (
-            <DropZone accepts="categorical" onDrop={() => onBind('markColor', 'garbageType')} >
+            <DropZone accepts="categorical" onDrop={() => onBind('markColor', 'garbageType')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '2px' }}>
                 <input
                   type="color" value={config.color}
@@ -1013,25 +1044,29 @@ function SceneProperties({
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface PropertiesPanelProps {
-  activeElement:       ActiveElement
-  compositionLevel:    CompositionLevel
-  markConfig:          MarkConfig
-  onMarkChange:        (c: MarkConfig) => void
-  collection1Config:   CollectionConfig
-  onCollection1Change: (c: CollectionConfig) => void
-  collection2Config:   CollectionConfig
-  onCollection2Change: (c: CollectionConfig) => void
-  sceneConfig:         SceneConfig
-  onSceneChange:       (c: SceneConfig) => void
-  bindings:            DataBindings
-  onBind:              (attr: keyof DataBindings, variable: DataVariable | null) => void
-  markLabelConfig:     LabelConfig
-  onMarkLabelChange:   (c: LabelConfig) => void
-  colLabelConfig:      LabelConfig
-  onColLabelChange:    (c: LabelConfig) => void
-  activeDecorationId:  string | null
-  decorations:         DecorationConfig[]
-  onDecorationChange:  (c: DecorationConfig) => void
+  activeElement:         ActiveElement
+  compositionLevel:      CompositionLevel
+  markConfig:            MarkConfig
+  onMarkChange:          (c: MarkConfig) => void
+  collection1Config:     CollectionConfig
+  onCollection1Change:   (c: CollectionConfig) => void
+  collection2Config:     CollectionConfig
+  onCollection2Change:   (c: CollectionConfig) => void
+  sceneConfig:           SceneConfig
+  onSceneChange:         (c: SceneConfig) => void
+  bindings:              DataBindings
+  onBind:                (attr: keyof DataBindings, variable: DataVariable | null) => void
+  markLabelConfig:       LabelConfig
+  onMarkLabelChange:     (c: LabelConfig) => void
+  colLabelConfig:        LabelConfig
+  onColLabelChange:      (c: LabelConfig) => void
+  activeDecorationId:    string | null
+  decorations:           DecorationConfig[]
+  onDecorationChange:    (c: DecorationConfig) => void
+  colorMode:             'distinct' | 'continuous'
+  colorGradient:         { from: string; to: string }
+  onColorGradientChange: (g: { from: string; to: string }) => void
+  markOpenSection?:      string
 }
 
 export function PropertiesPanel({
@@ -1044,6 +1079,7 @@ export function PropertiesPanel({
   markLabelConfig, onMarkLabelChange,
   colLabelConfig,  onColLabelChange,
   activeDecorationId, decorations, onDecorationChange,
+  colorMode, colorGradient, onColorGradientChange, markOpenSection,
 }: PropertiesPanelProps) {
   const activeDec = activeDecorationId !== null
     ? decorations.find((d) => d.id === activeDecorationId) ?? null
@@ -1062,6 +1098,10 @@ export function PropertiesPanel({
           config={markConfig} onChange={onMarkChange}
           bindings={bindings} onBind={onBind}
           labelConfig={markLabelConfig} onLabelChange={onMarkLabelChange}
+          colorMode={colorMode}
+          colorGradient={colorGradient}
+          onColorGradientChange={onColorGradientChange}
+          openSection={markOpenSection}
         />
       ) : activeElement === 'collection1' ? (
         <CollectionProperties
