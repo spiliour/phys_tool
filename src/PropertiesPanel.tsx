@@ -748,25 +748,42 @@ function CollectionProperties({
         {config.arrangement === 'alignment' && (
           <>
             <Row label="Elements">
-              {(collectionLevel === 1 ? bindings.c1AlignCount : bindings.c2AlignCount) === 'count' ? (
-                <BoundChip
-                  label="Count"
-                  type="numerical"
-                  onClear={() => onBind(collectionLevel === 1 ? 'c1AlignCount' : 'c2AlignCount', null)}
-                />
-              ) : (
-                <DropZone
-                  accepts="numerical"
-                  onDrop={() => onBind(collectionLevel === 1 ? 'c1AlignCount' : 'c2AlignCount', 'count')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input type="range" min={2} max={20} step={1} value={config.alignCount}
-                      onChange={(e) => onChange({ ...config, alignCount: Number(e.target.value) })}
-                      style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
-                    <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{config.alignCount}</span>
-                  </div>
-                </DropZone>
-              )}
+              {(() => {
+                const boundKey = collectionLevel === 1 ? 'c1AlignCount' : 'c2AlignCount'
+                const boundVar = bindings[boundKey]
+                const anyBound = Object.values(bindings).some(v => v !== null)
+                const VAR_META: Record<string, { label: string; type: 'numerical' | 'categorical' }> = {
+                  weight:      { label: 'Weight',       type: 'numerical'   },
+                  garbageType: { label: 'Garbage Type', type: 'categorical' },
+                  count:       { label: 'Count',        type: 'numerical'   },
+                }
+                if (boundVar !== null) {
+                  const meta = VAR_META[boundVar] ?? { label: boundVar, type: 'numerical' as const }
+                  return <BoundChip label={meta.label} type={meta.type} onClear={() => onBind(boundKey, null)} />
+                }
+                if (anyBound) {
+                  return (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      background: '#F2F2F7', border: '1px solid #E5E5EA',
+                      borderRadius: '7px', padding: '5px 10px',
+                    }}>
+                      <span style={{ fontSize: '12px', color: '#1D1D1F', fontWeight: '600', flex: 1 }}>{config.alignCount}</span>
+                      <span style={{ fontSize: '9px', color: '#AEAEB2', letterSpacing: '0.06em', fontWeight: '600' }}>DATA</span>
+                    </div>
+                  )
+                }
+                return (
+                  <DropZone accepts="numerical" onDrop={() => onBind(boundKey, 'count')}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input type="range" min={2} max={20} step={1} value={config.alignCount}
+                        onChange={(e) => onChange({ ...config, alignCount: Number(e.target.value) })}
+                        style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+                      <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{config.alignCount}</span>
+                    </div>
+                  </DropZone>
+                )
+              })()}
             </Row>
             <Row label="Axis">
               <SegmentedControl
