@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import {
   CompositionLevel, ActiveElement,
   MarkConfig, CollectionConfig, SceneConfig, LayerData,
-  DataBindings, DataVariable, LabelConfig, DecorationConfig,
+  DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig,
 } from './types'
 import { HierarchyPanel }    from './HierarchyPanel'
 import { PropertiesPanel }   from './PropertiesPanel'
@@ -113,6 +113,7 @@ export default function App() {
   })
   const [markLabelConfig, setMarkLabelConfig] = useState<LabelConfig>(DEFAULT_LABEL)
   const [colLabelConfig,  setColLabelConfig]  = useState<LabelConfig>(DEFAULT_LABEL)
+  const [colorMode, setColorMode] = useState<'distinct' | 'continuous'>('distinct')
   const [decorations,        setDecorations]        = useState<DecorationConfig[]>([])
   const [activeDecorationId, setActiveDecorationId] = useState<string | null>(null)
 
@@ -152,10 +153,15 @@ export default function App() {
     }
   }
 
-  function handleBindLabel(section: 'mark' | 'collection', variable: DataVariable) {
+  function handleColorBind(variable: DataVariable, mode: 'distinct' | 'continuous') {
+    setColorMode(mode)
+    handleBind('markColor', variable)
+  }
+
+  function handleBindLabel(section: 'mark' | 'collection', variable: DataVariable, position: keyof LabelSlots) {
     const updater = (prev: LabelConfig) => ({
       ...prev, show: true,
-      slots: { ...prev.slots, top: variable },
+      slots: { ...prev.slots, [position]: variable },
     })
     if (section === 'mark') setMarkLabelConfig(updater)
     else setColLabelConfig(updater)
@@ -556,6 +562,7 @@ export default function App() {
           varType={radialMenu.varType}
           level={level}
           onBind={handleBind}
+          onColorBind={handleColorBind}
           onBindLabel={handleBindLabel}
           onClose={() => setRadialMenu(null)}
         />

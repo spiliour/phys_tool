@@ -69,6 +69,7 @@ export function VarChip({ label, type, varName }: VarChipProps) {
         cursor: 'grab', userSelect: 'none', whiteSpace: 'nowrap',
       }}
     >
+      <span style={{ fontSize: '10px', color: '#8E8E93' }}>{type === 'numerical' ? '#' : '◈'}</span>
       {label}
     </div>
   )

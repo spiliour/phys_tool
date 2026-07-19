@@ -86,13 +86,13 @@ export interface LabelSlots {
 export type DataVariable = 'weight' | 'garbageType' | 'count'
 
 export interface DataBindings {
-  markColor:    'garbageType' | null
-  scatterSize:  'weight'      | null
-  c1AlignCount: 'count'       | null
-  c2AlignCount: 'count'       | null
-  markSizeX:    DataVariable  | null
-  markSizeY:    DataVariable  | null
-  markSizeZ:    DataVariable  | null
+  markColor:    DataVariable | null
+  scatterSize:  DataVariable | null
+  c1AlignCount: DataVariable | null
+  c2AlignCount: DataVariable | null
+  markSizeX:    DataVariable | null
+  markSizeY:    DataVariable | null
+  markSizeZ:    DataVariable | null
 }
 
 export interface LabelConfig {

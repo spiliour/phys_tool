@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react'
-import { DataBindings, DataVariable, CompositionLevel } from './types'
+import React, { useEffect, useState } from 'react'
+import { DataBindings, DataVariable, CompositionLevel, LabelSlots } from './types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,27 +38,68 @@ function arcPositions(n: number, centerDeg: number, spreadDeg: number, r: number
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface RadialBindMenuProps {
-  x:           number
-  y:           number
-  varName:     DataVariable
-  varType:     'numerical' | 'categorical'
-  level:       CompositionLevel
-  onBind:      (attr: keyof DataBindings, variable: DataVariable) => void
-  onBindLabel: (section: 'mark' | 'collection', variable: DataVariable) => void
-  onClose:     () => void
+  x:            number
+  y:            number
+  varName:      DataVariable
+  varType:      'numerical' | 'categorical'
+  level:        CompositionLevel
+  onBind:       (attr: keyof DataBindings, variable: DataVariable) => void
+  onColorBind:  (variable: DataVariable, mode: 'distinct' | 'continuous') => void
+  onBindLabel:  (section: 'mark' | 'collection', variable: DataVariable, position: keyof LabelSlots) => void
+  onClose:      () => void
+}
+
+// ── Sub-step card ─────────────────────────────────────────────────────────────
+
+const cardStyle: React.CSSProperties = {
+  position: 'fixed',
+  background: '#fff',
+  borderRadius: '14px',
+  boxShadow: '0 6px 28px rgba(0,0,0,0.22)',
+  padding: '12px 14px',
+  zIndex: 1002,
+  pointerEvents: 'all',
+  minWidth: '150px',
+}
+
+const subBtnBase: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '8px',
+  width: '100%', textAlign: 'left',
+  background: '#F2F2F7', border: '1px solid #E5E5EA',
+  borderRadius: '8px', padding: '8px 12px',
+  fontSize: '12px', fontWeight: '500', color: '#1D1D1F',
+  cursor: 'pointer', fontFamily: 'inherit',
+  transition: 'background 0.12s',
+}
+
+function CardHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: '10px', color: '#AEAEB2', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>
+      {children}
+    </div>
+  )
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function RadialBindMenu({
-  x, y, varName, varType, level, onBind, onBindLabel, onClose,
+  x, y, varName, varType, level, onBind, onColorBind, onBindLabel, onClose,
 }: RadialBindMenuProps) {
 
+  type Step = 'radial' | 'colorMode' | 'labelPos'
+  const [step, setStep] = useState<Step>('radial')
+  const [pendingSection, setPendingSection] = useState<'mark' | 'collection'>('mark')
+
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        if (step !== 'radial') setStep('radial')
+        else onClose()
+      }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [step, onClose])
 
   // Build option lists
   const markOpts: MenuOption[] = []
@@ -66,22 +107,21 @@ export function RadialBindMenu({
 
   if (varType === 'categorical') {
     markOpts.push(
-      { action: 'bind', bindKey: 'markColor', label: 'Color', icon: '●', section: 'mark' },
+      { action: 'bind',  bindKey: 'markColor', label: 'Color', icon: '●', section: 'mark' },
       { action: 'label', label: 'Label', icon: 'Aa', section: 'mark' },
     )
   } else {
-    // Pushed bottom-first so arc renders X=top, Y, Z, Label=bottom
     markOpts.push(
       { action: 'label', label: 'Label', icon: 'Aa', section: 'mark' },
-      { action: 'bind', bindKey: 'markSizeZ', label: 'Z', icon: '⊙', section: 'mark' },
-      { action: 'bind', bindKey: 'markSizeY', label: 'Y', icon: '↕', section: 'mark' },
-      { action: 'bind', bindKey: 'markSizeX', label: 'X', icon: '↔', section: 'mark' },
+      { action: 'bind',  bindKey: 'markSizeZ', label: 'Z', icon: '⊙', section: 'mark' },
+      { action: 'bind',  bindKey: 'markSizeY', label: 'Y', icon: '↕', section: 'mark' },
+      { action: 'bind',  bindKey: 'markSizeX', label: 'X', icon: '↔', section: 'mark' },
     )
     if (level >= 2) {
       colOpts.push(
-        { action: 'label', label: 'Label', icon: 'Aa', section: 'collection' },
-        { action: 'bind', bindKey: 'scatterSize',  label: 'Scatter', icon: '⊞', section: 'collection' },
-        { action: 'bind', bindKey: 'c1AlignCount', label: 'Count',   icon: '#',  section: 'collection' },
+        { action: 'label', label: 'Label',   icon: 'Aa', section: 'collection' },
+        { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter', icon: '⊞', section: 'collection' },
+        { action: 'bind',  bindKey: 'c1AlignCount', label: 'Count',   icon: '#',  section: 'collection' },
       )
       if (level >= 3) {
         colOpts.push(
@@ -100,15 +140,88 @@ export function RadialBindMenu({
   ]
 
   function handleSelect(opt: MenuOption) {
+    if (opt.action === 'bind' && opt.bindKey === 'markColor') {
+      setPendingSection('mark')
+      setStep('colorMode')
+      return
+    }
+    if (opt.action === 'label') {
+      setPendingSection(opt.section)
+      setStep('labelPos')
+      return
+    }
     if (opt.action === 'bind') {
       onBind(opt.bindKey, varName)
-    } else {
-      onBindLabel(opt.section, varName)
     }
     onClose()
   }
 
   const hasCollection = colOpts.length > 0
+
+  // ── Sub-step: Color mode card ──────────────────────────────────────────────
+
+  if (step === 'colorMode') {
+    return (
+      <>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }} onClick={() => setStep('radial')} />
+        <div style={{ ...cardStyle, left: x - 75, top: y - 70 }}>
+          <CardHeader>Color mode</CardHeader>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <button
+              style={subBtnBase}
+              onClick={() => { onColorBind(varName, 'distinct'); onClose() }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+            >
+              <span style={{ fontSize: '14px' }}>◈</span> Distinct
+            </button>
+            <button
+              style={subBtnBase}
+              onClick={() => { onColorBind(varName, 'continuous'); onClose() }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+            >
+              <span style={{ fontSize: '14px' }}>▬</span> Continuous
+            </button>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // ── Sub-step: Label position card ─────────────────────────────────────────
+
+  if (step === 'labelPos') {
+    const positions: { key: keyof LabelSlots; label: string; icon: string }[] = [
+      { key: 'top',    label: 'Top',    icon: '↑' },
+      { key: 'right',  label: 'Right',  icon: '→' },
+      { key: 'bottom', label: 'Bottom', icon: '↓' },
+      { key: 'left',   label: 'Left',   icon: '←' },
+    ]
+    return (
+      <>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }} onClick={() => setStep('radial')} />
+        <div style={{ ...cardStyle, left: x - 75, top: y - 100 }}>
+          <CardHeader>Label position</CardHeader>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
+            {positions.map(p => (
+              <button
+                key={p.key}
+                style={{ ...subBtnBase, justifyContent: 'center', gap: '5px' }}
+                onClick={() => { onBindLabel(pendingSection, varName, p.key); onClose() }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+              >
+                <span>{p.icon}</span> {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // ── Main radial menu ──────────────────────────────────────────────────────
 
   return (
     <>
@@ -134,7 +247,7 @@ export function RadialBindMenu({
           }} />
         )}
 
-        {/* Section labels — flanking center */}
+        {/* Section labels */}
         <div style={{
           position: 'absolute', left: -6, top: -22,
           fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
