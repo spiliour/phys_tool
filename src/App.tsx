@@ -37,7 +37,6 @@ const BINDING_LEVEL: Record<keyof DataBindings, string> = {
 const VAR_LIST: Array<{ label: string; type: 'numerical' | 'categorical'; varName: DataVariable }> = [
   { label: 'Weight',       type: 'numerical',  varName: 'weight'      },
   { label: 'Garbage Type', type: 'categorical', varName: 'garbageType' },
-  { label: 'Count',        type: 'numerical',  varName: 'count'       },
 ]
 
 // ── Default state ─────────────────────────────────────────────────────────────
@@ -305,7 +304,7 @@ export default function App() {
               Load
             </button>
           </div>
-          <button
+          {/* <button
             onClick={() => { setPathTracingActive(true); setPathTracerSamples(0) }}
             disabled={pathTracingActive}
             style={{
@@ -318,7 +317,7 @@ export default function App() {
             }}
           >
             {pathTracingActive ? 'Rendering...' : 'Render'}
-          </button>
+          </button> */}
         </div>
 
         {/* Hierarchy panel fills remaining space */}

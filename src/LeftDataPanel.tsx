@@ -125,10 +125,10 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #E5E5EA' }}>
-            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>Name</th>
-            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '46px' }}>Wt</th>
-            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '30px' }}>Col</th>
-            <th style={{ width: '52px' }} />
+            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>Garbage Type</th>
+            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '60px' }}>Weight</th>
+            {/* <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '30px' }}>Col</th> */}
+            {/* <th style={{ width: '52px' }} /> */}
           </tr>
         </thead>
         <tbody>
@@ -151,10 +151,10 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
                   min={0} max={9999} step={1}
                   value={layer.percentage}
                   onChange={(e) => update(layer.id, 'percentage', Number(e.target.value))}
-                  style={{ ...inputBase, width: '40px' }}
+                  style={{ ...inputBase, width: '52px' }}
                 />
               </td>
-              <td style={cell}>
+              {/* <td style={cell}>
                 <input
                   type="color"
                   value={layer.color}
@@ -165,20 +165,20 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
                     background: 'none', cursor: 'pointer', padding: '1px',
                   }}
                 />
-              </td>
-              <td style={{ ...cell, textAlign: 'right' }}>
+              </td> */}
+              {/* <td style={{ ...cell, textAlign: 'right' }}>
                 <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
                   <button onClick={() => moveTowardTop(i)}    disabled={i === 0}                    title="Move up"   style={iconBtn}>↑</button>
                   <button onClick={() => moveTowardBottom(i)} disabled={i === layers.length - 1}    title="Move down" style={iconBtn}>↓</button>
                   <button onClick={() => removeLayer(layer.id)} disabled={layers.length <= 1}       title="Remove"    style={{ ...iconBtn, color: '#FF3B30' }}>×</button>
                 </div>
-              </td>
+              </td> */}
             </tr>
           ))}
         </tbody>
       </table>
 
-      <button
+      {/* <button
         onClick={addLayer}
         style={{
           background: '#F2F2F7', border: '1px solid #D1D1D6', color: '#6C6C70',
@@ -188,7 +188,7 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
         }}
       >
         + Add Layer
-      </button>
+      </button> */}
 
     </div>
   )
