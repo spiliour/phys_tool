@@ -5,7 +5,7 @@ import {
   MarkShape, MarkMaterial, HdriPreset, Vec3,
   StructuralDeformation, CollectionArrangement,
   DataBindings, DataVariable, LabelConfig, LabelPosition,
-  LabelSlots, DecorationConfig,
+  LabelSlots, DecorationConfig, LayerData, CategoryShapeEntry,
 } from './types'
 
 const VAR_LABELS: Record<string, { label: string; type: 'numerical' | 'categorical' }> = {
@@ -621,6 +621,7 @@ function ShapeDropdown({ config, onChange }: {
 function MarkProperties({
   config, onChange, bindings, onBind, labelConfig, onLabelChange,
   colorMode, colorGradient, onColorGradientChange, openSection,
+  layers, compositionLevel,
 }: {
   config:         MarkConfig
   onChange:       (c: MarkConfig) => void
@@ -632,6 +633,8 @@ function MarkProperties({
   colorGradient?:          { from: string; to: string }
   onColorGradientChange?:  (g: { from: string; to: string }) => void
   openSection?:            string
+  layers:          LayerData[]
+  compositionLevel: CompositionLevel
 }) {
   const materialOptions: MarkMaterial[] = config.shape === 'custom' && config.customModelHasMat
     ? ['original', 'plastic', 'fluid', 'metal', 'emissive']
@@ -672,12 +675,45 @@ function MarkProperties({
 
       {/* ── Geometry ── */}
       <AttributeCategory icon={ICONS.shape} title="Geometry" open={acc.isOpen('Geometry')} onToggle={() => acc.toggle('Geometry')}>
-        <Row label="Shape">
-          <ShapeDropdown
-            config={config}
-            onChange={(patch) => onChange({ ...config, ...patch } as MarkConfig)}
-          />
-        </Row>
+        {compositionLevel >= 2 && layers.length > 1 ? (
+          // Per-category shape selection
+          layers.map((layer) => {
+            const catEntry: CategoryShapeEntry | undefined = config.categoryShapes?.[layer.name]
+            const catCfg: ShapeConfig = {
+              shape:             catEntry?.shape ?? config.shape,
+              material:          config.material,
+              customModelUrl:    catEntry?.customModelUrl,
+              customModelHasMat: catEntry?.customModelHasMat,
+              customModelName:   catEntry?.customModelName,
+            }
+            return (
+              <Row key={layer.id} label={layer.name}>
+                <ShapeDropdown
+                  config={catCfg}
+                  onChange={(patch) => onChange({
+                    ...config,
+                    categoryShapes: {
+                      ...(config.categoryShapes ?? {}),
+                      [layer.name]: {
+                        shape:             patch.shape ?? catEntry?.shape ?? config.shape,
+                        customModelUrl:    patch.customModelUrl,
+                        customModelHasMat: patch.customModelHasMat,
+                        customModelName:   patch.customModelName,
+                      },
+                    },
+                  })}
+                />
+              </Row>
+            )
+          })
+        ) : (
+          <Row label="Shape">
+            <ShapeDropdown
+              config={config}
+              onChange={(patch) => onChange({ ...config, ...patch } as MarkConfig)}
+            />
+          </Row>
+        )}
       </AttributeCategory>
 
       {/* ── Material ── */}
@@ -1087,6 +1123,7 @@ function SceneProperties({
 interface PropertiesPanelProps {
   activeElement:         ActiveElement
   compositionLevel:      CompositionLevel
+  layers:                LayerData[]
   markConfig:            MarkConfig
   onMarkChange:          (c: MarkConfig) => void
   collection1Config:     CollectionConfig
@@ -1111,7 +1148,7 @@ interface PropertiesPanelProps {
 }
 
 export function PropertiesPanel({
-  activeElement,
+  activeElement, compositionLevel, layers,
   markConfig,        onMarkChange,
   collection1Config, onCollection1Change,
   collection2Config, onCollection2Change,
@@ -1143,6 +1180,8 @@ export function PropertiesPanel({
           colorGradient={colorGradient}
           onColorGradientChange={onColorGradientChange}
           openSection={markOpenSection}
+          layers={layers}
+          compositionLevel={compositionLevel}
         />
       ) : activeElement === 'collection1' ? (
         <CollectionProperties

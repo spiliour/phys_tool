@@ -255,8 +255,8 @@ export function Layer({
         <>
           {labelData.top    && (
             <>
-              <group position={[0, height / 2 + 0.3, 0]} userData={{ isLabel: true, labelText: labelData.top,    labelPos: 'top'    }} />
-              <Html position={[0, height / 2 + 0.3, 0]} center style={{ pointerEvents: 'none' }}>
+              <group position={[0, height / 2 + 0.8, 0]} userData={{ isLabel: true, labelText: labelData.top,    labelPos: 'top'    }} />
+              <Html position={[0, height / 2 + 0.8, 0]} center style={{ pointerEvents: 'none' }}>
                 <span style={{ fontSize: '12px', color: '#e0e0e0', fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none' }}>
                   {labelData.top}
                 </span>
@@ -265,8 +265,8 @@ export function Layer({
           )}
           {labelData.bottom && (
             <>
-              <group position={[0, -(height / 2 + 0.3), 0]} userData={{ isLabel: true, labelText: labelData.bottom, labelPos: 'bottom' }} />
-              <Html position={[0, -(height / 2 + 0.3), 0]} center style={{ pointerEvents: 'none' }}>
+              <group position={[0, -(height / 2 + 0.8), 0]} userData={{ isLabel: true, labelText: labelData.bottom, labelPos: 'bottom' }} />
+              <Html position={[0, -(height / 2 + 0.8), 0]} center style={{ pointerEvents: 'none' }}>
                 <span style={{ fontSize: '12px', color: '#e0e0e0', fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none' }}>
                   {labelData.bottom}
                 </span>

@@ -472,6 +472,7 @@ export default function App() {
           <PropertiesPanel
             activeElement={activeElement}
             compositionLevel={level}
+            layers={layers}
             markConfig={markConfig}        onMarkChange={setMarkConfig}
             collection1Config={col1Config} onCollection1Change={setCol1Config}
             collection2Config={col2Config} onCollection2Change={setCol2Config}

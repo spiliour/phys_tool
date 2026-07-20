@@ -9,6 +9,7 @@ import * as THREE from 'three'
 import {
   CompositionLevel, MarkConfig, CollectionConfig, SceneConfig, LayerData,
   DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig,
+  MarkShape, MarkMaterial, StructuralConfig,
 } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 
@@ -254,8 +255,8 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
     y: config.size.y * sc * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, 0, layers) : 1),
     z: config.size.z * sc * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, 0, layers) : 1),
   }
-  const halfH = s * sz.y * 0.036 + 0.5
-  const halfW = s * sz.x * 0.036 + 0.5
+  const halfH = s * sz.y * 0.036 + 0.8
+  const halfW = s * sz.x * 0.036 + 0.8
   const ld    = computeLabelValues(markLabelConfig.slots, layers, 0)
   const rot: [number, number, number] = [config.orientation.x * DEG, config.orientation.y * DEG, config.orientation.z * DEG]
 
@@ -285,6 +286,29 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
   )
 }
 
+// ── Per-mark geometry body (memoises geometry per shape) ─────────────────────
+
+function AlignedMarkBody({ shape, customModelUrl, customModelHasMat, material, structural, color, scale }: {
+  shape:              MarkShape
+  customModelUrl?:    string
+  customModelHasMat?: boolean
+  material:           MarkMaterial
+  structural:         StructuralConfig
+  color:              string
+  scale:              [number, number, number]
+}) {
+  const geo = useMemo(() => makeMarkGeometry(shape), [shape])
+  useEffect(() => () => { geo.dispose() }, [geo])
+  if (shape === 'custom' && customModelUrl) {
+    return <Suspense fallback={null}><CustomModelMesh url={customModelUrl} material={customModelHasMat ? material : material} color={color} sz={scale} /></Suspense>
+  }
+  return (
+    <mesh geometry={geo} scale={scale}>
+      <MarkMaterialElement material={material} structural={structural} color={color} />
+    </mesh>
+  )
+}
+
 // ── Level 2: aligned marks (line arrangement) ────────────────────────────────
 
 function AlignedMarks({
@@ -299,8 +323,6 @@ function AlignedMarks({
 }) {
   const count   = bindings.c1AlignCount === 'count' ? layers.length : collection1Config.alignCount
   const { alignAxis: axis, alignSpacing: spacing, alignAnchor: anchor } = collection1Config
-  const geo    = useMemo(() => makeMarkGeometry(markConfig.shape), [markConfig.shape])
-  useEffect(() => () => { geo.dispose() }, [geo])
 
   const s   = L1_MARK_SCALE
   const DEG = Math.PI / 180
@@ -334,25 +356,27 @@ function AlignedMarks({
           ? [t + ao[0], ao[1], ao[2]]
           : [ao[0], t + ao[1], ao[2]]
 
-        const halfH = sc[1] * 0.036 + 0.5
-        const halfW = sc[0] * 0.036 + 0.5
+        const halfH = sc[1] * 0.036 + 0.8
+        const halfW = sc[0] * 0.036 + 0.8
         const ld  = computeLabelValues(markLabelConfig.slots, layers, i)
+
+        const layerName = layers[i % Math.max(1, layers.length)]?.name
+        const catEntry  = markConfig.categoryShapes?.[layerName ?? '']
+        const markShape = catEntry?.shape ?? markConfig.shape
+        const markUrl   = catEntry ? catEntry.customModelUrl : markConfig.customModelUrl
+        const markHasMat = catEntry ? catEntry.customModelHasMat : markConfig.customModelHasMat
 
         return (
           <group key={i} position={pos} rotation={rot}>
-            {markConfig.shape === 'custom' && markConfig.customModelUrl ? (
-              <Suspense fallback={null}>
-                <CustomModelMesh url={markConfig.customModelUrl} material={markConfig.material} color={getColor(i)} sz={sc} />
-              </Suspense>
-            ) : (
-              <mesh geometry={geo} scale={sc}>
-                <MarkMaterialElement
-                  material={markConfig.material}
-                  structural={markConfig.structural}
-                  color={getColor(i)}
-                />
-              </mesh>
-            )}
+            <AlignedMarkBody
+              shape={markShape}
+              customModelUrl={markUrl}
+              customModelHasMat={markHasMat}
+              material={markConfig.material}
+              structural={markConfig.structural}
+              color={getColor(i)}
+              scale={sc}
+            />
             {markLabelConfig.show && (
               <>
                 {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[50, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
@@ -612,10 +636,15 @@ function Level3Content({
         const heightOverride = bindings.scatterSize === 'weight' && collection1Config.arrangement === 'scattering'
           ? Math.max(0.5, (pct / maxPct) * WEIGHT_MAX_H)
           : undefined
+        // Apply per-category geometry override for this group's layer
+        const catEntry = markConfig.categoryShapes?.[name]
+        const groupMarkConfig = catEntry
+          ? { ...markConfig, shape: catEntry.shape, customModelUrl: catEntry.customModelUrl, customModelHasMat: catEntry.customModelHasMat, customModelName: catEntry.customModelName }
+          : markConfig
         return (
           <CollectionInstance
             key={i}
-            markConfig={markConfig}
+            markConfig={groupMarkConfig}
             collection1Config={collection1Config}
             color={color}
             position={position}

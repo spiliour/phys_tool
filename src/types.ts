@@ -22,9 +22,19 @@ export interface StructuralConfig {
   fluidSpeed:   number  // wave speed      0.0 – 5.0
 }
 
+// Per-category geometry override (keyed by layer name)
+export interface CategoryShapeEntry {
+  shape:             MarkShape
+  customModelUrl?:   string
+  customModelHasMat?: boolean
+  customModelName?:  string
+}
+
 export interface MarkConfig {
   // Geometry
   shape: MarkShape
+  // Per-category shape overrides (level 2+): layer.name → shape entry
+  categoryShapes?: Record<string, CategoryShapeEntry>
   // Material
   material: MarkMaterial
   color: string
