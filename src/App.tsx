@@ -269,7 +269,16 @@ export default function App() {
     const d = save.data as any
     if (d.level          != null) setLevel(d.level)
     if (d.activeElement  != null) setActiveElement(d.activeElement)
-    setMarkConfig(resolveCustomModel(d.markConfig ?? DEFAULT_MARK))
+    const rawMark = resolveCustomModel(d.markConfig ?? DEFAULT_MARK)
+    if (rawMark.categoryShapes) {
+      const resolvedCats: typeof rawMark.categoryShapes = {}
+      for (const [k, v] of Object.entries(rawMark.categoryShapes)) {
+        resolvedCats[k] = resolveCustomModel(v as Parameters<typeof resolveCustomModel>[0])
+      }
+      setMarkConfig({ ...rawMark, categoryShapes: resolvedCats })
+    } else {
+      setMarkConfig(rawMark)
+    }
     setCol1Config(d.col1Config ?? DEFAULT_COLLECTION1)
     setCol2Config(d.col2Config ?? DEFAULT_COLLECTION2)
     setSceneConfig(d.sceneConfig ?? DEFAULT_SCENE)
