@@ -138,13 +138,13 @@ export function RadialBindMenu({
   }
 
   // Arc placement
-  const R2 = RADIUS        // L2 arc radius
-  const R3 = 68            // L3 arc radius (smaller — only one button)
+  // Level 3: col1 at smaller radius so topmost button (−55°, r=80) stays well below the label
+  const R3 = 64
   const markPos = arcPositions(markOpts.length, 180, 100, RADIUS)
   const col1Pos = level < 3
-    ? arcPositions(col1Opts.length,   0, 90, R2)   // level 2: right half
-    : arcPositions(col1Opts.length, -52, 78, R2)   // level 3: upper-right quadrant
-  const col2Pos = arcPositions(col2Opts.length, 32, 40, R3)  // lower-right, single button
+    ? arcPositions(col1Opts.length,   0, 90, RADIUS)  // level 2: right half
+    : arcPositions(col1Opts.length, -30, 50, 80)      // level 3: upper-right, −55° to −5°
+  const col2Pos = arcPositions(col2Opts.length, 25, 40, R3)  // lower-right single button
 
   const allItems = [
     ...markOpts.map((o, i) => ({ opt: o, pos: markPos[i] })),
@@ -291,7 +291,7 @@ export function RadialBindMenu({
         {hasCollection && (
           <div style={{
             position: 'absolute',
-            left: 8, top: hasCol2 ? -(RADIUS * 0.85 + 14) : -10,
+            left: 8, top: hasCol2 ? -(RADIUS + 16) : -10,
             fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
             textTransform: 'uppercase', color: '#5E5CE6', whiteSpace: 'nowrap',
           }}>
