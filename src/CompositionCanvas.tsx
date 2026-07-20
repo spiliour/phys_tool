@@ -180,9 +180,10 @@ function computeLabelValues(slots: LabelSlots, layers: LayerData[], layerIndex: 
   const entries = Object.entries(slots) as [keyof LabelSlots, DataVariable | null][]
   for (const [pos, variable] of entries) {
     if (!variable) continue
-    if (variable === 'weight')      result[pos] = `${layer?.percentage ?? '?'}`
-    if (variable === 'garbageType') result[pos] = layer?.name ?? '?'
-    if (variable === 'count')       result[pos] = String(layers.length)
+    if (variable === 'numerical' || variable === 'weight' || variable === 'count')
+      result[pos] = `${layer?.percentage ?? '?'}`
+    if (variable === 'categorical' || variable === 'garbageType' || variable === 'section')
+      result[pos] = layer?.name ?? '?'
   }
   return result
 }
