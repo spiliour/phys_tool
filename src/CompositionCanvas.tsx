@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, Suspense } from 'react'
+import { useRef, useMemo, useEffect, Suspense, createContext, useContext } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, Environment, Sky, Html, useGLTF } from '@react-three/drei'
 import {
@@ -11,6 +11,37 @@ import {
   DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig,
 } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
+
+// ── Color context (avoids prop-drilling colorMode/colorGradient) ──────────────
+
+interface ColorCtx {
+  colorMode:     'distinct' | 'continuous'
+  colorGradient: { from: string; to: string }
+}
+const ColorContext = createContext<ColorCtx>({
+  colorMode: 'distinct',
+  colorGradient: { from: '#EE6655', to: '#4488EE' },
+})
+
+function lerpHex(from: string, to: string, t: number): string {
+  return '#' + new THREE.Color(from).lerp(new THREE.Color(to), Math.max(0, Math.min(1, t))).getHexString()
+}
+
+function resolveMarkColor(
+  i: number, bindings: DataBindings, layers: LayerData[],
+  fallback: string, colorMode: ColorCtx['colorMode'], colorGradient: ColorCtx['colorGradient']
+): string {
+  if (bindings.markColor === null) return fallback
+  if (colorMode === 'continuous') {
+    const pcts = layers.map(l => l.percentage)
+    const minP = Math.min(...pcts)
+    const maxP = Math.max(...pcts)
+    const pct  = layers[i % Math.max(1, layers.length)]?.percentage ?? 0
+    const t    = maxP > minP ? (pct - minP) / (maxP - minP) : 0.5
+    return lerpHex(colorGradient.from, colorGradient.to, t)
+  }
+  return layers[i % Math.max(1, layers.length)]?.color ?? fallback
+}
 import { MarkMaterialElement } from './MarkMaterial'
 import { Layer, LayerLabelData } from './Layer'
 import { PilingLayer } from './PilingLayer'
@@ -211,12 +242,11 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
 }) {
   const geo   = useMemo(() => makeMarkGeometry(config.shape), [config.shape])
   useEffect(() => () => { geo.dispose() }, [geo])
+  const { colorMode, colorGradient } = useContext(ColorContext)
 
   const DEG   = Math.PI / 180
   const s     = L1_MARK_SCALE
-  const color = bindings.markColor === 'garbageType'
-    ? (layers[0]?.color ?? config.color)
-    : config.color
+  const color = resolveMarkColor(0, bindings, layers, config.color, colorMode, colorGradient)
 
   const sz = {
     x: config.size.x * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, 0, layers) : 1),
@@ -275,11 +305,10 @@ function AlignedMarks({
   const DEG = Math.PI / 180
   const offset = (count - 1) / 2
   const rot: [number, number, number] = [markConfig.orientation.x * DEG, markConfig.orientation.y * DEG, markConfig.orientation.z * DEG]
+  const { colorMode, colorGradient } = useContext(ColorContext)
 
   function getColor(i: number) {
-    return bindings.markColor === 'garbageType'
-      ? (layers[i % Math.max(1, layers.length)]?.color ?? color)
-      : color
+    return resolveMarkColor(i, bindings, layers, color, colorMode, colorGradient)
   }
 
   function getScale(i: number): [number, number, number] {
@@ -835,6 +864,8 @@ interface CompositionCanvasProps {
   markLabelConfig:   LabelConfig
   colLabelConfig:    LabelConfig
   decorations:       DecorationConfig[]
+  colorMode:         'distinct' | 'continuous'
+  colorGradient:     { from: string; to: string }
   // Path tracing
   pathTracingActive?:  boolean
   onSamplesUpdate?:    (n: number) => void
@@ -844,6 +875,7 @@ interface CompositionCanvasProps {
 export function CompositionCanvas({
   level, markConfig, collection1Config, collection2Config, sceneConfig, layers, bindings,
   markLabelConfig, colLabelConfig, decorations,
+  colorMode, colorGradient,
   pathTracingActive, onSamplesUpdate, downloadRenderRef,
 }: CompositionCanvasProps) {
   const fov     = focalLengthToFov(sceneConfig.focalLength)
@@ -865,6 +897,7 @@ export function CompositionCanvas({
       <CameraController level={level} fov={fov} focalLength={sceneConfig.focalLength} />
       <SceneEnvironment config={sceneConfig} />
 
+      <ColorContext.Provider value={{ colorMode, colorGradient }}>
       <Physics gravity={[0, -9.81, 0]} timeStep="vary">
 
       {level === 1 && (
@@ -901,6 +934,7 @@ export function CompositionCanvas({
       ))}
 
       </Physics>
+      </ColorContext.Provider>
 
       <OrbitControls makeDefault dampingFactor={0.08} minDistance={1} maxDistance={400} target={[0, 0, 0]} />
 

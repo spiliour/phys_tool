@@ -101,14 +101,17 @@ export function RadialBindMenu({
     return () => window.removeEventListener('keydown', onKey)
   }, [step, onClose])
 
-  // Build option lists
-  const markOpts: MenuOption[] = []
-  const colOpts:  MenuOption[] = []
+  // Build option lists — Label is always pushed FIRST so it lands at the
+  // arc-bottom slot (visually last in top-to-bottom reading).
+  const markOpts:  MenuOption[] = []
+  const col1Opts:  MenuOption[] = []   // L2 collection
+  const col2Opts:  MenuOption[] = []   // L3 collection (level 3 only)
 
   if (varType === 'categorical') {
+    // mark arc: bottom=index 0, top=index n-1 → Label first in array = bottom = last visually
     markOpts.push(
-      { action: 'bind',  bindKey: 'markColor', label: 'Color', icon: '●', section: 'mark' },
       { action: 'label', label: 'Label', icon: 'Aa', section: 'mark' },
+      { action: 'bind',  bindKey: 'markColor', label: 'Color', icon: '●', section: 'mark' },
     )
   } else {
     markOpts.push(
@@ -117,26 +120,35 @@ export function RadialBindMenu({
       { action: 'bind',  bindKey: 'markSizeY', label: 'Y', icon: '↕', section: 'mark' },
       { action: 'bind',  bindKey: 'markSizeX', label: 'X', icon: '↔', section: 'mark' },
     )
-    if (level >= 2) {
-      colOpts.push(
-        { action: 'label', label: 'Label',   icon: 'Aa', section: 'collection' },
-        { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter', icon: '⊞', section: 'collection' },
-        { action: 'bind',  bindKey: 'c1AlignCount', label: 'Count',   icon: '#',  section: 'collection' },
-      )
-      if (level >= 3) {
-        colOpts.push(
-          { action: 'bind', bindKey: 'c2AlignCount', label: 'Count', icon: '#', section: 'collection' },
-        )
-      }
-    }
   }
 
-  const markPos = arcPositions(markOpts.length, 180, 100, RADIUS)
-  const colPos  = arcPositions(colOpts.length,  0,   90,  RADIUS)
+  if (level >= 2) {
+    // col1 arc: index 0 = upper-right (first in reading), index n-1 = lower-right (last) → Label last in array
+    col1Opts.push(
+      { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter', icon: '⊞', section: 'collection' },
+      { action: 'bind',  bindKey: 'c1AlignCount', label: 'Count',   icon: '#',  section: 'collection' },
+      { action: 'label', label: 'Label', icon: 'Aa', section: 'collection' },
+    )
+  }
+
+  if (level >= 3) {
+    col2Opts.push(
+      { action: 'bind',  bindKey: 'c2AlignCount', label: 'Count', icon: '#', section: 'collection' },
+      { action: 'label', label: 'Label', icon: 'Aa', section: 'collection' },
+    )
+  }
+
+  // Arc placement — level 3: col1 upper-right, col2 lower-right
+  const markPos  = arcPositions(markOpts.length,  180, 100, RADIUS)
+  const col1Pos  = level < 3
+    ? arcPositions(col1Opts.length,  0, 90, RADIUS)     // level 2: full right half
+    : arcPositions(col1Opts.length, -50, 80, RADIUS)    // level 3: upper-right quadrant
+  const col2Pos  = arcPositions(col2Opts.length,  50, 80, RADIUS)   // lower-right quadrant
 
   const allItems = [
-    ...markOpts.map((o, i) => ({ opt: o, pos: markPos[i] })),
-    ...colOpts.map((o, i)  => ({ opt: o, pos: colPos[i]  })),
+    ...markOpts.map((o, i)  => ({ opt: o, pos: markPos[i]  })),
+    ...col1Opts.map((o, i)  => ({ opt: o, pos: col1Pos[i]  })),
+    ...col2Opts.map((o, i)  => ({ opt: o, pos: col2Pos[i]  })),
   ]
 
   function handleSelect(opt: MenuOption) {
@@ -156,7 +168,8 @@ export function RadialBindMenu({
     onClose()
   }
 
-  const hasCollection = colOpts.length > 0
+  const hasCollection = col1Opts.length > 0
+  const hasCol2       = col2Opts.length > 0
 
   // ── Sub-step: Color mode card ──────────────────────────────────────────────
 
@@ -244,18 +257,25 @@ export function RadialBindMenu({
         zIndex: 1001, pointerEvents: 'none',
       }}>
 
-        {/* Divider line between Mark / Collection */}
+        {/* Vertical divider: Mark | Collection */}
         {hasCollection && (
           <div style={{
-            position: 'absolute',
-            left: 0, top: -(RADIUS + 16),
+            position: 'absolute', left: 0, top: -(RADIUS + 16),
             width: '1px', height: (RADIUS + 16) * 2,
-            background: '#E5E5EA',
-            transform: 'translateX(-50%)',
+            background: '#E5E5EA', transform: 'translateX(-50%)',
           }} />
         )}
 
-        {/* Section labels */}
+        {/* Horizontal divider: Col L2 | Col L3 (level 3 only) */}
+        {hasCol2 && (
+          <div style={{
+            position: 'absolute', left: 0, top: 0,
+            width: RADIUS + 20, height: '1px',
+            background: '#E5E5EA',
+          }} />
+        )}
+
+        {/* Section label: Mark (always) */}
         <div style={{
           position: 'absolute', left: -6, top: -22,
           fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
@@ -266,14 +286,26 @@ export function RadialBindMenu({
           Mark
         </div>
 
+        {/* Section label: Collection / Lv2 */}
         {hasCollection && (
           <div style={{
-            position: 'absolute', left: 6, top: -22,
+            position: 'absolute',
+            left: 6, top: hasCol2 ? -38 : -22,
             fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
-            textTransform: 'uppercase', color: '#5E5CE6',
-            whiteSpace: 'nowrap',
+            textTransform: 'uppercase', color: '#5E5CE6', whiteSpace: 'nowrap',
           }}>
-            Collection
+            {hasCol2 ? 'Lv2' : 'Collection'}
+          </div>
+        )}
+
+        {/* Section label: Lv3 */}
+        {hasCol2 && (
+          <div style={{
+            position: 'absolute', left: 6, top: 12,
+            fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
+            textTransform: 'uppercase', color: '#9D9BF4', whiteSpace: 'nowrap',
+          }}>
+            Lv3
           </div>
         )}
 

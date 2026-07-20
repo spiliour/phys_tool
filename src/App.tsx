@@ -377,6 +377,8 @@ export default function App() {
           markLabelConfig={markLabelConfig}
           colLabelConfig={colLabelConfig}
           decorations={decorations}
+          colorMode={colorMode}
+          colorGradient={colorGradient}
           pathTracingActive={pathTracingActive}
           onSamplesUpdate={setPathTracerSamples}
           downloadRenderRef={downloadRenderRef}
