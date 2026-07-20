@@ -102,11 +102,10 @@ export function RadialBindMenu({
   }, [step, onClose])
 
   // Build option lists.
-  // Mark arc: index 0 = lower-left (last in top-to-bottom reading) → push Label first.
-  // Col1 arc: index n-1 = lower-right (last in reading) → push Label last.
+  // Mark arc: Label pushed first → lands lower-left (last in reading order).
+  // Col arc:  Label pushed last  → lands lower-right (last in reading order).
   const markOpts: MenuOption[] = []
-  const col1Opts: MenuOption[] = []  // L2 collection
-  const col2Opts: MenuOption[] = []  // L3 collection (level 3 only, Count only)
+  const colOpts:  MenuOption[] = []
 
   if (varType === 'categorical') {
     markOpts.push(
@@ -123,33 +122,18 @@ export function RadialBindMenu({
   }
 
   if (level >= 2) {
-    col1Opts.push(
-      { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter', icon: '⊞', section: 'collection' },
-      { action: 'bind',  bindKey: 'c1AlignCount', label: 'Count',   icon: '#',  section: 'collection' },
+    colOpts.push(
+      { action: 'bind',  bindKey: 'scatterSize', label: 'Scatter', icon: '⊞', section: 'collection' },
       { action: 'label', label: 'Label', icon: 'Aa', section: 'collection' },
     )
   }
 
-  if (level >= 3) {
-    // Lv3 only has Count — no Label
-    col2Opts.push(
-      { action: 'bind', bindKey: 'c2AlignCount', label: 'Count', icon: '#', section: 'collection' },
-    )
-  }
-
-  // Arc placement
-  // Level 3: col1 at smaller radius so topmost button (−55°, r=80) stays well below the label
-  const R3 = 64
   const markPos = arcPositions(markOpts.length, 180, 100, RADIUS)
-  const col1Pos = level < 3
-    ? arcPositions(col1Opts.length,   0, 90, RADIUS)  // level 2: right half
-    : arcPositions(col1Opts.length, -30, 50, 80)      // level 3: upper-right, −55° to −5°
-  const col2Pos = arcPositions(col2Opts.length, 25, 40, R3)  // lower-right single button
+  const colPos  = arcPositions(colOpts.length,    0,  70, RADIUS)
 
   const allItems = [
     ...markOpts.map((o, i) => ({ opt: o, pos: markPos[i] })),
-    ...col1Opts.map((o, i) => ({ opt: o, pos: col1Pos[i] })),
-    ...col2Opts.map((o, i) => ({ opt: o, pos: col2Pos[i] })),
+    ...colOpts.map((o, i)  => ({ opt: o, pos: colPos[i] })),
   ]
 
   function handleSelect(opt: MenuOption) {
@@ -169,8 +153,7 @@ export function RadialBindMenu({
     onClose()
   }
 
-  const hasCollection = col1Opts.length > 0
-  const hasCol2       = col2Opts.length > 0
+  const hasCollection = colOpts.length > 0
 
   // ── Sub-step: Color mode card ──────────────────────────────────────────────
 
@@ -267,15 +250,6 @@ export function RadialBindMenu({
           }} />
         )}
 
-        {/* Horizontal divider: Col Lv2 | Col Lv3 (right side only) */}
-        {hasCol2 && (
-          <div style={{
-            position: 'absolute', left: 2, top: 0,
-            width: RADIUS + 24, height: '1px',
-            background: '#E5E5EA',
-          }} />
-        )}
-
         {/* Section label: Mark */}
         <div style={{
           position: 'absolute', left: -8, top: -10,
@@ -287,26 +261,14 @@ export function RadialBindMenu({
           Mark
         </div>
 
-        {/* Section label: Collection / Collection Lv2 */}
+        {/* Section label: Collection */}
         {hasCollection && (
           <div style={{
-            position: 'absolute',
-            left: 8, top: hasCol2 ? -(RADIUS + 16) : -10,
+            position: 'absolute', left: 8, top: -10,
             fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
             textTransform: 'uppercase', color: '#5E5CE6', whiteSpace: 'nowrap',
           }}>
-            {hasCol2 ? 'Collection Lv2' : 'Collection'}
-          </div>
-        )}
-
-        {/* Section label: Lv3 */}
-        {hasCol2 && (
-          <div style={{
-            position: 'absolute', left: 8, top: 8,
-            fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
-            textTransform: 'uppercase', color: '#9D9BF4', whiteSpace: 'nowrap',
-          }}>
-            Lv3
+            Collection
           </div>
         )}
 
