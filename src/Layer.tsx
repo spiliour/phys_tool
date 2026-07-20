@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { Html, useGLTF } from '@react-three/drei'
 import { MarkShape, MarkMaterial, StructuralConfig, Vec3 } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
+import { MODEL_SCALE_OVERRIDES } from './models'
 import { MarkMaterialElement } from './MarkMaterial'
 
 export interface LayerLabelData {
@@ -26,6 +27,7 @@ interface LayerProps {
   customModelUrl?: string
   labelShow:       boolean
   labelData:       LayerLabelData
+  seed?:           number
 }
 
 const DEFAULT_SIZE: Vec3 = { x: 1, y: 1, z: 1 }
@@ -62,9 +64,9 @@ function fillInstanceMatrices(
   size: Vec3,
 ) {
   const dummy = new THREE.Object3D()
-  const hw = width  * 0.47
-  const hh = height * 0.46
-  const hd = depth  * 0.47
+  const hw = width  * 0.40
+  const hh = height * 0.40
+  const hd = depth  * 0.40
   for (let i = 0; i < count; i++) {
     dummy.position.set(
       (Math.random() - 0.5) * 2 * hw,
@@ -88,7 +90,7 @@ function fillInstanceMatrices(
 // instance and override materials imperatively.
 
 function ScatteredGLBInstances({
-  url, count, width, height, depth, markSize, markMaterial, color,
+  url, count, width, height, depth, markSize, markMaterial, color, seed,
 }: {
   url:          string
   count:        number
@@ -98,6 +100,7 @@ function ScatteredGLBInstances({
   markSize:     Vec3
   markMaterial: MarkMaterial
   color:        string
+  seed:         number
 }) {
   const { scene: gltfScene } = useGLTF(url)
 
@@ -111,14 +114,18 @@ function ScatteredGLBInstances({
     box.getSize(size)
     box.getCenter(center)
     const maxDim = Math.max(size.x, size.y, size.z, 0.001)
-    return { normScale: MARK_BASE / maxDim, center }
-  }, [gltfScene])
+    const scaleOverride = url.includes('drum') ? 0.63
+      : url.includes('clarinet') ? 1.2
+      : url.includes('harp') ? 0.825
+      : 1
+    return { normScale: (MARK_BASE / maxDim) * scaleOverride, center }
+  }, [gltfScene, url])
 
   // Stable random transforms — only reshuffle when count or volume changes
   const transforms = useMemo(() => {
-    const hw = width * 0.47
-    const hh = height * 0.46
-    const hd = depth * 0.47
+    const hw = width * 0.40
+    const hh = height * 0.40
+    const hd = depth * 0.40
     return Array.from({ length: count }, () => ({
       position: [
         (Math.random() - 0.5) * 2 * hw,
@@ -131,7 +138,7 @@ function ScatteredGLBInstances({
         Math.random() * Math.PI * 2,
       ] as [number, number, number],
     }))
-  }, [count, width, height, depth])
+  }, [count, width, height, depth, seed])
 
   // Clone scene once per instance
   const clones = useMemo(
@@ -199,7 +206,7 @@ export function Layer({
   particleCount, markShape, markMaterial,
   markSize = DEFAULT_SIZE, structural = DEFAULT_STRUCTURAL,
   customModelUrl,
-  labelShow, labelData,
+  labelShow, labelData, seed = 0,
 }: LayerProps) {
   const instanceRef = useRef<THREE.InstancedMesh>(null)
 
@@ -216,7 +223,7 @@ export function Layer({
     const mesh = instanceRef.current
     if (!mesh) return
     fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize)
-  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z])
+  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed])
 
   useEffect(() => () => { geo.dispose() },      [geo])
   useEffect(() => () => { edgesGeo.dispose() }, [edgesGeo])
@@ -238,6 +245,7 @@ export function Layer({
             markSize={markSize}
             markMaterial={markMaterial}
             color={color}
+            seed={seed}
           />
         </Suspense>
       ) : (

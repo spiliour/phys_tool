@@ -98,13 +98,15 @@ export interface LabelSlots {
 export type DataVariable = 'weight' | 'garbageType' | 'count'
 
 export interface DataBindings {
-  markColor:    DataVariable | null
-  scatterSize:  DataVariable | null
-  c1AlignCount: DataVariable | null
-  c2AlignCount: DataVariable | null
-  markSizeX:    DataVariable | null
-  markSizeY:    DataVariable | null
-  markSizeZ:    DataVariable | null
+  markColor:     DataVariable | null
+  markGeometry:  DataVariable | null  // activates per-category geometry encoding
+  scatterSize:   DataVariable | null
+  scatterCount:  DataVariable | null  // uses data value as scatter particle count
+  c1AlignCount:  DataVariable | null
+  c2AlignCount:  DataVariable | null
+  markSizeX:     DataVariable | null
+  markSizeY:     DataVariable | null
+  markSizeZ:     DataVariable | null
 }
 
 export interface LabelConfig {

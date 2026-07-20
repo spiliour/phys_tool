@@ -675,8 +675,8 @@ function MarkProperties({
 
       {/* ── Geometry ── */}
       <AttributeCategory icon={ICONS.shape} title="Geometry" open={acc.isOpen('Geometry')} onToggle={() => acc.toggle('Geometry')}>
-        {compositionLevel >= 2 && layers.length > 1 ? (
-          // Per-category shape selection
+        {bindings.markGeometry !== null && layers.length > 1 ? (
+          // Per-category shape selection (active when geometry encoding is bound)
           layers.map((layer) => {
             const catEntry: CategoryShapeEntry | undefined = config.categoryShapes?.[layer.name]
             const catCfg: ShapeConfig = {
@@ -789,7 +789,7 @@ function MarkProperties({
 // ── Collection properties ─────────────────────────────────────────────────────
 
 function CollectionProperties({
-  config, onChange, collectionLevel, bindings, onBind, labelConfig, onLabelChange,
+  config, onChange, collectionLevel, bindings, onBind, labelConfig, onLabelChange, onReseed,
 }: {
   config:          CollectionConfig
   onChange:        (c: CollectionConfig) => void
@@ -798,6 +798,7 @@ function CollectionProperties({
   onBind:          (attr: keyof DataBindings, v: DataVariable | null) => void
   labelConfig?:    LabelConfig
   onLabelChange?:  (c: LabelConfig) => void
+  onReseed?:       () => void
 }) {
   const isL2 = collectionLevel === 2
   const acc = useAccordion('Groups & Populations')
@@ -959,6 +960,26 @@ function CollectionProperties({
                 />
               </DropZone>
             )}
+
+            {/* Reseed */}
+            {onReseed && (
+              <Row label="Placement">
+                <button
+                  onClick={onReseed}
+                  style={{
+                    width: '100%', padding: '6px 0',
+                    background: '#F2F2F7', border: '1px solid #D1D1D6',
+                    borderRadius: '8px', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: '600', color: '#1D1D1F',
+                    fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+                >
+                  Randomise
+                </button>
+              </Row>
+            )}
           </>
         )}
 
@@ -1063,44 +1084,38 @@ function DecorationProperties({
 function SceneProperties({
   config, onChange,
 }: { config: SceneConfig; onChange: (c: SceneConfig) => void }) {
+  const [framingOpen, setFramingOpen] = useState(true)
   return (
     <>
       <PanelHeader title="Scene" />
 
-      {/* Environment */}
-      <div style={{ border: '1px solid #E5E5EA', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-        <div style={{ padding: '12px', background: '#FFFFFF', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <Row label="Background">
-            <SegmentedControl
-              options={[{ value: 'dark' as const, label: '■ Dark' }, { value: 'ocean' as const, label: '~ Ocean' }]}
-              value={config.background}
-              onChange={(v) => onChange({ ...config, background: v })}
-            />
-          </Row>
-          <Row label="Lighting (HDRI)">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-              {HDRI_OPTIONS.map((opt) => {
-                const active = config.hdriPreset === opt.value
-                return (
-                  <button key={opt.value} onClick={() => onChange({ ...config, hdriPreset: opt.value })} style={{
-                    padding: '5px 6px',
-                    background: active ? '#EBF3FF' : '#F2F2F7',
-                    border: `1px solid ${active ? '#A8CAFF' : '#E5E5EA'}`,
-                    borderRadius: '7px', color: active ? '#007AFF' : '#6C6C70',
-                    cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit',
-                    fontWeight: active ? '600' : '400', transition: 'all 0.1s', textAlign: 'center',
-                  }}>
-                    {opt.label}
-                  </button>
-                )
-              })}
-            </div>
-          </Row>
-        </div>
-      </div>
-
-      {/* Framing */}
-      <AttributeCategory icon={ICONS.framing} title="Framing">
+      <AttributeCategory icon={ICONS.framing} title="Framing" open={framingOpen} onToggle={() => setFramingOpen(o => !o)}>
+        <Row label="Background">
+          <SegmentedControl
+            options={[{ value: 'dark' as const, label: '■ Dark' }, { value: 'ocean' as const, label: '~ Ocean' }]}
+            value={config.background}
+            onChange={(v) => onChange({ ...config, background: v })}
+          />
+        </Row>
+        <Row label="Lighting (HDRI)">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+            {HDRI_OPTIONS.map((opt) => {
+              const active = config.hdriPreset === opt.value
+              return (
+                <button key={opt.value} onClick={() => onChange({ ...config, hdriPreset: opt.value })} style={{
+                  padding: '5px 6px',
+                  background: active ? '#EBF3FF' : '#F2F2F7',
+                  border: `1px solid ${active ? '#A8CAFF' : '#E5E5EA'}`,
+                  borderRadius: '7px', color: active ? '#007AFF' : '#6C6C70',
+                  cursor: 'pointer', fontSize: '11px', fontFamily: 'inherit',
+                  fontWeight: active ? '600' : '400', transition: 'all 0.1s', textAlign: 'center',
+                }}>
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </Row>
         <Row label="Camera">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '2px' }}>
             <span style={{ fontSize: '11px', color: '#6C6C70', fontWeight: '500' }}>{config.focalLength}mm</span>
@@ -1145,6 +1160,7 @@ interface PropertiesPanelProps {
   colorGradient:         { from: string; to: string }
   onColorGradientChange: (g: { from: string; to: string }) => void
   markOpenSection?:      string
+  onReseed?:             () => void
 }
 
 export function PropertiesPanel({
@@ -1157,7 +1173,7 @@ export function PropertiesPanel({
   markLabelConfig, onMarkLabelChange,
   colLabelConfig,  onColLabelChange,
   activeDecorationId, decorations, onDecorationChange,
-  colorMode, colorGradient, onColorGradientChange, markOpenSection,
+  colorMode, colorGradient, onColorGradientChange, markOpenSection, onReseed,
 }: PropertiesPanelProps) {
   const activeDec = activeDecorationId !== null
     ? decorations.find((d) => d.id === activeDecorationId) ?? null
@@ -1188,11 +1204,13 @@ export function PropertiesPanel({
           config={collection1Config} onChange={onCollection1Change}
           collectionLevel={1} bindings={bindings} onBind={onBind}
           labelConfig={colLabelConfig} onLabelChange={onColLabelChange}
+          onReseed={onReseed}
         />
       ) : activeElement === 'collection2' ? (
         <CollectionProperties
           config={collection2Config} onChange={onCollection2Change}
           collectionLevel={2} bindings={bindings} onBind={onBind}
+          onReseed={onReseed}
         />
       ) : activeElement === 'scene' ? (
         <SceneProperties config={sceneConfig} onChange={onSceneChange} />

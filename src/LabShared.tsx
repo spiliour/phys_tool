@@ -45,6 +45,48 @@ export const ALL_LAB_LINKS = [
   { label: 'Fluid Lab',     href: '/fluid'     },
 ]
 
+// ── Cross-lab presets ─────────────────────────────────────────────────────────
+// Presets are stored per-lab under their own localStorage key. These helpers let
+// the hub read/aggregate every lab's presets into one global dropdown.
+
+export type LabId = 'deform' | 'shatter' | 'particles' | 'fluid'
+
+export const LAB_PRESET_KEYS: Record<LabId, string> = {
+  deform:    'phys_tool_deform_presets',
+  shatter:   'phys_tool_shatter_presets',
+  particles: 'phys_tool_particle_presets',
+  fluid:     'phys_tool_fluid_presets',
+}
+
+export const LAB_LABELS: Record<LabId, string> = {
+  deform: 'Deform', shatter: 'Shatter', particles: 'Particles', fluid: 'Fluid',
+}
+
+export interface GlobalPreset { lab: LabId; id: string; name: string; createdAt: string }
+
+export function readLabPresets(lab: LabId): SceneSave[] {
+  try { return JSON.parse(localStorage.getItem(LAB_PRESET_KEYS[lab]) ?? '[]') } catch { return [] }
+}
+
+/** Every preset across every lab, tagged with which lab it belongs to. */
+export function readAllPresets(): GlobalPreset[] {
+  const out: GlobalPreset[] = []
+  ;(Object.keys(LAB_PRESET_KEYS) as LabId[]).forEach(lab => {
+    readLabPresets(lab).forEach(p => out.push({ lab, id: p.id, name: p.name, createdAt: p.createdAt }))
+  })
+  return out
+}
+
+/**
+ * Handle a lab exposes to the hub so the hub's global preset row can save/delete
+ * against whichever lab is currently active. `save` returns the created preset so
+ * the hub can select it.
+ */
+export interface LabPresetHandle {
+  save:   (name: string) => SceneSave
+  remove: (id: string) => void
+}
+
 export const VIEW_LABELS: Record<ViewType, string> = {
   effect: 'Effect', static: 'Static', dynamic: 'Dynamic',
 }
@@ -102,14 +144,17 @@ export const DATASETS: { name: string; data: DataRow[]; columns: ColumnMeta[] }[
 
 // ── Style constants ───────────────────────────────────────────────────────────
 
+// Light "Apple/iOS" theme to match the main composition interface. The 3D
+// viewport stays dark; only the chrome (sidebar, panels, controls) is light.
+
 export const floatSelSt: React.CSSProperties = {
-  background: 'transparent', color: '#a0a0d8', border: 'none',
+  background: 'transparent', color: 'var(--lab-text)', border: 'none',
   fontSize: 11, cursor: 'pointer', outline: 'none', padding: '2px 4px',
 }
 
 export const floatIcoSt: React.CSSProperties = {
   width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
-  background: 'rgba(255,255,255,0.08)', color: '#9090c0', border: '1px solid #5050a0',
+  background: 'var(--lab-fill)', color: 'var(--lab-text-2)', border: '1px solid var(--lab-border)',
   borderRadius: 8, cursor: 'pointer', fontSize: 16, padding: 0,
 }
 
@@ -117,10 +162,10 @@ export function secBtnSt(disabled: boolean): React.CSSProperties {
   return {
     flex: 1, padding: '8px 0', fontSize: 11, borderRadius: 6,
     cursor: disabled ? 'default' : 'pointer',
-    background: disabled ? '#303055' : '#454575',
-    color:      disabled ? '#6060a0' : '#d8d8f8',
-    border: disabled ? '1px solid #404070' : '1px solid #6060a0',
-    opacity: disabled ? 0.5 : 1,
+    background: disabled ? 'var(--lab-fill)' : 'var(--lab-surface)',
+    color:      disabled ? '#c7c7cc' : 'var(--lab-text)',
+    border: disabled ? '1px solid var(--lab-divider)' : '1px solid var(--lab-border)',
+    opacity: disabled ? 0.7 : 1, fontFamily: 'inherit',
   }
 }
 
@@ -128,49 +173,49 @@ export function priBtnSt(disabled: boolean): React.CSSProperties {
   return {
     width: '100%', padding: '9px 0', fontSize: 12, borderRadius: 6,
     cursor: disabled ? 'default' : 'pointer',
-    background: disabled ? '#303055' : '#6060f8',
-    color: disabled ? '#6060a0' : '#fff',
-    border: 'none', opacity: disabled ? 0.4 : 1, fontWeight: 600, fontFamily: 'inherit',
+    background: disabled ? 'var(--lab-divider)' : 'var(--lab-accent)',
+    color: disabled ? 'var(--lab-text-4)' : '#fff',
+    border: 'none', opacity: disabled ? 1 : 1, fontWeight: 600, fontFamily: 'inherit',
   }
 }
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
 
 export function Sec({ children }: { children: React.ReactNode }) {
-  return <div style={{ borderTop: '1px solid #606090', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
+  return <div style={{ borderTop: '1px solid var(--lab-divider)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
 }
 export function SLabel({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 9, color: '#a0a0c0', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700 }}>{children}</div>
+  return <div style={{ fontSize: 9, color: 'var(--lab-text-3)', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700 }}>{children}</div>
 }
 export function RowLabel({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 11, color: '#c0c0d8' }}>{children}</div>
+  return <div style={{ fontSize: 11, color: '#3a3a3c' }}>{children}</div>
 }
 
 // ── Spreadsheet modal ─────────────────────────────────────────────────────────
 
 function SpreadsheetModalInner({ data, columns, onClose }: { data: DataRow[]; columns: ColumnMeta[]; onClose: () => void }) {
   const cellColor = (type: ColType) =>
-    type === 'text' ? '#9090a8' : type === 'percent' ? '#a090e8' : '#d0d0e0'
+    type === 'text' ? 'var(--lab-text-2)' : type === 'percent' ? '#5e5ce6' : 'var(--lab-text)'
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1f1f2c', border: '1px solid #2e2e3e', borderRadius: 12, padding: 24, minWidth: 300, boxShadow: '0 16px 48px rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--lab-surface)', border: '1px solid var(--lab-divider)', borderRadius: 12, padding: 24, minWidth: 300, boxShadow: '0 16px 48px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#f0f0ff' }}>Dataset</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#9090a8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--lab-text)' }}>Dataset</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--lab-text-3)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
             <thead>
               <tr>{columns.map(col => (
-                <th key={col.field} style={{ textAlign: 'left', padding: '6px 14px', borderBottom: '1px solid #2a2a3a', color: '#8080a8', fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 600, whiteSpace: 'nowrap' }}>{col.label}</th>
+                <th key={col.field} style={{ textAlign: 'left', padding: '6px 14px', borderBottom: '1px solid var(--lab-divider)', color: 'var(--lab-text-3)', fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 600, whiteSpace: 'nowrap' }}>{col.label}</th>
               ))}</tr>
             </thead>
             <tbody>
               {data.map((row, i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
+                <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : '#f8f8fa' }}>
                   {columns.map(col => (
-                    <td key={col.field} style={{ padding: '8px 14px', borderBottom: '1px solid #22223a', color: cellColor(col.type), fontVariantNumeric: col.type !== 'text' ? 'tabular-nums' : undefined, whiteSpace: 'nowrap' }}>
+                    <td key={col.field} style={{ padding: '8px 14px', borderBottom: '1px solid var(--lab-fill)', color: cellColor(col.type), fontVariantNumeric: col.type !== 'text' ? 'tabular-nums' : undefined, whiteSpace: 'nowrap' }}>
                       {col.type === 'text' ? row[col.field] : col.type === 'percent' ? `${row[col.field]}%` : row[col.field]}
                     </td>
                   ))}
@@ -179,7 +224,7 @@ function SpreadsheetModalInner({ data, columns, onClose }: { data: DataRow[]; co
             </tbody>
           </table>
         </div>
-        <div style={{ fontSize: 10, color: '#8080a8' }}>{data.length} rows · {columns.length} columns</div>
+        <div style={{ fontSize: 10, color: 'var(--lab-text-3)' }}>{data.length} rows · {columns.length} columns</div>
       </div>
     </div>
   )
@@ -206,22 +251,22 @@ export function LabNavTitle({ name, href }: { name: string; href: string }) {
     <div ref={ref} style={{ position: 'relative' }}>
       <button onClick={() => setShowNav(v => !v)}
         style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: '#f0f0ff' }}>{name}</span>
-        <span style={{ fontSize: 9, color: showNav ? '#7070c8' : '#444458', marginTop: 1 }}>{showNav ? '▴' : '▾'}</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--lab-text)' }}>{name}</span>
+        <span style={{ fontSize: 9, color: showNav ? 'var(--lab-accent)' : 'var(--lab-text-4)', marginTop: 1 }}>{showNav ? '▴' : '▾'}</span>
       </button>
       {showNav && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 100,
-          background: '#1c1c28', border: '1px solid #2c2c3e', borderRadius: 10,
-          padding: 4, minWidth: 190, boxShadow: '0 10px 32px rgba(0,0,0,0.65)',
+          background: 'var(--lab-surface)', border: '1px solid var(--lab-divider)', borderRadius: 10,
+          padding: 4, minWidth: 190, boxShadow: '0 10px 32px rgba(0,0,0,0.18)',
         }}>
           {links.map(({ label, href: lhref }) => (
             <a key={lhref} href={lhref} style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '9px 12px', borderRadius: 7, fontSize: 12,
-              color: '#8888a0', textDecoration: 'none',
+              color: 'var(--lab-text-2)', textDecoration: 'none',
             }}>
-              <span style={{ color: '#3a3a5a', fontSize: 11 }}>→</span>
+              <span style={{ color: 'var(--lab-text-4)', fontSize: 11 }}>→</span>
               {label}
             </a>
           ))}
@@ -257,12 +302,12 @@ export function LabPresetRow({ presets, selPresetId, saveName, defaultSaveName, 
             if (e.key === 'Escape') setSaveName(null)
           }}
           placeholder="Preset name…"
-          style={{ flex: 1, background: '#303060', border: '1px solid #6060c8', borderRadius: 6, color: '#d0d0f0', fontSize: 10, padding: '5px 7px', outline: 'none', fontFamily: 'inherit' }}
+          style={{ flex: 1, background: 'var(--lab-surface)', border: '1px solid var(--lab-accent)', borderRadius: 6, color: 'var(--lab-text)', fontSize: 10, padding: '5px 7px', outline: 'none', fontFamily: 'inherit' }}
         />
         <button onClick={() => { if (saveName.trim()) onSave(saveName.trim()) }} disabled={!saveName.trim()}
-          style={{ background: '#22224a', border: '1px solid #4040a0', borderRadius: 6, cursor: 'pointer', color: '#8080d8', fontSize: 11, padding: '4px 9px', fontFamily: 'inherit', opacity: saveName.trim() ? 1 : 0.4 }}>✓</button>
+          style={{ background: 'var(--lab-accent)', border: '1px solid var(--lab-accent)', borderRadius: 6, cursor: 'pointer', color: '#fff', fontSize: 11, padding: '4px 9px', fontFamily: 'inherit', opacity: saveName.trim() ? 1 : 0.4 }}>✓</button>
         <button onClick={() => setSaveName(null)}
-          style={{ background: 'none', border: '1px solid #2c2c3c', borderRadius: 6, cursor: 'pointer', color: '#505060', fontSize: 12, padding: '4px 7px', fontFamily: 'inherit' }}>✕</button>
+          style={{ background: 'none', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-text-3)', fontSize: 12, padding: '4px 7px', fontFamily: 'inherit' }}>✕</button>
       </div>
     )
   }
@@ -270,16 +315,16 @@ export function LabPresetRow({ presets, selPresetId, saveName, defaultSaveName, 
     <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
       <select value={selPresetId}
         onChange={e => { setSelPresetId(e.target.value); onSelect(e.target.value) }}
-        style={{ flex: 1, background: '#303060', border: '1px solid #505090', color: selPresetId ? '#a0a0e0' : '#7070a8', borderRadius: 6, fontSize: 10, padding: '5px 7px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+        style={{ flex: 1, background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', color: selPresetId ? 'var(--lab-text)' : 'var(--lab-text-3)', borderRadius: 6, fontSize: 10, padding: '5px 7px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
         <option value="">Presets…</option>
         {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
       {selPresetId && (
         <button onClick={onDelete} title="Delete preset"
-          style={{ background: 'none', border: '1px solid #2c2c3c', borderRadius: 6, cursor: 'pointer', color: '#5a3030', fontSize: 12, padding: '4px 7px', fontFamily: 'inherit' }}>×</button>
+          style={{ background: 'none', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-danger)', fontSize: 12, padding: '4px 7px', fontFamily: 'inherit' }}>×</button>
       )}
       <button onClick={() => setSaveName(defaultSaveName)}
-        style={{ background: '#1a1a2e', border: '1px solid #2c2c4e', borderRadius: 6, cursor: 'pointer', color: '#4848a0', fontSize: 10, padding: '5px 9px', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Save</button>
+        style={{ background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-accent)', fontSize: 10, padding: '5px 9px', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Save</button>
     </div>
   )
 }
@@ -297,7 +342,7 @@ export function LabModelSection({ fileName, onFile, onRun, isLoading, message, s
         onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) onFile(f) }}
         onDragOver={e => e.preventDefault()}
         onClick={() => document.getElementById(inputId)!.click()}
-        style={{ border: '1px dashed #5050a0', borderRadius: 8, padding: '14px 10px', textAlign: 'center', cursor: 'pointer', fontSize: 11, color: '#9090c0', background: '#303060' }}
+        style={{ border: '1px dashed #c7c7cc', borderRadius: 8, padding: '14px 10px', textAlign: 'center', cursor: 'pointer', fontSize: 11, color: 'var(--lab-text-3)', background: 'var(--lab-fill)' }}
       >
         {fileName || 'Drop GLB or click to browse'}
       </div>
@@ -307,7 +352,7 @@ export function LabModelSection({ fileName, onFile, onRun, isLoading, message, s
         {isLoading ? 'Running…' : 'Run Simulation'}
       </button>
       {message && (
-        <div style={{ fontSize: 10, color: status === 'error' ? '#f07878' : '#9090b8', lineHeight: 1.5 }}>{message}</div>
+        <div style={{ fontSize: 10, color: status === 'error' ? 'var(--lab-danger)' : 'var(--lab-text-3)', lineHeight: 1.5 }}>{message}</div>
       )}
     </Sec>
   )
@@ -343,12 +388,12 @@ export function LabDataPanel({ data, draggingField, onDragStart, onDragEnd, onDa
   const columns = selIdx !== '' ? DATASETS[Number(selIdx)].columns : DEFAULT_COLUMNS
 
   return (
-    <div style={{ borderTop: '1px solid #505080', padding: '12px 16px 14px', background: '#353568' }}>
+    <div style={{ borderTop: '1px solid var(--lab-divider)', padding: '12px 16px 14px', background: 'var(--lab-surface)' }}>
       {showTable && <SpreadsheetModalInner data={data} columns={columns} onClose={() => setShowTable(false)} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <SLabel>Data</SLabel>
         <button onClick={() => setShowTable(true)}
-          style={{ padding: '3px 9px', fontSize: 9, borderRadius: 5, cursor: 'pointer', background: '#404070', color: '#b0b0d8', border: '1px solid #6060a0' }}>
+          style={{ padding: '3px 9px', fontSize: 9, borderRadius: 5, cursor: 'pointer', background: 'var(--lab-fill)', color: 'var(--lab-text-2)', border: '1px solid var(--lab-border)' }}>
           ⊞ Table
         </button>
       </div>
@@ -359,7 +404,7 @@ export function LabDataPanel({ data, draggingField, onDragStart, onDragEnd, onDa
           setSelIdx(idx)
           if (idx !== '' && onDataChange) onDataChange(DATASETS[Number(idx)].data)
         }}
-        style={{ width: '100%', background: '#303060', border: '1px solid #505090', color: selIdx !== '' ? '#c0c0e8' : '#8888b0', borderRadius: 6, fontSize: 10, padding: '5px 7px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 8 }}
+        style={{ width: '100%', background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', color: selIdx !== '' ? 'var(--lab-text)' : 'var(--lab-text-3)', borderRadius: 6, fontSize: 10, padding: '5px 7px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 8 }}
       >
         <option value="">Select dataset…</option>
         {DATASETS.map((d, i) => <option key={i} value={i}>{d.name}</option>)}
@@ -372,9 +417,9 @@ export function LabDataPanel({ data, draggingField, onDragStart, onDragEnd, onDa
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               padding: '4px 10px', borderRadius: 12, cursor: 'grab', userSelect: 'none',
-              background: draggingField === col.field ? '#404090' : '#303068',
-              border: `1px solid ${draggingField === col.field ? '#7070d8' : '#5050a0'}`,
-              color: draggingField === col.field ? '#c0c0ff' : '#c0c0e0',
+              background: draggingField === col.field ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
+              border: `1px solid ${draggingField === col.field ? 'var(--lab-accent)' : 'var(--lab-border)'}`,
+              color: draggingField === col.field ? 'var(--lab-accent)' : '#3a3a3c',
               fontSize: 10, transition: 'background 0.1s, border-color 0.1s, color 0.1s',
             }}>
             <ColTypeIcon type={col.type} />
@@ -382,7 +427,7 @@ export function LabDataPanel({ data, draggingField, onDragStart, onDragEnd, onDa
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 9, color: '#a0a0c8', marginTop: 8 }}>Drag a variable onto a property to bind it</div>
+      <div style={{ fontSize: 9, color: 'var(--lab-text-3)', marginTop: 8 }}>Drag a variable onto a property to bind it</div>
     </div>
   )
 }
@@ -394,9 +439,9 @@ export function LabAdvancedToggle({ open, onToggle }: { open: boolean; onToggle:
     <button onClick={onToggle} title={open ? 'Close advanced' : 'Open advanced'} style={{
       position: 'absolute', right: -14, top: '50%', transform: 'translateY(-50%)',
       zIndex: 40, width: 14, height: 52,
-      background: '#1f1f28', border: '1px solid #2c2c3c', borderLeft: 'none',
+      background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', borderLeft: 'none',
       borderRadius: '0 6px 6px 0', cursor: 'pointer',
-      color: open ? '#7070c8' : '#484858',
+      color: open ? 'var(--lab-accent)' : 'var(--lab-text-4)',
       fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: 0, lineHeight: 1,
     }}>{open ? '‹' : '›'}</button>
@@ -408,9 +453,9 @@ export function LabAdvancedToggle({ open, onToggle }: { open: boolean; onToggle:
 export function LabAdvancedPanel({ open, children }: { open: boolean; children: React.ReactNode }) {
   if (!open) return null
   return (
-    <div style={{ position: 'absolute', left: 268, top: 0, bottom: 0, width: 200, zIndex: 30, display: 'flex', flexDirection: 'column', borderRight: '1px solid #505080', background: '#383858', boxShadow: '4px 0 24px rgba(0,0,0,0.3)' }}>
+    <div style={{ position: 'absolute', left: 268, top: 0, bottom: 0, width: 200, zIndex: 30, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--lab-border)', background: 'var(--lab-surface)', boxShadow: '4px 0 24px rgba(0,0,0,0.12)' }}>
       <div style={{ flex: 1, padding: '18px 14px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#c0c0d8', letterSpacing: 0.2 }}>Advanced</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--lab-text)', letterSpacing: 0.2 }}>Advanced</div>
         {children}
       </div>
     </div>
@@ -429,16 +474,16 @@ export function LabViewSelector({ view1, view2, onView1, onView2, onAdd, onRemov
       <div style={{
         pointerEvents: 'all', display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '5px 6px 5px 14px', borderRadius: 24,
-        background: 'rgba(44,44,80,0.96)', backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)', border: '1px solid #5858a0',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.65)',
+        background: 'rgba(255,255,255,0.96)', backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)', border: '1px solid var(--lab-border)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
       }}>
         <select value={view1} onChange={e => onView1(e.target.value as ViewType)} style={floatSelSt}>
           {VIEW_OPTIONS.map(v => <option key={v} value={v}>{VIEW_LABELS[v]}</option>)}
         </select>
         {view2 !== null ? (
           <>
-            <div style={{ width: 1, height: 16, background: '#28284a' }} />
+            <div style={{ width: 1, height: 16, background: 'var(--lab-divider)' }} />
             <select value={view2} onChange={e => onView2(e.target.value as ViewType)} style={floatSelSt}>
               {VIEW_OPTIONS.map(v => <option key={v} value={v}>{VIEW_LABELS[v]}</option>)}
             </select>
@@ -496,9 +541,9 @@ export function LabViewToggle({ view, onChange }: {
       <div style={{
         pointerEvents: 'all', display: 'inline-flex', alignItems: 'center', gap: 2,
         padding: 4, borderRadius: 20,
-        background: 'rgba(44,44,80,0.96)', backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)', border: '1px solid #5858a0',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.65)',
+        background: 'rgba(255,255,255,0.96)', backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)', border: '1px solid var(--lab-border)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
       }}>
         {VIEW_TOGGLE_CONFIG.map(({ id, label, Icon }) => {
           const on = view === id
@@ -507,8 +552,8 @@ export function LabViewToggle({ view, onChange }: {
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '6px 14px', borderRadius: 14, border: 'none',
-                background: on ? 'rgba(100,100,200,0.28)' : 'transparent',
-                color: on ? '#d8d8ff' : '#8080b8',
+                background: on ? 'var(--lab-accent-soft)' : 'transparent',
+                color: on ? 'var(--lab-accent)' : 'var(--lab-text-3)',
                 cursor: 'pointer', fontSize: 12, fontFamily: 'inherit',
                 fontWeight: on ? 600 : 400, letterSpacing: 0.3,
                 transition: 'color 0.12s, background 0.12s',

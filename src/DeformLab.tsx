@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import {
   type SceneSave, type Shape, type ViewType, type DataField, type DataRow,
+  type LabPresetHandle,
   DEFAULT_DATA, VIEW_LABELS, secBtnSt, priBtnSt, floatSelSt, floatIcoSt,
   Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabModelSection, LabDataPanel,
@@ -28,6 +29,204 @@ const MODE_INFO = {
   STRETCH: { label: 'Stretch', factorLabel: 'Amount',   factorMin: 0,    factorMax: 3,   factorStep: 0.05, hint: 'Elongates along axis, squishes perpendicular.' },
   TWIST:   { label: 'Twist',   factorLabel: 'Angle °',  factorMin: -720, factorMax: 720, factorStep: 5,    hint: 'Twists around the deform axis. Up to ±720°.' },
   SLICE:   { label: 'Slice',   factorLabel: 'Cut pos %', factorMin: 1,   factorMax: 99,  factorStep: 1,    hint: 'Cuts the mesh at a data-driven position along the axis. Bind "value" to drive each instance.' },
+}
+
+// ── Deformation "stress" effects ──────────────────────────────────────────────
+// Material effects that grow with the deformation amount (morph influence, 0→1)
+// so they read as the surface reacting to being deformed. Controlled from the
+// Advanced panel and work on any geometry. Colour-based effects (tint, glow,
+// cracks) share the single chosen `tintColor`.
+
+const STRESS_PRESET_NAME = 'stretch - earth'   // compared case-insensitively; seeds earth defaults
+
+const FX_TINT_STRENGTH = 0.85   // max colour blend at full deform
+const FX_DISTORT_AMP   = 0.05   // max surface wobble (object-space)
+const FX_DISTORT_FREQ  = 8.0    // spatial ripple frequency
+const FX_DISTORT_SPEED = 2.5    // ripple animation speed
+const FX_GLOW_MAX      = 1.6    // max emissive intensity
+const FX_CRACK_FREQ    = 5.5    // crack network density
+
+export interface StressFx {
+  tint:       boolean
+  tintColor:  string
+  distort:    boolean
+  glow:       boolean
+  cracks:     boolean
+  desaturate: boolean
+}
+
+export const FX_OFF: StressFx = {
+  tint: false, tintColor: '#d62828', distort: false, glow: false, cracks: false, desaturate: false,
+}
+// Seeded when the legacy "Stretch - earth" preset is loaded without saved fx.
+const FX_EARTH: StressFx = { ...FX_OFF, tint: true, distort: true }
+
+// ── Preset reference (optional side panel) ─────────────────────────────────────
+// A preset may carry a reference — a dataset title, an image and a source link —
+// shown in a side panel on demand. Images live in public/assets/references/.
+
+export interface PresetReference { title: string; image: string; link: string }
+
+const REF_ASSET_BASE = import.meta.env.BASE_URL + 'assets/references/'
+// Resolve a stored image (bare filename → references folder; full URL → as-is).
+function refImageSrc(image: string) {
+  return /^(https?:)?\/\//.test(image) || image.startsWith('/') ? image : REF_ASSET_BASE + image
+}
+
+// ── "Stretch - earth" seed dataset + reference ────────────────────────────────
+// Earth Overshoot Day per year, with Number of Earths ≈ 365 / (day-of-year of the
+// overshoot day) — i.e. how many Earths humanity's demand would need that year.
+const EARTH_DATA: DataRow[] = [
+  { category: '1972', value: 1.0, percentage: 0  },   // Dec 31 → ~1.0 Earths
+  { category: '1990', value: 1.2, percentage: 20 },   // Oct 23 → 1.2
+  { category: '2000', value: 1.4, percentage: 40 },   // Sep 23 → 1.4
+  { category: '2010', value: 1.7, percentage: 70 },   // Aug 8  → 1.7
+  { category: '2026', value: 1.9, percentage: 90 },   // → 1.9
+]
+
+const EARTH_REFERENCE: PresetReference = {
+  title: 'How many Earths needed in a year?',
+  image: 'earth-overshoot.png',   // drop this file in public/assets/references/
+  link:  'https://overshoot.footprintnetwork.org/newsroom/past-earth-overshoot-days-/',
+}
+
+function fxAnyOn(fx?: StressFx | null): fx is StressFx {
+  return !!fx && (fx.tint || fx.distort || fx.glow || fx.cracks || fx.desaturate)
+}
+
+const _fxColor = new THREE.Color()
+
+type FxUniforms = {
+  uTime:       { value: number }
+  uAmp:        { value: number }
+  uCrack:      { value: number }
+  uDesat:      { value: number }
+  uCrackColor: { value: THREE.Color }
+}
+type FxMat = THREE.MeshStandardMaterial & {
+  __fxU?:    FxUniforms
+  __fxBase?: { color: THREE.Color; emissive: THREE.Color; emissiveIntensity: number }
+}
+
+// Give a cloned subtree its own material instances so per-clone effects don't
+// leak across clones (three's clone(true) shares material references).
+function ensureUniqueMaterials(root: THREE.Object3D) {
+  root.traverse(n => {
+    const m = n as THREE.Mesh
+    if (!m.isMesh || !m.material) return
+    m.material = Array.isArray(m.material)
+      ? m.material.map(x => x.clone())
+      : (m.material as THREE.Material).clone()
+  })
+}
+
+// Inject the shader-based effects (vertex distortion + fragment cracks/desaturate)
+// once per material, and cache the base look for the CPU-driven tint/glow. three
+// includes onBeforeCompile.toString() in its program cache key, so distinct
+// materials still compile their own programs.
+function installFxShader(root: THREE.Object3D) {
+  const f  = FX_DISTORT_FREQ.toFixed(1)
+  const cf = FX_CRACK_FREQ.toFixed(1)
+  root.traverse(n => {
+    const m = n as THREE.Mesh
+    if (!m.isMesh || !m.material) return
+    const mats = Array.isArray(m.material) ? m.material : [m.material]
+    mats.forEach(mat => {
+      const mm = mat as FxMat
+      if (mm.__fxU) return
+      const u: FxUniforms = {
+        uTime: { value: 0 }, uAmp: { value: 0 }, uCrack: { value: 0 }, uDesat: { value: 0 },
+        uCrackColor: { value: new THREE.Color('#d62828') },
+      }
+      mm.__fxU = u
+      mm.__fxBase = {
+        color:             mm.color ? mm.color.clone() : new THREE.Color(1, 1, 1),
+        emissive:          mm.emissive ? mm.emissive.clone() : new THREE.Color(0, 0, 0),
+        emissiveIntensity: mm.emissiveIntensity ?? 1,
+      }
+      mm.onBeforeCompile = shader => {
+        shader.uniforms.uTime       = u.uTime
+        shader.uniforms.uAmp        = u.uAmp
+        shader.uniforms.uCrack      = u.uCrack
+        shader.uniforms.uDesat      = u.uDesat
+        shader.uniforms.uCrackColor = u.uCrackColor
+
+        // Vertex: animated displacement along the normal + object-space position varying.
+        shader.vertexShader = 'uniform float uTime;\nuniform float uAmp;\nvarying vec3 vFxPos;\n' + shader.vertexShader
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          vFxPos = position;
+          float fxD = sin(position.x * ${f} + uTime * ${FX_DISTORT_SPEED.toFixed(1)})
+                    * cos(position.y * ${f} + uTime * ${(FX_DISTORT_SPEED * 0.8).toFixed(1)})
+                    * sin(position.z * ${f} + uTime * ${(FX_DISTORT_SPEED * 0.9).toFixed(1)});
+          transformed += normalize(normal) * fxD * uAmp;`
+        )
+
+        // Fragment: desaturate the diffuse, then add glowing cracks to the emissive.
+        shader.fragmentShader = 'uniform float uCrack;\nuniform float uDesat;\nuniform vec3 uCrackColor;\nvarying vec3 vFxPos;\n' + shader.fragmentShader
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `#include <map_fragment>
+          {
+            float fxLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(fxLum), uDesat);
+          }`
+        )
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <emissivemap_fragment>',
+          `#include <emissivemap_fragment>
+          {
+            float fxField = sin(vFxPos.x * ${cf} + 1.3)
+                          + sin(vFxPos.y * ${cf} * 1.1)
+                          + sin(vFxPos.z * ${cf} + 2.1);
+            float fxLine = 1.0 - smoothstep(0.0, 0.08 + 0.25 * uCrack, abs(fxField));
+            totalEmissiveRadiance += uCrackColor * fxLine * uCrack * 2.0;
+          }`
+        )
+      }
+      mm.needsUpdate = true
+    })
+  })
+}
+
+// Clone materials + install the effect shader — one-time setup per subtree.
+function prepareFx(root: THREE.Object3D) {
+  ensureUniqueMaterials(root)
+  installFxShader(root)
+}
+
+// Per-frame effect update. `t` is the deform amount (0→1); `time` the clock. Tint
+// and glow are applied on the CPU (so they compose with textures); distortion,
+// cracks and desaturate are driven through the shader uniforms.
+function applyFx(root: THREE.Object3D, fx: StressFx, t: number, time: number) {
+  const amt  = Math.min(1, Math.max(0, t))
+  const tint = _fxColor.set(fx.tintColor)
+  root.traverse(n => {
+    const m = n as THREE.Mesh
+    if (!m.isMesh || !m.material) return
+    const mats = Array.isArray(m.material) ? m.material : [m.material]
+    mats.forEach(mat => {
+      const mm   = mat as FxMat
+      const base = mm.__fxBase
+      if (base && mm.color) {
+        if (fx.tint) mm.color.copy(base.color).lerp(tint, amt * FX_TINT_STRENGTH)
+        else         mm.color.copy(base.color)
+      }
+      if (base && mm.emissive) {
+        if (fx.glow) { mm.emissive.copy(tint); mm.emissiveIntensity = amt * FX_GLOW_MAX }
+        else         { mm.emissive.copy(base.emissive); mm.emissiveIntensity = base.emissiveIntensity }
+      }
+      const u = mm.__fxU
+      if (u) {
+        u.uTime.value  = time
+        u.uAmp.value   = fx.distort ? amt * FX_DISTORT_AMP : 0
+        u.uCrack.value = fx.cracks ? amt : 0
+        u.uDesat.value = fx.desaturate ? amt : 0
+        u.uCrackColor.value.copy(tint)
+      }
+    })
+  })
 }
 
 const SPACING       = 3.0
@@ -59,58 +258,143 @@ function FitCamera() {
 
 // ── Effect view ───────────────────────────────────────────────────────────────
 
-function EffectView({ url, speed }: { url: string; speed: number }) {
-  const gltf  = useLoader(GLTFLoader, url)
-  const scene = useMemo(() => gltf.scene.clone(true), [gltf])
+function EffectView({ url, speed, fx, data, playData }: {
+  url: string; speed: number; fx?: StressFx | null
+  data?: DataRow[]; playData?: boolean
+}) {
+  const gltf   = useLoader(GLTFLoader, url)
+  const active = fxAnyOn(fx)
+  const scene = useMemo(() => {
+    const s = gltf.scene.clone(true)
+    if (active) prepareFx(s)
+    return s
+  }, [gltf, active])
+
+  // Data mode: as the effect plays, label the data point whose (normalised) value
+  // matches the current stretch, so the label steps through the categories.
+  const dataMode = !!playData && !!data && data.length > 0
+  const tValues = useMemo(() => {
+    if (!data || !data.length) return []
+    const vs = data.map(r => r.value)
+    const mn = Math.min(...vs), mx = Math.max(...vs)
+    return data.map(r => (r.value - mn) / Math.max(mx - mn, 0.001))
+  }, [data])
+
+  const [activeIdx, setActiveIdx] = useState(0)
+  const activeIdxRef = useRef(0)
+  const labelRef     = useRef<THREE.Group>(null)
+  const boxRef       = useRef(new THREE.Box3())
+  const ctrRef       = useRef(new THREE.Vector3())
+
   useFrame(({ clock }) => {
-    const t = (Math.sin(clock.getElapsedTime() * speed) + 1) / 2
+    const el = clock.getElapsedTime()
+    const t  = (Math.sin(el * speed) + 1) / 2
     scene.traverse(n => {
       const m = n as THREE.Mesh
       if (m.isMesh && m.morphTargetInfluences?.length) m.morphTargetInfluences[0] = t
     })
+    if (fxAnyOn(fx)) applyFx(scene, fx, t, el)
+    if (dataMode) {
+      // Nearest data point to the current stretch level.
+      let best = 0, bestD = Infinity
+      for (let i = 0; i < tValues.length; i++) {
+        const d = Math.abs(tValues[i] - t)
+        if (d < bestD) { bestD = d; best = i }
+      }
+      if (best !== activeIdxRef.current) { activeIdxRef.current = best; setActiveIdx(best) }
+      // Keep the label pinned just above the (stretching) object.
+      if (labelRef.current) {
+        boxRef.current.setFromObject(scene)
+        const c = boxRef.current.getCenter(ctrRef.current)
+        labelRef.current.position.set(c.x, boxRef.current.max.y + 0.15, c.z)
+      }
+    }
   })
+
+  const row = dataMode && data ? data[activeIdx] : null
+
   return (
     <Bounds fit clip observe margin={1.2}>
       <FitCamera />
       <primitive object={scene} />
+      {row && (
+        <group ref={labelRef}>
+          <Html center style={{ pointerEvents: 'none', textAlign: 'center' }}>
+            <div style={{
+              fontFamily: 'system-ui, sans-serif', whiteSpace: 'nowrap',
+              background: 'rgba(0,0,0,0.52)', padding: '4px 14px', borderRadius: 4,
+            }}>
+              <div style={{ fontSize: 13, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
+              <div style={{ fontSize: 12, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.value}</div>
+            </div>
+          </Html>
+        </group>
+      )}
     </Bounds>
   )
 }
 
 // ── Static view ───────────────────────────────────────────────────────────────
 
-function StaticView({ url, data, bindings, range }: {
-  url: string; data: DataRow[]; bindings: BindingMap; range: BindingRange
+function StaticView({ url, data, range, fx }: {
+  url: string; data: DataRow[]; range: BindingRange; fx?: StressFx | null
 }) {
   const gltf    = useLoader(GLTFLoader, url)
-  const offset  = (data.length - 1) / 2
   const dataMin = Math.min(...data.map(r => r.value))
   const dataMax = Math.max(...data.map(r => r.value))
 
-  const clones = useMemo(() => data.map(row => {
+  // Per-instance stretch amount (morph influence). The static view compares data
+  // categories, so each instance is always deformed by its own (normalised) value;
+  // an explicit `value` binding just lets the user remap the output range. This
+  // drives both the mesh shape and the stress tint / distortion amplitude.
+  const ts = useMemo(() => data.map(row => {
+    const norm = (row.value - dataMin) / Math.max(dataMax - dataMin, 0.001)
+    return Math.max(0, Math.min(1, range.outMin + norm * (range.outMax - range.outMin)))
+  }), [data, range, dataMin, dataMax])
+
+  const active = fxAnyOn(fx)
+  const clones = useMemo(() => data.map((_row, i) => {
     const clone = gltf.scene.clone(true)
-    let t = 0
-    if (bindings.factor === 'value') {
-      const norm = (row.value - dataMin) / Math.max(dataMax - dataMin, 0.001)
-      t = Math.max(0, Math.min(1, range.outMin + norm * (range.outMax - range.outMin)))
-    }
+    const t = ts[i]
     clone.traverse(n => {
       const m = n as THREE.Mesh
       if (m.isMesh && m.morphTargetInfluences?.length) m.morphTargetInfluences[0] = t
     })
+    if (active) prepareFx(clone)
     return clone
-  }), [gltf, data, bindings, range, dataMin, dataMax])
+  }), [gltf, data, ts, active])
+
+  // Animate each instance's effects (intensity ∝ its own stretch amount).
+  useFrame(({ clock }) => {
+    if (!fxAnyOn(fx)) return
+    const el = clock.getElapsedTime()
+    clones.forEach((clone, i) => applyFx(clone, fx, ts[i], el))
+  })
 
   // Per-clone bounding boxes — used for spacing and label Y position.
+  // `precise` (2nd arg) walks actual vertices via getVertexPosition, which applies
+  // the morph influence, so a stretched (X-squished) instance reports its true
+  // narrower width — essential for even edge-to-edge spacing below.
   const boxes = useMemo(
-    () => clones.map(c => new THREE.Box3().setFromObject(c)),
+    () => clones.map(c => new THREE.Box3().setFromObject(c, true)),
     [clones]
   )
 
-  // Spacing = widest object + 15% gap so items sit naturally close together.
-  const spacing = useMemo(() => {
-    const maxW = Math.max(...boxes.map(b => b.max.x - b.min.x), 0.1)
-    return maxW * 1.15
+  // Lay the objects out left→right using each one's ACTUAL width, so the gap
+  // between neighbours is constant even though stretched objects are narrower.
+  // Result is centred around x=0.
+  const positions = useMemo(() => {
+    const widths = boxes.map(b => b.max.x - b.min.x)
+    const avgW   = widths.reduce((a, c) => a + c, 0) / Math.max(widths.length, 1)
+    const gap    = avgW * 0.12
+    const xs: number[] = []
+    let cursor = 0                       // world-x where the next object's left edge goes
+    boxes.forEach(b => {
+      xs.push(cursor - b.min.x)          // group x so this object's left edge sits at cursor
+      cursor += (b.max.x - b.min.x) + gap
+    })
+    const span = cursor - gap            // world-x of the last object's right edge (left edge started at 0)
+    return xs.map(x => x - span / 2)     // centre the whole row on x=0
   }, [boxes])
 
   return (
@@ -121,7 +405,7 @@ function StaticView({ url, data, bindings, range }: {
         const cx  = (box.min.x + box.max.x) / 2   // visual centre X of this clone
         const ly  = box.min.y - 0.12
         return (
-          <group key={i} position={[(i - offset) * spacing, 0, 0]}>
+          <group key={i} position={[positions[i], 0, 0]}>
             <primitive object={clone} />
             <Html center position={[cx, ly, 0]}
               style={{ pointerEvents: 'none', textAlign: 'center' }}>
@@ -315,9 +599,14 @@ const DYNA_HOLD  = 1.2   // seconds to hold each category (label visible)
 const DYNA_TRANS = 0.7   // seconds to animate between categories
 const DYNA_SLOT  = DYNA_HOLD + DYNA_TRANS
 
-function DynamicDeformView({ url, data }: { url: string; data: DataRow[] }) {
-  const gltf  = useLoader(GLTFLoader, url)
-  const scene = useMemo(() => gltf.scene.clone(true), [gltf])
+function DynamicDeformView({ url, data, fx }: { url: string; data: DataRow[]; fx?: StressFx | null }) {
+  const gltf   = useLoader(GLTFLoader, url)
+  const active = fxAnyOn(fx)
+  const scene = useMemo(() => {
+    const s = gltf.scene.clone(true)
+    if (active) prepareFx(s)
+    return s
+  }, [gltf, active])
 
   const meshes = useMemo(() => {
     const r: THREE.Mesh[] = []
@@ -369,6 +658,7 @@ function DynamicDeformView({ url, data }: { url: string; data: DataRow[] }) {
     }
 
     meshes.forEach(m => { if (m.morphTargetInfluences) m.morphTargetInfluences[0] = morphVal })
+    if (fxAnyOn(fx)) applyFx(scene, fx, morphVal, clock.getElapsedTime())
   })
 
   const row = data[activeIdx] ?? data[0]
@@ -393,9 +683,10 @@ function DynamicDeformView({ url, data }: { url: string; data: DataRow[] }) {
 
 // ── Per-view canvas ───────────────────────────────────────────────────────────
 
-function ViewCanvas({ viewType, resultUrl, animSpeed, data, bindings, bindingRange, deformMode, axis }: {
+function ViewCanvas({ viewType, resultUrl, animSpeed, data, bindingRange, deformMode, axis, fx, playData }: {
   viewType: ViewType; resultUrl: string | null; animSpeed: number
-  data: DataRow[]; bindings: BindingMap; bindingRange: BindingRange; deformMode: DeformMode; axis: Axis
+  data: DataRow[]; bindingRange: BindingRange; deformMode: DeformMode; axis: Axis
+  fx?: StressFx | null; playData?: boolean
 }) {
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
@@ -411,15 +702,15 @@ function ViewCanvas({ viewType, resultUrl, animSpeed, data, bindings, bindingRan
                 ? <DynamicSliceView key={resultUrl} url={resultUrl!} data={data} axis={axis} />
                 : <SliceView key={resultUrl} url={resultUrl!} data={data} axis={axis} showLabels={viewType === 'static'} />
               : viewType === 'static'
-                ? <StaticView key={resultUrl} url={resultUrl!} data={data} bindings={bindings} range={bindingRange} />
+                ? <StaticView key={resultUrl} url={resultUrl!} data={data} range={bindingRange} fx={fx} />
                 : viewType === 'dynamic'
-                  ? <DynamicDeformView key={resultUrl} url={resultUrl!} data={data} />
-                  : <EffectView key={resultUrl} url={resultUrl!} speed={animSpeed} />}
+                  ? <DynamicDeformView key={resultUrl} url={resultUrl!} data={data} fx={fx} />
+                  : <EffectView key={resultUrl} url={resultUrl!} speed={animSpeed} fx={fx} data={data} playData={playData} />}
           </Suspense>
         )}
       </Canvas>
       {!resultUrl && viewType !== 'dynamic' && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2a2a3a', fontSize: 13, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a5a60', fontSize: 13, pointerEvents: 'none' }}>
           Bake a shape to begin
         </div>
       )}
@@ -433,18 +724,80 @@ function ModeBtn({ active, onClick, children }: { active: boolean; onClick: () =
   return (
     <button onClick={onClick} style={{
       flex: 1, padding: '7px 0', fontSize: 10, borderRadius: 6, cursor: 'pointer',
-      background: active ? '#22224a' : '#232330',
-      color:      active ? '#a0a0ff' : '#666678',
-      border:     active ? '1px solid #5050cc' : '1px solid #2c2c3c',
+      background: active ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
+      color:      active ? 'var(--lab-accent)' : 'var(--lab-text-2)',
+      border:     active ? '1px solid var(--lab-accent)' : '1px solid var(--lab-border)',
       fontWeight: active ? 600 : 400,
       transition: 'background 0.1s, color 0.1s, border-color 0.1s',
     }}>{children}</button>
   )
 }
 
+// Effect on/off row with an optional trailing control (e.g. the tint colour).
+function FxToggle({ label, on, onToggle, children }: {
+  label: string; on: boolean; onToggle: () => void; children?: React.ReactNode
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <span style={{ fontSize: 11, color: on ? 'var(--lab-text)' : 'var(--lab-text-3)' }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {children}
+        <button onClick={onToggle} title={on ? 'On' : 'Off'} style={{
+          width: 34, height: 18, borderRadius: 10, padding: 0, cursor: 'pointer',
+          border: `1px solid ${on ? 'var(--lab-accent)' : 'var(--lab-border)'}`,
+          background: on ? 'var(--lab-accent)' : 'var(--lab-divider)', position: 'relative',
+          transition: 'background 0.12s, border-color 0.12s',
+        }}>
+          <span style={{
+            position: 'absolute', top: 1, left: on ? 17 : 1, width: 14, height: 14,
+            borderRadius: '50%', background: 'var(--lab-surface)', transition: 'left 0.15s',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+          }} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Side panel showing a preset's reference (dataset title, image, source link).
+function ReferencePanel({ reference, onClose }: { reference: PresetReference; onClose: () => void }) {
+  return (
+    <div style={{
+      position: 'absolute', right: 12, bottom: 12, width: 300, maxHeight: '52%', zIndex: 20,
+      background: 'rgba(255,255,255,0.97)', border: '1px solid var(--lab-border)', borderRadius: 12,
+      boxShadow: '0 12px 40px rgba(0,0,0,0.22)', backdropFilter: 'blur(6px)',
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, padding: '14px 14px 10px' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--lab-text)', lineHeight: 1.3 }}>{reference.title}</div>
+        <button onClick={onClose} title="Hide reference"
+          style={{ background: 'none', border: 'none', color: 'var(--lab-text-3)', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>✕</button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {reference.image && (
+          <img src={refImageSrc(reference.image)} alt={reference.title}
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            style={{ width: '100%', borderRadius: 8, display: 'block', background: 'var(--lab-fill)' }} />
+        )}
+        {reference.link && (
+          <a href={reference.link} target="_blank" rel="noreferrer"
+            style={{ fontSize: 11, color: 'var(--lab-accent)', textDecoration: 'none', wordBreak: 'break-all', lineHeight: 1.5 }}>
+            {reference.link} ↗
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
+export default function DeformLab({ embedded, initialPresetId, presetHandleRef, presetSlot }: {
+  embedded?: boolean
+  initialPresetId?: string
+  presetHandleRef?: { current: LabPresetHandle | null }
+  presetSlot?: React.ReactNode
+} = {}) {
   const [status,    setStatus]    = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [message,   setMessage]   = useState('')
   const [resultUrl, setResultUrl] = useState<string | null>(null)
@@ -480,6 +833,10 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
   const [saveName,       setSaveName]       = useState<string | null>(null)  // null = hidden, string = editing
   const [lastShape,      setLastShape]      = useState<Shape | null>(null)
   const [pendingAutoRun, setPendingAutoRun] = useState<Shape | null>(null)
+  const [fx,             setFx]             = useState<StressFx>(FX_OFF)  // deformation stress effects
+  const [reference,      setReference]      = useState<PresetReference | null>(null)  // optional preset reference
+  const [showReference,  setShowReference]  = useState(false)
+  const [effectData,     setEffectData]     = useState(false)  // effect view steps through data labels (preset-only)
 
   const [draggingField,   setDraggingField]   = useState<DataField | null>(null)
   const [dragOverProp,    setDragOverProp]    = useState<string | null>(null)
@@ -511,17 +868,31 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
       createdAt: new Date().toISOString(),
       // Store the shape identifier so loading can re-run automatically.
       // No blob data — the shape is always re-generatable.
-      data: { shape: lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor },
+      data: { shape: lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor, fx, dataRows: data, reference, effectData },
     }
     const next = [save, ...presets]
     setPresets(next); persistDeformPresets(next)
     setSelPresetId(save.id); setSaveName(null)
-  }, [lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor, presets])
+    return save
+  }, [lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor, fx, data, reference, effectData, presets])
 
   const loadPreset = useCallback((id: string) => {
     const save = presets.find(p => p.id === id)
     if (!save) return
     const d = save.data as Record<string, unknown>
+    // Legacy "Stretch - earth" preset (saved before fx / dataset / reference existed)
+    // gets seeded with the earth defaults; newer presets restore their saved values.
+    const isEarth = save.name.trim().toLowerCase() === STRESS_PRESET_NAME
+    const savedFx = d.fx as StressFx | undefined
+    setFx(savedFx ?? (isEarth ? FX_EARTH : FX_OFF))
+    const savedRows = d.dataRows as DataRow[] | undefined
+    if (savedRows)     setData(savedRows)
+    else if (isEarth)  setData(EARTH_DATA)
+    const savedRef = d.reference as PresetReference | undefined
+    const ref = savedRef ?? (isEarth ? EARTH_REFERENCE : null)
+    setReference(ref)
+    setShowReference(!!ref)   // open by default when the preset has a reference
+    setEffectData((d.effectData as boolean | undefined) ?? isEarth)
     if (d.deformMode)        setDeformMode(d.deformMode as DeformMode)
     if (d.factor != null)    setFactor(d.factor as number)
     if (d.axis)              setAxis(d.axis as Axis)
@@ -562,6 +933,19 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
     setPresets(next); persistDeformPresets(next)
     if (selPresetId === id) setSelPresetId('')
   }, [presets, selPresetId])
+
+  // Hub-driven preset load: when the global dropdown picks one of this lab's presets.
+  useEffect(() => {
+    if (initialPresetId) loadPreset(initialPresetId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPresetId])
+
+  // Expose save/delete to the hub's global preset row while this lab is active.
+  useEffect(() => {
+    if (!presetHandleRef) return
+    presetHandleRef.current = { save: savePreset as (n: string) => SceneSave, remove: deletePreset }
+    return () => { if (presetHandleRef.current?.save === savePreset) presetHandleRef.current = null }
+  }, [presetHandleRef, savePreset, deletePreset])
 
   const handleFile = useCallback((file: File) => {
     if (!file.name.endsWith('.glb') && !file.name.endsWith('.gltf')) return
@@ -665,17 +1049,17 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
     setBindingRange({ outMin: 0, outMax: 1 })
   }
 
-  const sl: React.CSSProperties = { width: '100%', accentColor: '#7070f5' }
+  const sl: React.CSSProperties = { width: '100%', accentColor: 'var(--lab-accent)' }
   const factorDropping  = dragOverProp === 'factor'
   const factorHighlight = draggingField !== null
 
   return (
-    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: '#000000', color: '#e0e0f0', position: 'relative' }}>
+    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: 'var(--lab-fill)', color: 'var(--lab-text)', position: 'relative' }}>
 
 
 
       {/* ── Left panel ── */}
-      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#383858', position: 'relative' }}>
+      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--lab-border)', background: 'var(--lab-surface)', position: 'relative' }}>
 
         <LabAdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(v => !v)} />
 
@@ -683,12 +1067,15 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
 
           {!embedded && <LabNavTitle name="Deform Lab" href="/deform" />}
 
-          <LabPresetRow
-            presets={presets} selPresetId={selPresetId} saveName={saveName}
-            defaultSaveName={`${MODE_INFO[deformMode].label} ${new Date().toLocaleDateString()}`}
-            onSelect={loadPreset} onSave={savePreset} onDelete={() => deletePreset(selPresetId)}
-            setSaveName={setSaveName} setSelPresetId={setSelPresetId}
-          />
+          {/* Embedded in the hub, the global preset dropdown replaces this row. */}
+          {!embedded && (
+            <LabPresetRow
+              presets={presets} selPresetId={selPresetId} saveName={saveName}
+              defaultSaveName={`${MODE_INFO[deformMode].label} ${new Date().toLocaleDateString()}`}
+              onSelect={loadPreset} onSave={savePreset} onDelete={() => deletePreset(selPresetId)}
+              setSaveName={setSaveName} setSelPresetId={setSelPresetId}
+            />
+          )}
 
           {/* Effect */}
           <Sec>
@@ -698,7 +1085,7 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
                 <ModeBtn key={m} active={deformMode===m} onClick={() => handleModeChange(m)}>{MODE_INFO[m].label}</ModeBtn>
               ))}
             </div>
-            <div style={{ fontSize: 10, color: '#9898b8', lineHeight: 1.5 }}>{info.hint}</div>
+            <div style={{ fontSize: 10, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>{info.hint}</div>
 
             {/* Factor — drop target */}
             <div
@@ -708,11 +1095,11 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
               style={{
                 borderRadius: 8, padding: '10px',
                 border: factorDropping
-                  ? '1px solid #7070f8'
-                  : factorHighlight ? '1px dashed #40407a' : '1px solid #28283a',
+                  ? '1px solid var(--lab-accent)'
+                  : factorHighlight ? '1px dashed var(--lab-accent-border)' : '1px solid var(--lab-divider)',
                 background: factorDropping
-                  ? 'rgba(60,60,150,0.16)'
-                  : factorHighlight ? 'rgba(30,30,80,0.12)' : '#181824',
+                  ? 'var(--lab-accent-soft)'
+                  : factorHighlight ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
                 transition: 'border-color 0.12s, background 0.12s',
               }}
             >
@@ -721,12 +1108,12 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
                   {isSlice ? info.factorLabel : `${info.factorLabel}: ${isAngle ? Math.round(factor) + '°' : factor.toFixed(2)}`}
                 </RowLabel>
                 {bindings.factor ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px 2px 10px', borderRadius: 12, fontSize: 10, background: '#22224a', border: '1px solid #4444aa', color: '#8a8ae8' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px 2px 10px', borderRadius: 12, fontSize: 10, background: 'var(--lab-accent-soft)', border: '1px solid var(--lab-accent-border)', color: 'var(--lab-accent)' }}>
                     ⬡ {bindings.factor}
-                    <button onClick={() => removeBinding('factor')} style={{ background: 'none', border: 'none', color: '#606098', cursor: 'pointer', padding: '0 0 0 2px', fontSize: 12, lineHeight: 1 }}>×</button>
+                    <button onClick={() => removeBinding('factor')} style={{ background: 'none', border: 'none', color: 'var(--lab-text-3)', cursor: 'pointer', padding: '0 0 0 2px', fontSize: 12, lineHeight: 1 }}>×</button>
                   </span>
                 ) : factorHighlight ? (
-                  <span style={{ fontSize: 9, color: '#505090', letterSpacing: 0.5 }}>drop here</span>
+                  <span style={{ fontSize: 9, color: 'var(--lab-text-4)', letterSpacing: 0.5 }}>drop here</span>
                 ) : null}
               </div>
               {!isSlice && (
@@ -739,7 +1126,7 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
               {/* Mapping range fields hidden for now
               {bindings.factor && bindings.factor !== 'percentage' && (
                 <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ fontSize: 9, color: '#505060', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Mapping</div>
+                  <div style={{ fontSize: 9, color: 'var(--lab-text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Mapping</div>
                   {(['outMin','outMax'] as const).map((key, ki) => (
                     <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ color: '#6a6a7a', width: 28, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10 }}>{ki === 0 ? dataMin : dataMax}</span>
@@ -775,12 +1162,12 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <SLabel>Cut face</SLabel>
                 {/* Mode toggle */}
-                <div style={{ display: 'flex', background: '#13131e', borderRadius: 6, padding: 2, gap: 2 }}>
+                <div style={{ display: 'flex', background: 'var(--lab-fill)', borderRadius: 6, padding: 2, gap: 2 }}>
                   {(['color', 'texture'] as const).map(m => (
                     <button key={m} onClick={() => setCutFaceMode(m)} style={{
                       flex: 1, padding: '4px 0', borderRadius: 4, border: 'none', cursor: 'pointer',
-                      background: cutFaceMode === m ? '#2a2a4a' : 'transparent',
-                      color: cutFaceMode === m ? '#c0c0e8' : '#505060',
+                      background: cutFaceMode === m ? 'var(--lab-surface)' : 'transparent',
+                      color: cutFaceMode === m ? 'var(--lab-text)' : 'var(--lab-text-3)',
                       fontSize: 10, fontFamily: 'inherit', textTransform: 'capitalize',
                     }}>{m}</button>
                   ))}
@@ -788,13 +1175,13 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
                 {cutFaceMode === 'color' ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <input type="color" value={cutColor} onChange={e => setCutColor(e.target.value)}
-                      style={{ width: 34, height: 28, padding: 2, background: 'none', border: '1px solid #2c2c3c', borderRadius: 5, cursor: 'pointer' }} />
-                    <span style={{ fontSize: 11, color: '#9090a2' }}>{cutColor}</span>
+                      style={{ width: 34, height: 28, padding: 2, background: 'none', border: '1px solid var(--lab-border)', borderRadius: 5, cursor: 'pointer' }} />
+                    <span style={{ fontSize: 11, color: 'var(--lab-text-2)' }}>{cutColor}</span>
                   </div>
                 ) : (
                   <>
                     <select value={cutTextureName} onChange={e => setCutTextureName(e.target.value)}
-                      style={{ width: '100%', background: '#303060', border: '1px solid #2c2c3c', borderRadius: 6, color: '#c0c0e8', fontSize: 10, padding: '5px 7px', outline: 'none', fontFamily: 'inherit' }}>
+                      style={{ width: '100%', background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', borderRadius: 6, color: 'var(--lab-text)', fontSize: 10, padding: '5px 7px', outline: 'none', fontFamily: 'inherit' }}>
                       {cutTextures.map(t => <option key={t} value={t}>{texLabel(t)}</option>)}
                     </select>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -839,6 +1226,13 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
 
         </div>
 
+        {/* Global preset row (hub) sits just above the data panel when embedded. */}
+        {embedded && presetSlot && (
+          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--lab-border)', background: 'var(--lab-surface)' }}>
+            {presetSlot}
+          </div>
+        )}
+
         <LabDataPanel
           data={data} draggingField={draggingField}
           onDragStart={setDraggingField} onDragEnd={() => setDraggingField(null)}
@@ -848,13 +1242,31 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
 
       <LabAdvancedPanel open={showAdvanced}>
         <Sec>
+          <SLabel>Stress Effects</SLabel>
+          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5, marginBottom: 2 }}>
+            Grow with the deformation amount. Work on any geometry.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <FxToggle label="Tint" on={fx.tint} onToggle={() => setFx(f => ({ ...f, tint: !f.tint }))}>
+              <input type="color" value={fx.tintColor}
+                onChange={e => setFx(f => ({ ...f, tintColor: e.target.value }))}
+                title="Effect colour (tint / glow / cracks)"
+                style={{ width: 26, height: 18, padding: 0, border: '1px solid var(--lab-border)', borderRadius: 4, background: 'none', cursor: 'pointer' }} />
+            </FxToggle>
+            <FxToggle label="Distortion"    on={fx.distort}    onToggle={() => setFx(f => ({ ...f, distort: !f.distort }))} />
+            <FxToggle label="Emissive glow" on={fx.glow}       onToggle={() => setFx(f => ({ ...f, glow: !f.glow }))} />
+            <FxToggle label="Cracks"        on={fx.cracks}     onToggle={() => setFx(f => ({ ...f, cracks: !f.cracks }))} />
+            <FxToggle label="Desaturate"    on={fx.desaturate} onToggle={() => setFx(f => ({ ...f, desaturate: !f.desaturate }))} />
+          </div>
+        </Sec>
+        <Sec>
           <SLabel>Mesh</SLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <RowLabel>Remesh detail: {subdivs === 0 ? 'off' : subdivs}</RowLabel>
             <input type="range" min={0} max={4} step={1} value={subdivs}
               onChange={e => setSubdivs(Number(e.target.value))}
-              style={{ width: '100%', accentColor: '#7070f5' }} />
-            <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
+              style={{ width: '100%', accentColor: 'var(--lab-accent)' }} />
+            <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
               Adds edge loops before deforming. Try 2–3 for smoother curves.
             </div>
           </div>
@@ -865,7 +1277,7 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
             <button onClick={() => run('sphere')} disabled={isLoading} style={secBtnSt(isLoading)}>Sphere</button>
             <button onClick={() => run('cube')}   disabled={isLoading} style={secBtnSt(isLoading)}>Cube</button>
           </div>
-          <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
             Run the simulation on a built-in shape without uploading a model.
           </div>
         </Sec>
@@ -876,7 +1288,7 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
 
         <div style={{ flex: 1, position: 'relative' }}>
           <ViewCanvas viewType={view1} resultUrl={resultUrl} animSpeed={animSpeed}
-            data={data} bindings={bindings} bindingRange={bindingRange} deformMode={deformMode} axis={axis} />
+            data={data} bindingRange={bindingRange} deformMode={deformMode} axis={axis} fx={fx} playData={effectData} />
         </div>
 
         {/* LEGACY two-view split — commented out
@@ -896,6 +1308,22 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
 
         <LabViewToggle view={view1} onChange={setView1} />
 
+        {/* Reference — only offered when the loaded preset carries one. */}
+        {reference && !showReference && (
+          <button onClick={() => setShowReference(true)} title="Show reference"
+            style={{
+              position: 'absolute', top: 12, right: 12, zIndex: 20,
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(255,255,255,0.95)', border: '1px solid var(--lab-border)', borderRadius: 8,
+              color: 'var(--lab-accent)', fontSize: 11, fontFamily: 'inherit', padding: '6px 10px', cursor: 'pointer',
+            }}>
+            ⓘ Reference
+          </button>
+        )}
+        {reference && showReference && (
+          <ReferencePanel reference={reference} onClose={() => setShowReference(false)} />
+        )}
+
       </div>
     </div>
   )
@@ -904,7 +1332,7 @@ export default function DeformLab({ embedded }: { embedded?: boolean } = {}) {
 // ── Style constants ───────────────────────────────────────────────────────────
 
 const numInp: React.CSSProperties = {
-  background: '#1a1a28', border: '1px solid #30303e', borderRadius: 5,
-  color: '#c0c0d8', padding: '3px 7px', fontSize: 11, outline: 'none', width: 54,
+  background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', borderRadius: 5,
+  color: 'var(--lab-text)', padding: '3px 7px', fontSize: 11, outline: 'none', width: 54,
 }
 

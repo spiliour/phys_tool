@@ -12,6 +12,7 @@ import {
   MarkShape, MarkMaterial, StructuralConfig,
 } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
+import { MODEL_PRESETS, MODEL_SCALE_OVERRIDES } from './models'
 
 // ── Color context (avoids prop-drilling colorMode/colorGradient) ──────────────
 
@@ -118,18 +119,23 @@ function CustomModelMesh({
 
   const normalizedObj = useMemo(() => {
     const c = scene.clone(true)
-    // Reset root transform for clean bounding box
+    // Reset root transform so world space == model space when measuring
     c.position.set(0, 0, 0)
     c.rotation.set(0, 0, 0)
     c.scale.set(1, 1, 1)
     c.updateMatrixWorld(true)
+
+    const scaleOverride = url.includes('drum') ? 0.63
+      : url.includes('clarinet') ? 1.2
+      : url.includes('harp') ? 0.825
+      : 1
 
     const box = new THREE.Box3().setFromObject(c)
     if (!box.isEmpty()) {
       const dims   = new THREE.Vector3()
       box.getSize(dims)
       const maxDim = Math.max(dims.x, dims.y, dims.z, 0.001)
-      const ns     = MARK_BASE / maxDim
+      const ns     = (MARK_BASE / maxDim) * scaleOverride
       const center = new THREE.Vector3()
       box.getCenter(center)
       c.scale.setScalar(ns)
@@ -155,7 +161,7 @@ function CustomModelMesh({
     }
 
     return c
-  }, [scene, material, color])
+  }, [scene, url, material, color])
 
   return (
     <group scale={sz}>
@@ -174,7 +180,7 @@ function computeLabelValues(slots: LabelSlots, layers: LayerData[], layerIndex: 
   const entries = Object.entries(slots) as [keyof LabelSlots, DataVariable | null][]
   for (const [pos, variable] of entries) {
     if (!variable) continue
-    if (variable === 'weight')      result[pos] = `${layer?.percentage.toFixed(1) ?? '?'}%`
+    if (variable === 'weight')      result[pos] = `${layer?.percentage ?? '?'}`
     if (variable === 'garbageType') result[pos] = layer?.name ?? '?'
     if (variable === 'count')       result[pos] = String(layers.length)
   }
@@ -276,10 +282,10 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
       )}
       {markLabelConfig.show && (
         <>
-          {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[50, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
-          {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[50, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
-          {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[50, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
-          {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[50, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
+          {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[1, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
+          {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[1, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
+          {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[1, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
+          {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[1, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
         </>
       )}
     </group>
@@ -321,7 +327,7 @@ function AlignedMarks({
   bindings:          DataBindings
   markLabelConfig:   LabelConfig
 }) {
-  const count   = bindings.c1AlignCount === 'count' ? layers.length : collection1Config.alignCount
+  const count   = layers.length || collection1Config.alignCount
   const { alignAxis: axis, alignSpacing: spacing, alignAnchor: anchor } = collection1Config
 
   const s   = L1_MARK_SCALE
@@ -365,6 +371,7 @@ function AlignedMarks({
         const markShape = catEntry?.shape ?? markConfig.shape
         const markUrl   = catEntry ? catEntry.customModelUrl : markConfig.customModelUrl
         const markHasMat = catEntry ? catEntry.customModelHasMat : markConfig.customModelHasMat
+        const effectiveMaterial = catEntry?.customModelHasMat ? 'original' as const : markConfig.material
 
         return (
           <group key={i} position={pos} rotation={rot}>
@@ -372,17 +379,17 @@ function AlignedMarks({
               shape={markShape}
               customModelUrl={markUrl}
               customModelHasMat={markHasMat}
-              material={markConfig.material}
+              material={effectiveMaterial}
               structural={markConfig.structural}
               color={getColor(i)}
               scale={sc}
             />
             {markLabelConfig.show && (
               <>
-                {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[50, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
-                {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[50, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
-                {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[50, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
-                {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[50, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
+                {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[1, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
+                {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[1, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
+                {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[1, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
+                {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[1, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
               </>
             )}
           </group>
@@ -397,7 +404,7 @@ function AlignedMarks({
 function CollectionInstance({
   markConfig, collection1Config, color, position,
   layers, bindings, heightOverride,
-  markLabelConfig, colLabelConfig, layerIndex,
+  markLabelConfig, colLabelConfig, layerIndex, scatterSeed,
 }: {
   markConfig:        MarkConfig
   collection1Config: CollectionConfig
@@ -409,6 +416,7 @@ function CollectionInstance({
   markLabelConfig:   LabelConfig
   colLabelConfig:    LabelConfig
   layerIndex:        number
+  scatterSeed:       number
 }) {
   const msc = markConfig.scale ?? 1
   const scaledMarkSize = { x: markConfig.size.x * msc, y: markConfig.size.y * msc, z: markConfig.size.z * msc }
@@ -446,9 +454,14 @@ function CollectionInstance({
 
   // Scattering / stacking
   const { scatterDimensions: dim, scatterCount, scatterDensity, scatterMode } = collection1Config
-  const effectiveCount = (scatterMode ?? 'count') === 'density'
-    ? Math.max(5, Math.round(scatterDensity * dim.x * (heightOverride ?? dim.y) * dim.z))
-    : scatterCount
+  const dataLayerCount = bindings.scatterCount !== null
+    ? Math.max(1, Math.round(layers[layerIndex % Math.max(1, layers.length)]?.percentage ?? scatterCount))
+    : null
+  const effectiveCount = dataLayerCount !== null
+    ? dataLayerCount
+    : (scatterMode ?? 'count') === 'density'
+      ? Math.max(5, Math.round(scatterDensity * dim.x * (heightOverride ?? dim.y) * dim.z))
+      : scatterCount
   const h        = heightOverride ?? dim.y
   const labelData = computeLabelValues(colLabelConfig.slots, layers, layerIndex)
   return (
@@ -464,6 +477,7 @@ function CollectionInstance({
       customModelUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
       labelShow={colLabelConfig.show}
       labelData={labelData}
+      seed={scatterSeed}
     />
   )
 }
@@ -474,7 +488,7 @@ const WEIGHT_MAX_H = 8
 // ── Level 2: one collection ───────────────────────────────────────────────────
 
 function Level2Content({
-  markConfig, collection1Config, layers, bindings, markLabelConfig, colLabelConfig,
+  markConfig, collection1Config, layers, bindings, markLabelConfig, colLabelConfig, scatterSeed,
 }: {
   markConfig:        MarkConfig
   collection1Config: CollectionConfig
@@ -482,6 +496,7 @@ function Level2Content({
   bindings:          DataBindings
   markLabelConfig:   LabelConfig
   colLabelConfig:    LabelConfig
+  scatterSeed:       number
 }) {
   const color  = layers[0]?.color ?? collection1Config.color
   const maxPct = Math.max(...layers.map(l => l.percentage), 1)
@@ -501,6 +516,7 @@ function Level2Content({
       markLabelConfig={markLabelConfig}
       colLabelConfig={colLabelConfig}
       layerIndex={0}
+      scatterSeed={scatterSeed}
     />
   )
 }
@@ -509,7 +525,7 @@ function Level2Content({
 
 function Level3Content({
   markConfig, collection1Config, collection2Config, layers, bindings,
-  markLabelConfig, colLabelConfig,
+  markLabelConfig, colLabelConfig, scatterSeed,
 }: {
   markConfig:        MarkConfig
   collection1Config: CollectionConfig
@@ -518,13 +534,14 @@ function Level3Content({
   bindings:          DataBindings
   markLabelConfig:   LabelConfig
   colLabelConfig:    LabelConfig
+  scatterSeed:       number
 }) {
   const {
     arrangement, alignCount, alignAxis, alignSpacing, alignAnchor,
     scatterCount, scatterDimensions, color: col2Color,
   } = collection2Config
 
-  const groupCount = bindings.c2AlignCount === 'count' ? layers.length : alignCount
+  const groupCount = layers.length || alignCount
 
   const groups = useMemo(() => {
     if (arrangement === 'alignment') {
@@ -608,9 +625,9 @@ function Level3Content({
       const layer = layers[i % Math.max(1, layers.length)]
       return {
         position: [
-          (Math.random() - 0.5) * scatterDimensions.x,
-          (Math.random() - 0.5) * scatterDimensions.y,
-          (Math.random() - 0.5) * scatterDimensions.z,
+          (Math.random() - 0.5) * scatterDimensions.x * 0.8,
+          (Math.random() - 0.5) * scatterDimensions.y * 0.8,
+          (Math.random() - 0.5) * scatterDimensions.z * 0.8,
         ] as [number, number, number],
         color:    layer?.color      ?? col2Color,
         name:     layer?.name       ?? `Group ${i + 1}`,
@@ -625,7 +642,7 @@ function Level3Content({
     collection1Config.arrangement, collection1Config.alignAxis,
     collection1Config.alignCount, collection1Config.alignSpacing,
     collection1Config.scatterDimensions.x, collection1Config.scatterDimensions.y,
-    markConfig.size.x, markConfig.size.y,
+    markConfig.size.x, markConfig.size.y, scatterSeed,
   ])
 
   const maxPct = Math.max(...layers.map(l => l.percentage), 1)
@@ -639,7 +656,7 @@ function Level3Content({
         // Apply per-category geometry override for this group's layer
         const catEntry = markConfig.categoryShapes?.[name]
         const groupMarkConfig = catEntry
-          ? { ...markConfig, shape: catEntry.shape, customModelUrl: catEntry.customModelUrl, customModelHasMat: catEntry.customModelHasMat, customModelName: catEntry.customModelName }
+          ? { ...markConfig, shape: catEntry.shape, customModelUrl: catEntry.customModelUrl, customModelHasMat: catEntry.customModelHasMat, customModelName: catEntry.customModelName, material: catEntry.customModelHasMat ? 'original' as const : markConfig.material }
           : markConfig
         return (
           <CollectionInstance
@@ -654,6 +671,7 @@ function Level3Content({
             markLabelConfig={markLabelConfig}
             colLabelConfig={colLabelConfig}
             layerIndex={i % Math.max(1, layers.length)}
+            scatterSeed={scatterSeed}
           />
         )
       })}
@@ -905,6 +923,8 @@ interface CompositionCanvasProps {
   decorations:       DecorationConfig[]
   colorMode:         'distinct' | 'continuous'
   colorGradient:     { from: string; to: string }
+  scatterSeed:       number
+  datasetTitle?:     string
   // Path tracing
   pathTracingActive?:  boolean
   onSamplesUpdate?:    (n: number) => void
@@ -914,7 +934,7 @@ interface CompositionCanvasProps {
 export function CompositionCanvas({
   level, markConfig, collection1Config, collection2Config, sceneConfig, layers, bindings,
   markLabelConfig, colLabelConfig, decorations,
-  colorMode, colorGradient,
+  colorMode, colorGradient, scatterSeed, datasetTitle,
   pathTracingActive, onSamplesUpdate, downloadRenderRef,
 }: CompositionCanvasProps) {
   const fov     = focalLengthToFov(sceneConfig.focalLength)
@@ -953,6 +973,7 @@ export function CompositionCanvas({
           bindings={bindings}
           markLabelConfig={markLabelConfig}
           colLabelConfig={colLabelConfig}
+          scatterSeed={scatterSeed}
         />
       )}
       {level === 3 && (
@@ -964,6 +985,7 @@ export function CompositionCanvas({
           bindings={bindings}
           markLabelConfig={markLabelConfig}
           colLabelConfig={colLabelConfig}
+          scatterSeed={scatterSeed}
         />
       )}
 
@@ -971,6 +993,18 @@ export function CompositionCanvas({
       {decorations.map((dec) => (
         <DecorationMesh key={dec.id} config={dec} />
       ))}
+
+      {/* Dataset title — floats above the scene */}
+      {datasetTitle && (
+        <Html zIndexRange={[1, 0]} position={[0, 9, 0]} center style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+          <span style={{
+            fontSize: '16px', fontWeight: '600',
+            color: '#ffffff',
+          }}>
+            {datasetTitle}
+          </span>
+        </Html>
+      )}
 
       </Physics>
       </ColorContext.Provider>

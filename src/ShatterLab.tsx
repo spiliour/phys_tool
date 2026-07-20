@@ -7,7 +7,7 @@ import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier'
 import type { RapierRigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 import {
-  type SceneSave, type Shape, type ViewType, type DataRow, type DataField,
+  type SceneSave, type Shape, type ViewType, type DataRow, type DataField, type LabPresetHandle,
   secBtnSt, Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabModelSection, LabDataPanel,
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
@@ -163,7 +163,7 @@ function CompareStaticView({ urls }: { urls: (string | null)[] }) {
               <div style={{ fontSize: 11, fontWeight: 600, color: '#c0c0e0', letterSpacing: 0.3 }}>
                 {row.category}
               </div>
-              <div style={{ fontSize: 9, color: '#60608a', marginTop: 2 }}>
+              <div style={{ fontSize: 9, color: 'var(--lab-text-3)', marginTop: 2 }}>
                 {row.value} {row.value === 1 ? 'piece' : 'pieces'}
               </div>
             </div>
@@ -289,7 +289,7 @@ function ViewCanvas({ viewType, resultUrl, compareUrls, compareLoading, impulse,
       </Canvas>
 
       {nothingYet && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2a2a3a', fontSize: 13, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lab-border)', fontSize: 13, pointerEvents: 'none' }}>
           Shatter a shape to begin
         </div>
       )}
@@ -299,7 +299,12 @@ function ViewCanvas({ viewType, resultUrl, compareUrls, compareLoading, impulse,
 
 // ── ShatterLab ────────────────────────────────────────────────────────────────
 
-export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
+export default function ShatterLab({ embedded, initialPresetId, presetHandleRef, presetSlot }: {
+  embedded?: boolean
+  initialPresetId?: string
+  presetHandleRef?: { current: LabPresetHandle | null }
+  presetSlot?: React.ReactNode
+} = {}) {
   const [status,    setStatus]    = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [message,   setMessage]   = useState('')
   const [fileName,  setFileName]  = useState('')
@@ -416,6 +421,7 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
     }
     const next = [save, ...presets]
     setPresets(next); persistPresets(next); setSelPresetId(save.id); setSaveName(null)
+    return save
   }, [fileName, pieces, cutSpread, fractureMethod, cutStrategy, voxelDiv, adaptivity, impulse, presets])
 
   const loadPreset = useCallback((id: string) => {
@@ -437,15 +443,27 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
     if (selPresetId === id) setSelPresetId('')
   }, [presets, selPresetId])
 
-  const sl: React.CSSProperties = { width: '100%', accentColor: '#7070f5' }
+  // Hub-driven preset load + expose save/delete to the hub's global preset row.
+  useEffect(() => {
+    if (initialPresetId) loadPreset(initialPresetId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPresetId])
+
+  useEffect(() => {
+    if (!presetHandleRef) return
+    presetHandleRef.current = { save: savePreset as (n: string) => SceneSave, remove: deletePreset }
+    return () => { if (presetHandleRef.current?.save === savePreset) presetHandleRef.current = null }
+  }, [presetHandleRef, savePreset, deletePreset])
+
+  const sl: React.CSSProperties = { width: '100%', accentColor: 'var(--lab-accent)' }
 
   function SegBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
     return (
       <button onClick={onClick} style={{
         flex: 1, padding: '7px 0', fontSize: 10, borderRadius: 6, cursor: 'pointer',
-        background: active ? '#22224a' : '#232330',
-        color:      active ? '#a0a0ff' : '#666678',
-        border:     active ? '1px solid #5050cc' : '1px solid #2c2c3c',
+        background: active ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
+        color:      active ? 'var(--lab-accent)' : 'var(--lab-text-2)',
+        border:     active ? '1px solid var(--lab-accent)' : '1px solid var(--lab-border)',
         fontWeight: active ? 600 : 400, fontFamily: 'inherit',
         transition: 'background 0.1s, color 0.1s, border-color 0.1s',
       }}>{children}</button>
@@ -453,12 +471,12 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
   }
 
   return (
-    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: '#000000', color: '#e0e0f0', position: 'relative' }}>
+    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: 'var(--lab-fill)', color: 'var(--lab-text)', position: 'relative' }}>
 
 
 
       {/* ── Left panel ── */}
-      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#383858', position: 'relative' }}>
+      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--lab-border)', background: 'var(--lab-surface)', position: 'relative' }}>
 
         <LabAdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(v => !v)} />
 
@@ -466,12 +484,15 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
 
           {!embedded && <LabNavTitle name="Shatter Lab" href="/shatter" />}
 
-          <LabPresetRow
-            presets={presets} selPresetId={selPresetId} saveName={saveName}
-            defaultSaveName={`Shatter ${new Date().toLocaleDateString()}`}
-            onSelect={loadPreset} onSave={savePreset} onDelete={() => deletePreset(selPresetId)}
-            setSaveName={setSaveName} setSelPresetId={setSelPresetId}
-          />
+          {/* Embedded in the hub, the global preset dropdown replaces this row. */}
+          {!embedded && (
+            <LabPresetRow
+              presets={presets} selPresetId={selPresetId} saveName={saveName}
+              defaultSaveName={`Shatter ${new Date().toLocaleDateString()}`}
+              onSelect={loadPreset} onSave={savePreset} onDelete={() => deletePreset(selPresetId)}
+              setSaveName={setSaveName} setSelPresetId={setSelPresetId}
+            />
+          )}
 
           {/* Main parameters */}
           <Sec>
@@ -483,7 +504,7 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
                 <SegBtn active={fractureMethod === 'bisect'}  onClick={() => setFractureMethod('bisect')}>Bisect</SegBtn>
                 <SegBtn active={fractureMethod === 'voronoi'} onClick={() => setFractureMethod('voronoi')}>Voronoi</SegBtn>
               </div>
-              <div style={{ fontSize: 10, color: '#9898b8', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 10, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
                 {fractureMethod === 'voronoi' ? 'Natural crack patterns — best ≤ 50 pieces' : 'Sequential plane cuts — fast, any count'}
               </div>
             </div>
@@ -501,7 +522,7 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
               <RowLabel>Size variation: {cutSpread.toFixed(2)}</RowLabel>
               <input type="range" min={0.05} max={1} step={0.05} value={cutSpread}
                 onChange={e => setCutSpread(Number(e.target.value))} style={sl} />
-              <div style={{ fontSize: 10, color: '#9898b8', lineHeight: 1.5 }}>0 = equal sizes · 1 = random sizes</div>
+              <div style={{ fontSize: 10, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>0 = equal sizes · 1 = random sizes</div>
             </div>
           </Sec>
 
@@ -511,6 +532,13 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
           />
 
         </div>
+
+        {/* Global preset row (hub) sits just above the data panel when embedded. */}
+        {embedded && presetSlot && (
+          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--lab-border)', background: 'var(--lab-surface)' }}>
+            {presetSlot}
+          </div>
+        )}
 
         <LabDataPanel
           data={data} draggingField={draggingField}
@@ -527,7 +555,7 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
             <button onClick={() => run('sphere')} disabled={isLoading} style={secBtnSt(isLoading)}>Sphere</button>
             <button onClick={() => run('cube')}   disabled={isLoading} style={secBtnSt(isLoading)}>Cube</button>
           </div>
-          <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
             Run on a built-in shape without uploading a model.
           </div>
         </Sec>
@@ -537,14 +565,14 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <RowLabel>Voxel detail: {voxelDiv}</RowLabel>
             <input type="range" min={10} max={60} step={5} value={voxelDiv}
-              onChange={e => setVoxelDiv(Number(e.target.value))} style={{ width: '100%', accentColor: '#7070f5' }} />
-            <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>Higher = sharper cuts, slower</div>
+              onChange={e => setVoxelDiv(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--lab-accent)' }} />
+            <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>Higher = sharper cuts, slower</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <RowLabel>Adaptivity: {adaptivity.toFixed(2)}</RowLabel>
             <input type="range" min={0} max={1} step={0.05} value={adaptivity}
-              onChange={e => setAdaptivity(Number(e.target.value))} style={{ width: '100%', accentColor: '#7070f5' }} />
-            <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>Reduces polygons in flat areas</div>
+              onChange={e => setAdaptivity(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--lab-accent)' }} />
+            <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>Reduces polygons in flat areas</div>
           </div>
         </Sec>
 
@@ -554,14 +582,14 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
             {(['random', 'largest'] as const).map(s => (
               <button key={s} onClick={() => setCutStrategy(s)} style={{
                 flex: 1, padding: '7px 0', fontSize: 10, borderRadius: 6, cursor: 'pointer',
-                background: cutStrategy === s ? '#22224a' : '#232330',
-                color:      cutStrategy === s ? '#a0a0ff' : '#666678',
-                border:     cutStrategy === s ? '1px solid #5050cc' : '1px solid #2c2c3c',
+                background: cutStrategy === s ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
+                color:      cutStrategy === s ? 'var(--lab-accent)' : 'var(--lab-text-2)',
+                border:     cutStrategy === s ? '1px solid var(--lab-accent)' : '1px solid var(--lab-border)',
                 fontWeight: cutStrategy === s ? 600 : 400, fontFamily: 'inherit',
               }}>{s === 'random' ? 'Random' : 'Largest first'}</button>
             ))}
           </div>
-          <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>Largest first → more uniform pieces</div>
+          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>Largest first → more uniform pieces</div>
         </Sec>
 
         <Sec>
@@ -569,8 +597,8 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <RowLabel>Impulse: {impulse.toFixed(1)}</RowLabel>
             <input type="range" min={0} max={5} step={0.1} value={impulse}
-              onChange={e => setImpulse(Number(e.target.value))} style={{ width: '100%', accentColor: '#7070f5' }} />
-            <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>How hard pieces fly apart</div>
+              onChange={e => setImpulse(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--lab-accent)' }} />
+            <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>How hard pieces fly apart</div>
           </div>
           {resultUrl && (
             <button onClick={() => setPhysicsKey(k => k + 1)} style={secBtnSt(false)}>↺ Restart physics</button>
@@ -590,7 +618,7 @@ export default function ShatterLab({ embedded }: { embedded?: boolean } = {}) {
 
         {/* LEGACY two-view split — commented out
         {view2 !== null && (
-          <div style={{ flex: 1, position: 'relative', borderTop: '1px solid #1e1e2a' }}>
+          <div style={{ flex: 1, position: 'relative', borderTop: '1px solid var(--lab-divider)' }}>
             <ViewCanvas
               viewType={view2} resultUrl={resultUrl} compareUrls={compareUrls}
               compareLoading={compareLoading} impulse={impulse} physicsKey={physicsKey} runId={runId}

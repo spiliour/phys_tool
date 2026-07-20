@@ -16,7 +16,9 @@ import { resolveCustomModel } from './models'
 
 const BINDING_LABELS: Record<keyof DataBindings, string> = {
   markColor:    'Color',
+  markGeometry: 'Geometry',
   scatterSize:  'Scatter',
+  scatterCount: 'Count',
   c1AlignCount: 'Count',
   c2AlignCount: 'Count',
   markSizeX:    'Size X',
@@ -26,18 +28,25 @@ const BINDING_LABELS: Record<keyof DataBindings, string> = {
 
 const BINDING_LEVEL: Record<keyof DataBindings, string> = {
   markColor:    'Lv1',
+  markGeometry: 'Lv1',
   markSizeX:    'Lv1',
   markSizeY:    'Lv1',
   markSizeZ:    'Lv1',
   scatterSize:  'Lv2',
+  scatterCount: 'Lv2',
   c1AlignCount: 'Lv2',
   c2AlignCount: 'Lv3',
 }
 
-const VAR_LIST: Array<{ label: string; type: 'numerical' | 'categorical'; varName: DataVariable }> = [
-  { label: 'Weight',       type: 'numerical',  varName: 'weight'      },
-  { label: 'Garbage Type', type: 'categorical', varName: 'garbageType' },
-]
+const DATASET_VAR_LABELS: Record<string, { numerical: string; categorical: string }> = {
+  garbageInOcean: { numerical: 'Weight',  categorical: 'Garbage Type' },
+  mahler:         { numerical: 'Count',   categorical: 'Section'      },
+}
+
+const DATASET_TITLES: Record<string, string> = {
+  garbageInOcean: 'Garbage in the Ocean',
+  mahler:         "Mahler's Symphony No. 8 Orchestra",
+}
 
 // ── Default state ─────────────────────────────────────────────────────────────
 
@@ -109,8 +118,15 @@ export default function App() {
   const [col1Config,    setCol1Config]    = useState<CollectionConfig>(DEFAULT_COLLECTION1)
   const [col2Config,    setCol2Config]    = useState<CollectionConfig>(DEFAULT_COLLECTION2)
   const [sceneConfig,   setSceneConfig]   = useState<SceneConfig>(DEFAULT_SCENE)
+  const [activeDataset, setActiveDataset] = useState<string>('garbageInOcean')
+  const varLabels = DATASET_VAR_LABELS[activeDataset] ?? DATASET_VAR_LABELS.garbageInOcean
+  const VAR_LIST: Array<{ label: string; type: 'numerical' | 'categorical'; varName: DataVariable }> = [
+    { label: varLabels.numerical,   type: 'numerical',   varName: 'weight'      },
+    { label: varLabels.categorical, type: 'categorical', varName: 'garbageType' },
+  ]
+
   const [bindings,        setBindings]        = useState<DataBindings>({
-    markColor: null, scatterSize: null,
+    markColor: null, markGeometry: null, scatterSize: null, scatterCount: null,
     c1AlignCount: null, c2AlignCount: null,
     markSizeX: null, markSizeY: null, markSizeZ: null,
   })
@@ -119,6 +135,7 @@ export default function App() {
   const [colorMode,     setColorMode]     = useState<'distinct' | 'continuous'>('distinct')
   const [colorGradient, setColorGradient] = useState({ from: '#EE6655', to: '#4488EE' })
   const [markOpenSection, setMarkOpenSection] = useState<string | undefined>(undefined)
+  const [scatterSeed,     setScatterSeed]     = useState(0)
   const [decorations,        setDecorations]        = useState<DecorationConfig[]>([])
   const [activeDecorationId, setActiveDecorationId] = useState<string | null>(null)
 
@@ -152,6 +169,11 @@ export default function App() {
       }
       return next
     })
+    // Auto-open geometry section and select mark when geometry encoding is activated
+    if (attr === 'markGeometry' && variable !== null) {
+      setActiveElement('mark')
+      setMarkOpenSection('Geometry')
+    }
     // Auto-sync LV2 alignment count whenever any binding is made
     if (variable !== null) {
       setCol1Config((prev) => ({ ...prev, alignCount: layers.length }))
@@ -210,7 +232,7 @@ export default function App() {
       level, activeElement,
       markConfig, col1Config, col2Config, sceneConfig,
       bindings, markLabelConfig, colLabelConfig,
-      decorations, layers,
+      decorations, layers, activeDataset,
     }
   }
 
@@ -251,11 +273,12 @@ export default function App() {
     setCol1Config(d.col1Config ?? DEFAULT_COLLECTION1)
     setCol2Config(d.col2Config ?? DEFAULT_COLLECTION2)
     setSceneConfig(d.sceneConfig ?? DEFAULT_SCENE)
-    setBindings(d.bindings ?? { markColor: null, scatterSize: null, c1AlignCount: null, c2AlignCount: null, markSizeX: null, markSizeY: null, markSizeZ: null })
+    setBindings(d.bindings ?? { markColor: null, markGeometry: null, scatterSize: null, scatterCount: null, c1AlignCount: null, c2AlignCount: null, markSizeX: null, markSizeY: null, markSizeZ: null })
     setMarkLabelConfig(d.markLabelConfig ?? DEFAULT_LABEL)
     setColLabelConfig(d.colLabelConfig ?? DEFAULT_LABEL)
     setDecorations((d.decorations ?? []).map((dec: DecorationConfig) => resolveCustomModel(dec)))
     setLayers(d.layers ?? DEFAULT_LAYERS)
+    if (d.activeDataset != null) setActiveDataset(d.activeDataset)
     setCurrentSaveId(save.id)
     setCurrentSaveName(save.name)
     setActiveDecorationId(null)
@@ -327,7 +350,7 @@ export default function App() {
               Load
             </button>
           </div>
-          {/* <button
+          <button
             onClick={() => { setPathTracingActive(true); setPathTracerSamples(0) }}
             disabled={pathTracingActive}
             style={{
@@ -340,7 +363,7 @@ export default function App() {
             }}
           >
             {pathTracingActive ? 'Rendering...' : 'Render'}
-          </button> */}
+          </button>
         </div>
 
         {/* Hierarchy panel fills remaining space */}
@@ -363,7 +386,7 @@ export default function App() {
 
       {/* Center: 3D canvas */}
       <div
-        style={{ flex: 1, position: 'relative' }}
+        style={{ flex: 1, position: 'relative', zIndex: 0 }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault()
@@ -386,6 +409,8 @@ export default function App() {
           decorations={decorations}
           colorMode={colorMode}
           colorGradient={colorGradient}
+          scatterSeed={scatterSeed}
+          datasetTitle={DATASET_TITLES[activeDataset]}
           pathTracingActive={pathTracingActive}
           onSamplesUpdate={setPathTracerSamples}
           downloadRenderRef={downloadRenderRef}
@@ -487,12 +512,13 @@ export default function App() {
             colorGradient={colorGradient}
             onColorGradientChange={setColorGradient}
             markOpenSection={markOpenSection}
+            onReseed={() => setScatterSeed(s => s + 1)}
           />
         </div>
 
         {/* Pinned data variables section */}
-        <div style={{ borderTop: '1px solid #E5E5EA', padding: '12px 14px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <div style={{ borderTop: '1px solid #E5E5EA', padding: '14px 14px 16px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
             <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
               Data Variables
             </span>
@@ -503,28 +529,66 @@ export default function App() {
               Open Data
             </button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {VAR_LIST.map(v => {
               const activeKeys = (Object.keys(bindings) as Array<keyof DataBindings>)
                 .filter(k => bindings[k] === v.varName)
+
+              // Collect label binding tags from mark + collection label configs
+              const labelTags: Array<{ key: string; label: string; onRemove: () => void }> = []
+              ;(['top', 'bottom', 'left', 'right'] as const).forEach(pos => {
+                if (markLabelConfig.slots[pos] === v.varName) {
+                  labelTags.push({
+                    key: `mark-${pos}`,
+                    label: `Label ${pos[0].toUpperCase() + pos.slice(1)}`,
+                    onRemove: () => setMarkLabelConfig(prev => ({ ...prev, slots: { ...prev.slots, [pos]: null } })),
+                  })
+                }
+                if (colLabelConfig.slots[pos] === v.varName) {
+                  labelTags.push({
+                    key: `col-${pos}`,
+                    label: `Label ${pos[0].toUpperCase() + pos.slice(1)}`,
+                    onRemove: () => setColLabelConfig(prev => ({ ...prev, slots: { ...prev.slots, [pos]: null } })),
+                  })
+                }
+              })
+
               return (
-                <div key={v.varName} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <div key={v.varName}>
                   <VarChip label={v.label} type={v.type} varName={v.varName} />
-                  {activeKeys.map(k => (
-                    <div key={k} style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '3px',
-                      background: '#EBF3FF', border: '1px solid #A8CAFF',
-                      borderRadius: '5px', padding: '3px 5px 3px 8px',
-                      fontSize: '10px', color: '#007AFF', fontWeight: '600',
-                    }}>
-                      <span style={{ color: '#60A0EE', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>
-                      {BINDING_LABELS[k]}
-                      <button
-                        onClick={() => handleBind(k, null)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60A0EE', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
-                      >×</button>
+                  {(activeKeys.length > 0 || labelTags.length > 0) && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                      {activeKeys.map(k => (
+                        <div key={k} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '3px',
+                          background: '#EBF3FF', border: '1px solid #A8CAFF',
+                          borderRadius: '5px', padding: '3px 5px 3px 8px',
+                          fontSize: '10px', color: '#007AFF', fontWeight: '600',
+                        }}>
+                          <span style={{ color: '#60A0EE', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>
+                          {BINDING_LABELS[k]}
+                          <button
+                            onClick={() => handleBind(k, null)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60A0EE', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
+                          >×</button>
+                        </div>
+                      ))}
+                      {labelTags.map(lt => (
+                        <div key={lt.key} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '3px',
+                          background: '#EBF3FF', border: '1px solid #A8CAFF',
+                          borderRadius: '5px', padding: '3px 5px 3px 8px',
+                          fontSize: '10px', color: '#007AFF', fontWeight: '600',
+                        }}>
+                          {lt.label}
+                          <button
+                            onClick={lt.onRemove}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60A0EE', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
+                          >×</button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )
             })}
@@ -556,7 +620,7 @@ export default function App() {
               <button onClick={() => setShowDataModal(false)} style={{ background: 'none', border: 'none', fontSize: '18px', color: '#AEAEB2', cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
             </div>
             <div style={{ overflowY: 'auto', flex: 1 }}>
-              <LeftDataPanel layers={layers} onChange={setLayers} />
+              <LeftDataPanel layers={layers} onChange={setLayers} onDatasetChange={setActiveDataset} selectedDataset={activeDataset} />
             </div>
           </div>
         </div>
@@ -581,6 +645,7 @@ export default function App() {
           varName={radialMenu.varName}
           varType={radialMenu.varType}
           level={level}
+          col1Arrangement={col1Config.arrangement}
           onBind={handleBind}
           onColorBind={handleColorBind}
           onBindLabel={handleBindLabel}

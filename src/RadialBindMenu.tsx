@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { DataBindings, DataVariable, CompositionLevel, LabelSlots } from './types'
+import { DataBindings, DataVariable, CompositionLevel, LabelSlots, CollectionArrangement } from './types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,15 +38,16 @@ function arcPositions(n: number, centerDeg: number, spreadDeg: number, r: number
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface RadialBindMenuProps {
-  x:            number
-  y:            number
-  varName:      DataVariable
-  varType:      'numerical' | 'categorical'
-  level:        CompositionLevel
-  onBind:       (attr: keyof DataBindings, variable: DataVariable) => void
-  onColorBind:  (variable: DataVariable, mode: 'distinct' | 'continuous') => void
-  onBindLabel:  (section: 'mark' | 'collection', variable: DataVariable, position: keyof LabelSlots) => void
-  onClose:      () => void
+  x:               number
+  y:               number
+  varName:         DataVariable
+  varType:         'numerical' | 'categorical'
+  level:           CompositionLevel
+  col1Arrangement: CollectionArrangement
+  onBind:          (attr: keyof DataBindings, variable: DataVariable) => void
+  onColorBind:     (variable: DataVariable, mode: 'distinct' | 'continuous') => void
+  onBindLabel:     (section: 'mark' | 'collection', variable: DataVariable, position: keyof LabelSlots) => void
+  onClose:         () => void
 }
 
 // ── Sub-step card ─────────────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ function CardHeader({ children }: { children: React.ReactNode }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function RadialBindMenu({
-  x, y, varName, varType, level, onBind, onColorBind, onBindLabel, onClose,
+  x, y, varName, varType, level, col1Arrangement, onBind, onColorBind, onBindLabel, onClose,
 }: RadialBindMenuProps) {
 
   type Step = 'radial' | 'colorMode' | 'labelPos'
@@ -101,32 +102,55 @@ export function RadialBindMenu({
     return () => window.removeEventListener('keydown', onKey)
   }, [step, onClose])
 
-  // Build option lists.
-  // Mark arc: Label pushed first → lands lower-left (last in reading order).
-  // Col arc:  Label pushed last  → lands lower-right (last in reading order).
-  const markOpts: MenuOption[] = []
-  const colOpts:  MenuOption[] = []
+  // ── Declarative mapping rules ─────────────────────────────────────────────
+  // Each rule specifies which variable types and arrangements it applies to.
+  // Options are filtered at render time against the current context.
+  type BindRule = {
+    action:       'bind'
+    bindKey:      keyof DataBindings
+    label:        string
+    icon:         string
+    section:      'mark' | 'collection'
+    varTypes:     Array<'numerical' | 'categorical'>
+    arrangements?: CollectionArrangement[]  // undefined = all arrangements
+    minLevel?:    number
+  }
+  type LabelRule = {
+    action:        'label'
+    label:         string
+    icon:          string
+    section:       'mark' | 'collection'
+    varTypes:      Array<'numerical' | 'categorical'>
+    arrangements?: CollectionArrangement[]
+    minLevel?:     number
+    excludeArrangements?: CollectionArrangement[]
+  }
+  type Rule = BindRule | LabelRule
 
-  if (varType === 'categorical') {
-    markOpts.push(
-      { action: 'label', label: 'Label', icon: 'Aa', section: 'mark' },
-      { action: 'bind',  bindKey: 'markColor', label: 'Color', icon: '●', section: 'mark' },
-    )
-  } else {
-    markOpts.push(
-      { action: 'label', label: 'Label', icon: 'Aa', section: 'mark' },
-      { action: 'bind',  bindKey: 'markSizeZ', label: 'Z', icon: '⊙', section: 'mark' },
-      { action: 'bind',  bindKey: 'markSizeY', label: 'Y', icon: '↕', section: 'mark' },
-      { action: 'bind',  bindKey: 'markSizeX', label: 'X', icon: '↔', section: 'mark' },
-    )
+  const RULES: Rule[] = [
+    // ── Mark ──
+    { action: 'bind',  bindKey: 'markColor',    label: 'Color',    icon: '●',  section: 'mark',       varTypes: ['numerical', 'categorical'] },
+    { action: 'bind',  bindKey: 'markGeometry', label: 'Geometry', icon: '◆',  section: 'mark',       varTypes: ['categorical'] },
+    { action: 'bind',  bindKey: 'markSizeX',    label: 'X',        icon: '↔',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'bind',  bindKey: 'markSizeY',    label: 'Y',        icon: '↕',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'bind',  bindKey: 'markSizeZ',    label: 'Z',        icon: '⊙',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'label',                           label: 'Label',    icon: 'Aa', section: 'mark',       varTypes: ['numerical', 'categorical'], excludeArrangements: ['scattering'] },
+    // ── Collection ──
+    { action: 'bind',  bindKey: 'scatterSize',  label: 'Scattering - Size',  icon: '⊞', section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
+    { action: 'bind',  bindKey: 'scatterCount', label: 'Scattering - Count', icon: '#',  section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
+    { action: 'label',                           label: 'Label',              icon: 'Aa', section: 'collection', varTypes: ['numerical', 'categorical'],                             minLevel: 2 },
+  ]
+
+  function ruleMatches(r: Rule): boolean {
+    if (!r.varTypes.includes(varType)) return false
+    if (r.minLevel !== undefined && level < r.minLevel) return false
+    if ('arrangements' in r && r.arrangements !== undefined && !r.arrangements.includes(col1Arrangement)) return false
+    if ('excludeArrangements' in r && r.excludeArrangements?.includes(col1Arrangement)) return false
+    return true
   }
 
-  if (level >= 2) {
-    colOpts.push(
-      { action: 'bind',  bindKey: 'scatterSize', label: 'Scatter', icon: '⊞', section: 'collection' },
-      { action: 'label', label: 'Label', icon: 'Aa', section: 'collection' },
-    )
-  }
+  const markOpts: MenuOption[] = RULES.filter(r => r.section === 'mark' && ruleMatches(r)) as MenuOption[]
+  const colOpts:  MenuOption[] = RULES.filter(r => r.section === 'collection' && ruleMatches(r)) as MenuOption[]
 
   const markPos = arcPositions(markOpts.length, 180, 100, RADIUS)
   const colPos  = arcPositions(colOpts.length,    0,  70, RADIUS)

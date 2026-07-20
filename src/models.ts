@@ -20,6 +20,14 @@ export const MODEL_PRESETS: ModelPreset[] = Object.entries(glbMap)
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
 
+// Per-model scale multipliers applied on top of the automatic normalization.
+// Add an entry here when a model needs to be larger or smaller than default.
+export const MODEL_SCALE_OVERRIDES: Record<string, number> = {
+  drum: 0.1,
+  clarinet:   1.2,
+  harp:       1.1,
+}
+
 // Re-resolve a custom model config after loading from a save.
 // Blob URLs expire when the page is closed, so user-imported files fall back to box.
 // Preset models are re-resolved by name from the current MODEL_PRESETS list.

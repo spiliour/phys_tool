@@ -1,16 +1,24 @@
-import { useState } from 'react'
 import { LayerData } from './types'
 
 interface LeftDataPanelProps {
-  layers:   LayerData[]
-  onChange: (layers: LayerData[]) => void
+  layers:           LayerData[]
+  onChange:         (layers: LayerData[]) => void
+  onDatasetChange?: (key: string) => void
+  selectedDataset?: string
 }
 
 // ── Preset datasets ───────────────────────────────────────────────────────────
 
-const DATASETS: Record<string, { label: string; layers: LayerData[] }> = {
-  plasticPollution: {
-    label: 'Plastic Pollution',
+const DATASETS: Record<string, {
+  label:           string
+  categoricalCol:  string
+  numericalCol:    string
+  layers:          LayerData[]
+}> = {
+  garbageInOcean: {
+    label:          'Garbage in the Ocean',
+    categoricalCol: 'Garbage Type',
+    numericalCol:   'Weight',
     layers: [
       { id: '1', name: 'Microplastics',    percentage: 40, color: '#aaaaaa' },
       { id: '2', name: 'Synthetic Fibres', percentage: 35, color: '#3355cc' },
@@ -19,24 +27,16 @@ const DATASETS: Record<string, { label: string; layers: LayerData[] }> = {
       { id: '5', name: 'Road Markings',    percentage:  7, color: '#2233aa' },
     ],
   },
-  oceanDebris: {
-    label: 'Ocean Debris',
+  mahler: {
+    label:          "Mahler's Symphony No. 8 Orchestra",
+    categoricalCol: 'Section',
+    numericalCol:   'Count',
     layers: [
-      { id: '1', name: 'Fishing Nets',    percentage: 46, color: '#aaaaaa' },
-      { id: '2', name: 'Plastic Bags',    percentage: 31, color: '#3355cc' },
-      { id: '3', name: 'Bottles',         percentage: 27, color: '#bbbb33' },
-      { id: '4', name: 'Food Packaging',  percentage: 19, color: '#cc4422' },
-      { id: '5', name: 'Cigarette Butts', percentage: 12, color: '#2233aa' },
-    ],
-  },
-  municipalWaste: {
-    label: 'Municipal Waste',
-    layers: [
-      { id: '1', name: 'Organic', percentage: 44, color: '#aaaaaa' },
-      { id: '2', name: 'Paper',   percentage: 17, color: '#3355cc' },
-      { id: '3', name: 'Plastic', percentage: 12, color: '#bbbb33' },
-      { id: '4', name: 'Glass',   percentage:  8, color: '#cc4422' },
-      { id: '5', name: 'Metal',   percentage:  5, color: '#2233aa' },
+      { id: '1', name: 'Strings',      percentage: 80, color: '#C8A882' },
+      { id: '2', name: 'Brass',        percentage: 28, color: '#D4A017' },
+      { id: '3', name: 'Woodwinds',    percentage: 20, color: '#4A7C59' },
+      { id: '4', name: 'Percussion',   percentage: 10, color: '#5C6B7A' },
+      { id: '5', name: 'Piano & Harp', percentage:  4, color: '#8B7BAB' },
     ],
   },
 }
@@ -77,13 +77,13 @@ export function VarChip({ label, type, varName }: VarChipProps) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
-  const [selectedKey, setSelectedKey] = useState<string>('plasticPollution')
-
+export function LeftDataPanel({ layers, onChange, onDatasetChange, selectedDataset = 'garbageInOcean' }: LeftDataPanelProps) {
   function handleDatasetChange(key: string) {
-    setSelectedKey(key)
     onChange(DATASETS[key].layers)
+    onDatasetChange?.(key)
   }
+
+  const ds = DATASETS[selectedDataset] ?? DATASETS.garbageInOcean
 
   const cell: React.CSSProperties = {
     padding: '6px 8px', verticalAlign: 'middle',
@@ -99,7 +99,7 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
           Dataset
         </span>
         <select
-          value={selectedKey}
+          value={selectedDataset}
           onChange={(e) => handleDatasetChange(e.target.value)}
           style={{
             background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px',
@@ -107,8 +107,8 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
             fontFamily: 'inherit', cursor: 'pointer', outline: 'none', width: '100%',
           }}
         >
-          {Object.entries(DATASETS).map(([key, ds]) => (
-            <option key={key} value={key}>{ds.label}</option>
+          {Object.entries(DATASETS).map(([key, d]) => (
+            <option key={key} value={key}>{d.label}</option>
           ))}
         </select>
       </div>
@@ -117,8 +117,8 @@ export function LeftDataPanel({ layers, onChange }: LeftDataPanelProps) {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #E5E5EA' }}>
-            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>Garbage Type</th>
-            <th style={{ ...cell, textAlign: 'right', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '60px' }}>Weight</th>
+            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>{ds.categoricalCol}</th>
+            <th style={{ ...cell, textAlign: 'right', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '60px' }}>{ds.numericalCol}</th>
           </tr>
         </thead>
         <tbody>

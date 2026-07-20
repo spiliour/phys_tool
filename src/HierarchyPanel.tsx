@@ -64,7 +64,7 @@ export function HierarchyPanel({
     }}>
 
       {/* Header */}
-      <div style={{ borderTop: '1px solid #E5E5EA', paddingTop: '12px' }}>
+      <div style={{ paddingTop: '12px' }}>
         <div style={{ fontSize: '16px', color: '#1D1D1F', fontWeight: '700' }}>
           Visualization Hierarchy
         </div>

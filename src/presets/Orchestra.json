@@ -1,0 +1,164 @@
+{
+  "level": 3,
+  "activeElement": "mark",
+  "markConfig": {
+    "shape": "sphere",
+    "material": "plastic",
+    "color": "#F06951",
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 6,
+    "size": {
+      "x": 1,
+      "y": 1,
+      "z": 1
+    },
+    "orientation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "structural": {
+      "deformation": "none",
+      "fluidDistort": 0.35,
+      "fluidSpeed": 1.5
+    },
+    "categoryShapes": {
+      "Strings": {
+        "shape": "custom",
+        "customModelUrl": "/phys_tool/src/assets/models/stradivari_violin.glb",
+        "customModelHasMat": true,
+        "customModelName": "stradivari_violin"
+      },
+      "Brass": {
+        "shape": "custom",
+        "customModelUrl": "/phys_tool/src/assets/models/trumpet.glb",
+        "customModelHasMat": true,
+        "customModelName": "trumpet"
+      },
+      "Woodwinds": {
+        "shape": "custom",
+        "customModelUrl": "/phys_tool/src/assets/models/clarinet_model_with_annotations.glb",
+        "customModelHasMat": true,
+        "customModelName": "clarinet_model_with_annotations"
+      },
+      "Percussion": {
+        "shape": "custom",
+        "customModelUrl": "/phys_tool/src/assets/models/drum.glb",
+        "customModelHasMat": true,
+        "customModelName": "drum"
+      },
+      "Piano & Harp": {
+        "shape": "custom",
+        "customModelUrl": "/phys_tool/src/assets/models/harp.glb",
+        "customModelHasMat": true,
+        "customModelName": "harp"
+      }
+    }
+  },
+  "col1Config": {
+    "arrangement": "scattering",
+    "color": "#5E5CE6",
+    "alignCount": 5,
+    "alignAxis": "X",
+    "alignSpacing": 1.5,
+    "alignAnchor": "center",
+    "scatterMode": "count",
+    "scatterCount": 50,
+    "scatterDimensions": {
+      "x": 4.5,
+      "y": 4,
+      "z": 3
+    },
+    "scatterDensity": 1,
+    "pilingCount": 10
+  },
+  "col2Config": {
+    "arrangement": "alignment",
+    "color": "#9D9BF4",
+    "alignCount": 5,
+    "alignAxis": "X",
+    "alignSpacing": 0.5,
+    "alignAnchor": "end",
+    "scatterMode": "count",
+    "scatterCount": 30,
+    "scatterDimensions": {
+      "x": 20,
+      "y": 6,
+      "z": 8
+    },
+    "scatterDensity": 1,
+    "pilingCount": 10
+  },
+  "sceneConfig": {
+    "background": "dark",
+    "hdriPreset": "city",
+    "focalLength": 130
+  },
+  "bindings": {
+    "markColor": null,
+    "markGeometry": "garbageType",
+    "scatterSize": "weight",
+    "scatterCount": "weight",
+    "c1AlignCount": null,
+    "c2AlignCount": null,
+    "markSizeX": null,
+    "markSizeY": null,
+    "markSizeZ": null
+  },
+  "markLabelConfig": {
+    "show": false,
+    "slots": {
+      "top": null,
+      "bottom": null,
+      "left": null,
+      "right": null
+    }
+  },
+  "colLabelConfig": {
+    "show": true,
+    "slots": {
+      "top": "weight",
+      "bottom": "garbageType",
+      "left": null,
+      "right": null
+    }
+  },
+  "decorations": [],
+  "layers": [
+    {
+      "id": "1",
+      "name": "Strings",
+      "percentage": 80,
+      "color": "#C8A882"
+    },
+    {
+      "id": "2",
+      "name": "Brass",
+      "percentage": 28,
+      "color": "#D4A017"
+    },
+    {
+      "id": "3",
+      "name": "Woodwinds",
+      "percentage": 20,
+      "color": "#4A7C59"
+    },
+    {
+      "id": "4",
+      "name": "Percussion",
+      "percentage": 10,
+      "color": "#5C6B7A"
+    },
+    {
+      "id": "5",
+      "name": "Piano & Harp",
+      "percentage": 4,
+      "color": "#8B7BAB"
+    }
+  ],
+  "activeDataset": "mahler"
+}

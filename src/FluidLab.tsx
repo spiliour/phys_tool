@@ -4,7 +4,7 @@ import { OrbitControls, Environment } from '@react-three/drei'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import {
-  type SceneSave, type ViewType, type DataRow, type DataField,
+  type SceneSave, type ViewType, type DataRow, type DataField, type LabPresetHandle,
   DEFAULT_DATA, priBtnSt, secBtnSt, Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabDataPanel,
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
@@ -64,7 +64,7 @@ function FluidScene({ geos, fps, playing, speed, viscosity, wireframe }: {
         <meshPhongMaterial
           color={mat.color} emissive={mat.emissive}
           emissiveIntensity={mat.emissiveIntensity}
-          specular="#ffffff" shininess={mat.shininess}
+          specular="#fff" shininess={mat.shininess}
           transparent opacity={mat.opacity}
           side={THREE.DoubleSide} wireframe={wireframe}
         />
@@ -162,7 +162,7 @@ function ViewCanvas({ viewType, geos, fluidMeta, playing, speed, containerUrl, c
         <gridHelper args={[16, 24, '#111120', '#0d0d18']} position={[0, -1.99, 0]} />
       </Canvas>
       {!hasResult && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2a2a3a', fontSize: 13, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--lab-border)', fontSize: 13, pointerEvents: 'none' }}>
           Bake a fluid simulation to begin
         </div>
       )}
@@ -176,21 +176,26 @@ function ProgressBar({ value, label }: { value: number; label: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <RowLabel>{label}</RowLabel>
-      <div style={{ height: 6, background: '#1a1a28', borderRadius: 3, overflow: 'hidden' }}>
+      <div style={{ height: 6, background: 'var(--lab-divider)', borderRadius: 3, overflow: 'hidden' }}>
         <div style={{
           height: '100%', width: `${value}%`,
-          background: 'linear-gradient(90deg, #3a3aaa, #5E5CE6)',
+          background: 'linear-gradient(90deg, var(--lab-accent), #5E5CE6)',
           transition: 'width 0.3s ease', borderRadius: 3,
         }} />
       </div>
-      <div style={{ fontSize: 10, color: '#444' }}>{value}%</div>
+      <div style={{ fontSize: 10, color: 'var(--lab-text-2)' }}>{value}%</div>
     </div>
   )
 }
 
 // ── FluidLab ──────────────────────────────────────────────────────────────────
 
-export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
+export default function FluidLab({ embedded, initialPresetId, presetHandleRef, presetSlot }: {
+  embedded?: boolean
+  initialPresetId?: string
+  presetHandleRef?: { current: LabPresetHandle | null }
+  presetSlot?: React.ReactNode
+} = {}) {
   const [phase,        setPhase]        = useState<Phase>('idle')
   const [progress,     setProgress]     = useState(0)
   const [phaseLabel,   setPhaseLabel]   = useState('')
@@ -334,6 +339,7 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
     }
     const next = [save, ...presets]
     setPresets(next); persistPresets(next); setSelPresetId(save.id); setSaveName(null)
+    return save
   }, [viscosity, resolution, frameEnd, speed, presets])
 
   const loadPreset = useCallback((id: string) => {
@@ -351,16 +357,28 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
     if (selPresetId === id) setSelPresetId('')
   }, [presets, selPresetId])
 
-  const sl: React.CSSProperties = { width: '100%', accentColor: '#7070f5' }
+  // Hub-driven preset load + expose save/delete to the hub's global preset row.
+  useEffect(() => {
+    if (initialPresetId) loadPreset(initialPresetId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPresetId])
+
+  useEffect(() => {
+    if (!presetHandleRef) return
+    presetHandleRef.current = { save: savePreset as (n: string) => SceneSave, remove: deletePreset }
+    return () => { if (presetHandleRef.current?.save === savePreset) presetHandleRef.current = null }
+  }, [presetHandleRef, savePreset, deletePreset])
+
+  const sl: React.CSSProperties = { width: '100%', accentColor: 'var(--lab-accent)' }
 
   function ViscBtn({ v, label }: { v: Viscosity; label: string }) {
     const active = viscosity === v
     return (
       <button onClick={() => setViscosity(v)} disabled={isBaking} style={{
         flex: 1, padding: '7px 0', fontSize: 10, borderRadius: 6, cursor: isBaking ? 'default' : 'pointer',
-        background: active ? '#22224a' : '#232330',
-        color:      active ? '#a0a0ff' : '#666678',
-        border:     active ? '1px solid #5050cc' : '1px solid #2c2c3c',
+        background: active ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
+        color:      active ? 'var(--lab-accent)' : 'var(--lab-text-2)',
+        border:     active ? '1px solid var(--lab-accent)' : '1px solid var(--lab-border)',
         fontWeight: active ? 600 : 400, fontFamily: 'inherit',
         transition: 'background 0.1s, color 0.1s, border-color 0.1s',
       }}>{label}</button>
@@ -368,12 +386,12 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
   }
 
   return (
-    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: '#000000', color: '#e0e0f0', position: 'relative' }}>
+    <div style={{ display: 'flex', height: embedded ? '100%' : '100vh', fontFamily: 'system-ui, sans-serif', background: 'var(--lab-fill)', color: 'var(--lab-text)', position: 'relative' }}>
 
 
 
       {/* ── Left panel ── */}
-      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #2c2c3c', background: '#383858', position: 'relative' }}>
+      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--lab-border)', background: 'var(--lab-surface)', position: 'relative' }}>
 
         <LabAdvancedToggle open={showAdvanced} onToggle={() => setShowAdvanced(v => !v)} />
 
@@ -381,12 +399,15 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
 
           {!embedded && <LabNavTitle name="Fluid Lab" href="/fluid" />}
 
-          <LabPresetRow
-            presets={presets} selPresetId={selPresetId} saveName={saveName}
-            defaultSaveName={`Fluid ${new Date().toLocaleDateString()}`}
-            onSelect={loadPreset} onSave={savePreset} onDelete={() => deletePreset(selPresetId)}
-            setSaveName={setSaveName} setSelPresetId={setSelPresetId}
-          />
+          {/* Embedded in the hub, the global preset dropdown replaces this row. */}
+          {!embedded && (
+            <LabPresetRow
+              presets={presets} selPresetId={selPresetId} saveName={saveName}
+              defaultSaveName={`Fluid ${new Date().toLocaleDateString()}`}
+              onSelect={loadPreset} onSave={savePreset} onDelete={() => deletePreset(selPresetId)}
+              setSaveName={setSaveName} setSelPresetId={setSelPresetId}
+            />
+          )}
 
           {/* Fluid type */}
           <Sec>
@@ -396,7 +417,7 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
               <ViscBtn v="honey" label="Honey" />
               <ViscBtn v="lava"  label="Lava"  />
             </div>
-            <div style={{ fontSize: 10, color: '#9898b8', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 10, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
               {{
                 water: 'Thin, fast-flowing liquid',
                 honey: 'Viscous, slow-moving fluid',
@@ -423,10 +444,10 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
               onDragOver={e => e.preventDefault()}
               onClick={() => !isBaking && document.getElementById('fluid-container-input')!.click()}
               style={{
-                border: `1px dashed ${containerFile ? '#5050cc' : '#2a2a3a'}`,
+                border: `1px dashed ${containerFile ? 'var(--lab-accent)' : 'var(--lab-border)'}`,
                 borderRadius: 8, padding: '14px 10px', textAlign: 'center',
                 cursor: isBaking ? 'default' : 'pointer', fontSize: 11,
-                color: containerFile ? '#8080d8' : '#505060', background: '#303060',
+                color: containerFile ? 'var(--lab-accent)' : 'var(--lab-text-3)', background: 'var(--lab-surface)',
               }}
             >
               {containerFile?.name ?? 'Drop a GLB — fluid fills the bowl'}
@@ -461,15 +482,15 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {phase === 'error' && (
-                <div style={{ fontSize: 10, color: '#f07878', lineHeight: 1.5, padding: '8px 10px', background: '#1a0a0a', borderRadius: 5, border: '1px solid #331100' }}>
+                <div style={{ fontSize: 10, color: 'var(--lab-danger)', lineHeight: 1.5, padding: '8px 10px', background: '#fff0ef', borderRadius: 5, border: '1px solid #ffd4d0' }}>
                   {errorMsg}
                 </div>
               )}
               <button onClick={handleBake} style={priBtnSt(false)}>
                 {phase === 'error' ? '↺ Retry bake' : '▶ Bake simulation'}
               </button>
-              <div style={{ fontSize: 9, color: '#8888b0', lineHeight: 1.4 }}>
-                Requires the simulation server: <code style={{ color: '#a0a0c8' }}>node server/server.mjs</code>
+              <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.4 }}>
+                Requires the simulation server: <code style={{ color: 'var(--lab-text-3)' }}>node server/server.mjs</code>
               </div>
             </div>
           )}
@@ -481,13 +502,13 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button onClick={() => setPlaying(p => !p)} style={{
                   padding: '6px 16px', fontSize: 13, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-                  background: playing ? '#22224a' : '#232330',
-                  color:      playing ? '#a0a0ff' : '#666678',
-                  border:     playing ? '1px solid #5050cc' : '1px solid #2c2c3c',
+                  background: playing ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
+                  color:      playing ? 'var(--lab-accent)' : 'var(--lab-text-2)',
+                  border:     playing ? '1px solid var(--lab-accent)' : '1px solid var(--lab-border)',
                 }}>
                   {playing ? '⏸' : '▶'}
                 </button>
-                <div style={{ fontSize: 10, color: '#9898b8' }}>{geos.length} frames · {fluidMeta?.fps}fps</div>
+                <div style={{ fontSize: 10, color: 'var(--lab-text-3)' }}>{geos.length} frames · {fluidMeta?.fps}fps</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <RowLabel>Speed: {speed.toFixed(2)}×</RowLabel>
@@ -501,6 +522,13 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
           )}
 
         </div>
+
+        {/* Global preset row (hub) sits just above the data panel when embedded. */}
+        {embedded && presetSlot && (
+          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--lab-border)', background: 'var(--lab-surface)' }}>
+            {presetSlot}
+          </div>
+        )}
 
         <LabDataPanel
           data={data} draggingField={draggingField}
@@ -517,25 +545,25 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
             {([16, 24, 32] as const).map(r => (
               <button key={r} onClick={() => setResolution(r)} disabled={isBaking} style={{
                 flex: 1, padding: '7px 0', fontSize: 10, borderRadius: 6, cursor: isBaking ? 'default' : 'pointer',
-                background: resolution === r ? '#22224a' : '#232330',
-                color:      resolution === r ? '#a0a0ff' : '#666678',
-                border:     resolution === r ? '1px solid #5050cc' : '1px solid #2c2c3c',
+                background: resolution === r ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
+                color:      resolution === r ? 'var(--lab-accent)' : 'var(--lab-text-2)',
+                border:     resolution === r ? '1px solid var(--lab-accent)' : '1px solid var(--lab-border)',
                 fontWeight: resolution === r ? 600 : 400, fontFamily: 'inherit',
               }}>{r === 16 ? 'Fast' : r === 24 ? 'Default' : 'Quality'}</button>
             ))}
           </div>
-          <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
             {resolution === 16 ? '~20–40s bake time' : resolution === 24 ? '~1–3min bake time' : '~3–8min bake time'}
           </div>
         </Sec>
         <Sec>
           <SLabel>Display</SLabel>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, cursor: 'pointer', color: '#9090a2' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, cursor: 'pointer', color: 'var(--lab-text-2)' }}>
             <input type="checkbox" checked={wireframe} onChange={e => setWireframe(e.target.checked)}
-              style={{ accentColor: '#7070f5' }} />
+              style={{ accentColor: 'var(--lab-accent)' }} />
             Wireframe
           </label>
-          <div style={{ fontSize: 9, color: '#9090b8', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
             Also toggled by switching to the Dynamic view.
           </div>
         </Sec>
@@ -550,7 +578,7 @@ export default function FluidLab({ embedded }: { embedded?: boolean } = {}) {
 
         {/* LEGACY two-view split — commented out
         {view2 !== null && (
-          <div style={{ flex: 1, position: 'relative', borderTop: '1px solid #1e1e2a' }}>
+          <div style={{ flex: 1, position: 'relative', borderTop: '1px solid var(--lab-divider)' }}>
             <ViewCanvas viewType={view2} geos={geos} fluidMeta={fluidMeta} playing={playing} speed={speed} containerUrl={containerUrl} containerScale={containerScale} containerY={containerY} />
           </div>
         )}

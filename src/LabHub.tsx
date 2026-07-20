@@ -1,15 +1,19 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import DeformLab    from './DeformLab'
 import ShatterLab   from './ShatterLab'
 import ParticleLab  from './ParticleLab'
 import FluidLab     from './FluidLab'
+import {
+  type LabId, type GlobalPreset, type LabPresetHandle,
+  LAB_LABELS, readAllPresets,
+} from './LabShared'
 
-type Probe = 'deform' | 'shatter' | 'particles' | 'fluid'
+type Probe = LabId
 
 // Must match the labs' sidebar width
 const SIDEBAR_W = 268
 const BAR_H     = 44
-const PANEL_BG  = '#383858'
+const PANEL_BG  = 'var(--lab-surface)'
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -64,10 +68,131 @@ const PROBES: { id: Probe; label: string; short: string; Icon: () => JSX.Element
   { id: 'fluid',     label: 'Fluids',      short: 'Fluid',     Icon: FluidIcon     },
 ]
 
+// Composite dropdown value so two labs can't collide on a numeric preset id.
+const keyOf = (lab: LabId, id: string) => `${lab}::${id}`
+
+// ── Global preset bar ───────────────────────────────────────────────────────────
+
+function GlobalPresetRow({
+  presets, selKey, saveName, defaultSaveName,
+  onSelect, onSave, onDelete, setSaveName,
+}: {
+  presets:         GlobalPreset[]
+  selKey:          string
+  saveName:        string | null
+  defaultSaveName: string
+  onSelect:        (key: string) => void
+  onSave:          (name: string) => void
+  onDelete:        () => void
+  setSaveName:     (v: string | null) => void
+}) {
+  // Group presets under their lab for the <optgroup> labels.
+  const byLab = (Object.keys(LAB_LABELS) as LabId[])
+    .map(lab => ({ lab, items: presets.filter(p => p.lab === lab) }))
+    .filter(g => g.items.length > 0)
+
+  if (saveName !== null) {
+    return (
+      <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+        <input
+          autoFocus type="text" value={saveName}
+          onChange={e => setSaveName(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && saveName.trim()) onSave(saveName.trim())
+            if (e.key === 'Escape') setSaveName(null)
+          }}
+          placeholder="Preset name…"
+          style={{ flex: 1, minWidth: 0, background: 'var(--lab-surface)', border: '1px solid var(--lab-accent)', borderRadius: 6, color: 'var(--lab-text)', fontSize: 10, padding: '5px 7px', outline: 'none', fontFamily: 'inherit' }}
+        />
+        <button onClick={() => { if (saveName.trim()) onSave(saveName.trim()) }} disabled={!saveName.trim()}
+          style={{ background: 'var(--lab-accent)', border: '1px solid var(--lab-accent)', borderRadius: 6, cursor: 'pointer', color: '#fff', fontSize: 11, padding: '4px 9px', fontFamily: 'inherit', opacity: saveName.trim() ? 1 : 0.4 }}>✓</button>
+        <button onClick={() => setSaveName(null)}
+          style={{ background: 'none', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-text-3)', fontSize: 12, padding: '4px 7px', fontFamily: 'inherit' }}>✕</button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+      <select value={selKey}
+        onChange={e => onSelect(e.target.value)}
+        style={{ flex: 1, minWidth: 0, background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', color: selKey ? 'var(--lab-text)' : 'var(--lab-text-3)', borderRadius: 6, fontSize: 10, padding: '5px 7px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+        <option value="">Presets…</option>
+        {byLab.map(g => (
+          <optgroup key={g.lab} label={LAB_LABELS[g.lab]}>
+            {g.items.map(p => <option key={keyOf(g.lab, p.id)} value={keyOf(g.lab, p.id)}>{p.name}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      {selKey && (
+        <button onClick={onDelete} title="Delete preset"
+          style={{ background: 'none', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-danger)', fontSize: 12, padding: '4px 7px', fontFamily: 'inherit' }}>×</button>
+      )}
+      <button onClick={() => setSaveName(defaultSaveName)}
+        style={{ background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-accent)', fontSize: 10, padding: '5px 9px', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Save</button>
+    </div>
+  )
+}
+
 // ── Hub ───────────────────────────────────────────────────────────────────────
 
 export default function LabHub() {
-  const [active, setActive] = useState<Probe>('deform')
+  const [active,      setActive]      = useState<Probe>('deform')
+  const [presets,     setPresets]     = useState<GlobalPreset[]>(() => readAllPresets())
+  const [selKey,      setSelKey]      = useState('')   // composite "lab::id" or ''
+  const [pendingLoad, setPendingLoad] = useState<{ lab: Probe; id: string } | null>(null)
+  const [saveName,    setSaveName]    = useState<string | null>(null)
+
+  // The active lab writes its save/delete handle here so the global row can drive it.
+  const handleRef = useRef<LabPresetHandle | null>(null)
+
+  const refresh = () => setPresets(readAllPresets())
+
+  const selectTab = (id: Probe) => {
+    // Manual tab switch: the currently-selected preset belongs to another lab, so clear it.
+    setActive(id)
+    setPendingLoad(null)
+    setSelKey('')
+    setSaveName(null)
+  }
+
+  const selectPreset = (key: string) => {
+    setSelKey(key)
+    setSaveName(null)
+    if (!key) { setPendingLoad(null); return }
+    const [lab, id] = key.split('::') as [Probe, string]
+    setActive(lab)             // switch to the preset's tab
+    setPendingLoad({ lab, id }) // active lab loads it (on mount or prop change)
+  }
+
+  const savePreset = (name: string) => {
+    const saved = handleRef.current?.save(name)
+    refresh()
+    if (saved) setSelKey(keyOf(active, saved.id))
+    setSaveName(null)
+  }
+
+  const deletePreset = () => {
+    if (!selKey) return
+    const [, id] = selKey.split('::')
+    handleRef.current?.remove(id)   // selected preset always belongs to the active lab
+    refresh()
+    setSelKey('')
+    setPendingLoad(null)
+  }
+
+  const initialFor = (lab: Probe) => (pendingLoad?.lab === lab ? pendingLoad.id : undefined)
+
+  // The global preset row, rendered once here but placed inside the active lab's
+  // sidebar (just above its data panel) via the `presetSlot` prop.
+  const presetSlot = (
+    <GlobalPresetRow
+      presets={presets} selKey={selKey} saveName={saveName}
+      defaultSaveName={`${LAB_LABELS[active]} ${new Date().toLocaleDateString()}`}
+      onSelect={selectPreset} onSave={savePreset} onDelete={deletePreset}
+      setSaveName={setSaveName}
+    />
+  )
 
   return (
     <div style={{
@@ -77,36 +202,36 @@ export default function LabHub() {
 
       {/* ── Active lab — fills the full viewport ── */}
       <div style={{ width: '100%', height: '100%' }}>
-        {active === 'deform'    && <DeformLab    embedded />}
-        {active === 'shatter'   && <ShatterLab   embedded />}
-        {active === 'particles' && <ParticleLab  embedded />}
-        {active === 'fluid'     && <FluidLab     embedded />}
+        {active === 'deform'    && <DeformLab    embedded initialPresetId={initialFor('deform')}    presetHandleRef={handleRef} presetSlot={presetSlot} />}
+        {active === 'shatter'   && <ShatterLab   embedded initialPresetId={initialFor('shatter')}   presetHandleRef={handleRef} presetSlot={presetSlot} />}
+        {active === 'particles' && <ParticleLab  embedded initialPresetId={initialFor('particles')} presetHandleRef={handleRef} presetSlot={presetSlot} />}
+        {active === 'fluid'     && <FluidLab     embedded initialPresetId={initialFor('fluid')}     presetHandleRef={handleRef} presetSlot={presetSlot} />}
       </div>
 
-      {/* ── Probe switcher — absolute overlay at top of sidebar ── */}
+      {/* ── Probe switcher — absolute overlay at top of the sidebar ── */}
       <div style={{
         position: 'absolute', top: 0, left: 0,
         width: SIDEBAR_W, height: BAR_H, zIndex: 50,
         background: PANEL_BG,
-        borderBottom: '1px solid #505085',
-        borderRight: '1px solid #505085',
+        borderBottom: '1px solid var(--lab-border)',
+        borderRight: '1px solid var(--lab-border)',
         display: 'flex',
       }}>
-        {PROBES.map(({ id, short, Icon }) => {
+        {PROBES.map(({ id, short, label, Icon }) => {
           const on = active === id
           return (
             <button
               key={id}
-              onClick={() => setActive(id)}
-              title={PROBES.find(p => p.id === id)!.label}
+              onClick={() => selectTab(id)}
+              title={label}
               style={{
                 flex: 1,
                 display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
                 gap: 3, border: 'none', padding: '4px 4px 2px',
-                borderBottom: on ? `2px solid #9090e8` : '2px solid transparent',
-                background: on ? 'rgba(100,100,200,0.18)' : 'transparent',
-                color: on ? '#d8d8ff' : '#7878a8',
+                borderBottom: on ? `2px solid var(--lab-accent)` : '2px solid transparent',
+                background: on ? 'var(--lab-accent-soft)' : 'transparent',
+                color: on ? 'var(--lab-accent)' : 'var(--lab-text-3)',
                 cursor: 'pointer',
                 transition: 'color 0.12s, background 0.12s, border-color 0.12s',
               }}
