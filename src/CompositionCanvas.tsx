@@ -421,7 +421,10 @@ function CollectionInstance({
   }
 
   // Scattering / stacking
-  const { scatterDimensions: dim, scatterCount } = collection1Config
+  const { scatterDimensions: dim, scatterCount, scatterDensity, scatterMode } = collection1Config
+  const effectiveCount = (scatterMode ?? 'count') === 'density'
+    ? Math.max(5, Math.round(scatterDensity * dim.x * (heightOverride ?? dim.y) * dim.z))
+    : scatterCount
   const h        = heightOverride ?? dim.y
   const labelData = computeLabelValues(colLabelConfig.slots, layers, layerIndex)
   return (
@@ -429,7 +432,7 @@ function CollectionInstance({
       width={dim.x} depth={dim.z} height={h}
       color={color}
       position={position}
-      particleCount={Math.max(5, scatterCount)}
+      particleCount={effectiveCount}
       markShape={markConfig.shape}
       markMaterial={markConfig.material}
       markSize={scaledMarkSize}

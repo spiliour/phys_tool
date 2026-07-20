@@ -53,9 +53,10 @@ export interface CollectionConfig {
   alignSpacing:      number    // center-to-center gap (world units)
   alignAnchor:       'start' | 'center' | 'end'  // edge alignment: start=top/left, end=bottom/right
   // Scattering — marks randomly distributed in a box
-  scatterCount:      number    // mark count at Level 2
+  scatterMode:       'count' | 'density'  // count: fixed number; density: particles per unit³
+  scatterCount:      number    // mark count (used when scatterMode === 'count')
   scatterDimensions: Vec3      // bounding box
-  scatterDensity:    number    // density multiplier (used for Level 3 layer bands)
+  scatterDensity:    number    // particles per unit³ (used when scatterMode === 'density')
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
 }

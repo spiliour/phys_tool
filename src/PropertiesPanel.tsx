@@ -871,14 +871,42 @@ function CollectionProperties({
         {/* ── Scattering controls ── */}
         {config.arrangement === 'scattering' && (
           <>
-            <Row label="Mark Count">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input type="range" min={5} max={600} step={5} value={config.scatterCount}
-                  onChange={(e) => onChange({ ...config, scatterCount: Number(e.target.value) })}
-                  style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
-                <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{config.scatterCount}</span>
+            {/* Count vs Density toggle */}
+            <Row label="Quantity">
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {(['count', 'density'] as const).map(mode => (
+                  <button key={mode} onClick={() => onChange({ ...config, scatterMode: mode })} style={{
+                    flex: 1, padding: '5px 0',
+                    background: (config.scatterMode ?? 'count') === mode ? '#5E5CE6' : '#F2F2F7',
+                    color: (config.scatterMode ?? 'count') === mode ? '#fff' : '#6C6C70',
+                    border: '1px solid', borderColor: (config.scatterMode ?? 'count') === mode ? '#5E5CE6' : '#E5E5EA',
+                    borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '11px', fontWeight: '600', fontFamily: 'inherit',
+                  }}>
+                    {mode === 'count' ? 'Count' : 'Density'}
+                  </button>
+                ))}
               </div>
             </Row>
+            {(config.scatterMode ?? 'count') === 'count' ? (
+              <Row label="Mark Count">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input type="range" min={5} max={600} step={5} value={config.scatterCount}
+                    onChange={(e) => onChange({ ...config, scatterCount: Number(e.target.value) })}
+                    style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+                  <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{config.scatterCount}</span>
+                </div>
+              </Row>
+            ) : (
+              <Row label="Density">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input type="range" min={0.05} max={5} step={0.05} value={config.scatterDensity}
+                    onChange={(e) => onChange({ ...config, scatterDensity: Number(e.target.value) })}
+                    style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+                  <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '36px', textAlign: 'right' }}>{config.scatterDensity.toFixed(2)}/u³</span>
+                </div>
+              </Row>
+            )}
 
             {/* Box Dimensions — drop target for Weight */}
             {bindings.scatterSize === 'weight' ? (
