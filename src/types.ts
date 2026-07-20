@@ -95,7 +95,7 @@ export interface LabelSlots {
 }
 
 // ── Data bindings ─────────────────────────────────────────────────────────────
-export type DataVariable = 'weight' | 'garbageType' | 'count'
+export type DataVariable = 'numerical' | 'categorical' | 'weight' | 'garbageType' | 'count' | 'section'
 
 export interface DataBindings {
   markColor:     DataVariable | null

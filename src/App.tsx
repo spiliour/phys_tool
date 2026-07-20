@@ -27,11 +27,11 @@ const BINDING_LABELS: Record<keyof DataBindings, string> = {
 }
 
 const BINDING_LEVEL: Record<keyof DataBindings, string> = {
-  markColor:    'Lv1',
-  markGeometry: 'Lv1',
-  markSizeX:    'Lv1',
-  markSizeY:    'Lv1',
-  markSizeZ:    'Lv1',
+  markColor:    '',
+  markGeometry: '',
+  markSizeX:    '',
+  markSizeY:    '',
+  markSizeZ:    '',
   scatterSize:  '',
   scatterCount: '',
   c1AlignCount: 'Lv2',
@@ -121,8 +121,8 @@ export default function App() {
   const [activeDataset, setActiveDataset] = useState<string>('garbageInOcean')
   const varLabels = DATASET_VAR_LABELS[activeDataset] ?? DATASET_VAR_LABELS.garbageInOcean
   const VAR_LIST: Array<{ label: string; type: 'numerical' | 'categorical'; varName: DataVariable }> = [
-    { label: varLabels.numerical,   type: 'numerical',   varName: 'weight'      },
-    { label: varLabels.categorical, type: 'categorical', varName: 'garbageType' },
+    { label: varLabels.numerical,   type: 'numerical',   varName: 'numerical'   },
+    { label: varLabels.categorical, type: 'categorical', varName: 'categorical' },
   ]
 
   const [bindings,        setBindings]        = useState<DataBindings>({
@@ -286,9 +286,35 @@ export default function App() {
     setCol1Config(d.col1Config ?? DEFAULT_COLLECTION1)
     setCol2Config(d.col2Config ?? DEFAULT_COLLECTION2)
     setSceneConfig(d.sceneConfig ?? DEFAULT_SCENE)
-    setBindings(d.bindings ?? { markColor: null, markGeometry: null, scatterSize: null, scatterCount: null, c1AlignCount: null, c2AlignCount: null, markSizeX: null, markSizeY: null, markSizeZ: null })
-    setMarkLabelConfig(d.markLabelConfig ?? DEFAULT_LABEL)
-    setColLabelConfig(d.colLabelConfig ?? DEFAULT_LABEL)
+    // Migrate old saves that used dataset-specific varNames to universal keys
+    const migrateVar = (v: DataVariable | null): DataVariable | null => {
+      if (v === 'garbageType' || v === 'section') return 'categorical' as DataVariable
+      if (v === 'weight'      || v === 'count')   return 'numerical'   as DataVariable
+      return v
+    }
+    const rawBindings = d.bindings ?? {}
+    setBindings({
+      markColor:    migrateVar(rawBindings.markColor    ?? null),
+      markGeometry: migrateVar(rawBindings.markGeometry ?? null),
+      scatterSize:  migrateVar(rawBindings.scatterSize  ?? null),
+      scatterCount: migrateVar(rawBindings.scatterCount ?? null),
+      c1AlignCount: migrateVar(rawBindings.c1AlignCount ?? null),
+      c2AlignCount: migrateVar(rawBindings.c2AlignCount ?? null),
+      markSizeX:    migrateVar(rawBindings.markSizeX    ?? null),
+      markSizeY:    migrateVar(rawBindings.markSizeY    ?? null),
+      markSizeZ:    migrateVar(rawBindings.markSizeZ    ?? null),
+    })
+    const migrateSlots = (cfg: LabelConfig): LabelConfig => ({
+      ...cfg,
+      slots: {
+        top:    migrateVar(cfg.slots.top),
+        bottom: migrateVar(cfg.slots.bottom),
+        left:   migrateVar(cfg.slots.left),
+        right:  migrateVar(cfg.slots.right),
+      },
+    })
+    setMarkLabelConfig(d.markLabelConfig ? migrateSlots(d.markLabelConfig) : DEFAULT_LABEL)
+    setColLabelConfig(d.colLabelConfig   ? migrateSlots(d.colLabelConfig)  : DEFAULT_LABEL)
     setDecorations((d.decorations ?? []).map((dec: DecorationConfig) => resolveCustomModel(dec)))
     setLayers(d.layers ?? DEFAULT_LAYERS)
     if (d.activeDataset != null) setActiveDataset(d.activeDataset)

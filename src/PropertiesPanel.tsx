@@ -90,9 +90,12 @@ function SegmentedControl<T extends string>({
 // ── Variable metadata ─────────────────────────────────────────────────────────
 
 const VAR_META: Record<DataVariable, { label: string; type: 'numerical' | 'categorical' }> = {
+  numerical:   { label: 'Numerical',    type: 'numerical'   },
+  categorical: { label: 'Categorical',  type: 'categorical' },
   weight:      { label: 'Weight',       type: 'numerical'   },
   garbageType: { label: 'Garbage Type', type: 'categorical' },
   count:       { label: 'Count',        type: 'numerical'   },
+  section:     { label: 'Section',      type: 'categorical' },
 }
 
 // ── Drag-and-drop primitives ──────────────────────────────────────────────────
