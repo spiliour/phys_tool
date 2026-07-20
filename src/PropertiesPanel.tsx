@@ -782,7 +782,9 @@ function CollectionProperties({
               {(() => {
                 const boundKey = collectionLevel === 1 ? 'c1AlignCount' : 'c2AlignCount'
                 const boundVar = bindings[boundKey]
-                const anyBound = Object.values(bindings).some(v => v !== null)
+                const anyBound = collectionLevel === 1
+                  ? Object.values(bindings).some(v => v !== null)
+                  : bindings.scatterSize !== null
                 const VAR_META: Record<string, { label: string; type: 'numerical' | 'categorical' }> = {
                   weight:      { label: 'Weight',       type: 'numerical'   },
                   garbageType: { label: 'Garbage Type', type: 'categorical' },

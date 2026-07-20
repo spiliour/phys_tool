@@ -149,9 +149,13 @@ export default function App() {
       }
       return next
     })
-    // Auto-sync alignment count to number of data rows when any binding is made
+    // Auto-sync LV2 alignment count whenever any binding is made
     if (variable !== null) {
       setCol1Config((prev) => ({ ...prev, alignCount: layers.length }))
+    }
+    // Auto-sync LV3 alignment count when scatterSize is bound
+    if (attr === 'scatterSize' && variable !== null) {
+      setCol2Config((prev) => ({ ...prev, alignCount: layers.length }))
     }
   }
 
