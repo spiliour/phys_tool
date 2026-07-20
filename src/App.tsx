@@ -17,8 +17,8 @@ import { resolveCustomModel } from './models'
 const BINDING_LABELS: Record<keyof DataBindings, string> = {
   markColor:    'Color',
   markGeometry: 'Geometry',
-  scatterSize:  'Scatter',
-  scatterCount: 'Count',
+  scatterSize:  'Scatter - Size',
+  scatterCount: 'Scatter - Count',
   c1AlignCount: 'Count',
   c2AlignCount: 'Count',
   markSizeX:    'Size X',
@@ -32,8 +32,8 @@ const BINDING_LEVEL: Record<keyof DataBindings, string> = {
   markSizeX:    'Lv1',
   markSizeY:    'Lv1',
   markSizeZ:    'Lv1',
-  scatterSize:  'Lv2',
-  scatterCount: 'Lv2',
+  scatterSize:  '',
+  scatterCount: '',
   c1AlignCount: 'Lv2',
   c2AlignCount: 'Lv3',
 }
@@ -520,7 +520,7 @@ export default function App() {
         <div style={{ borderTop: '1px solid #E5E5EA', padding: '14px 14px 16px', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
             <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
-              Data Variables
+              Data
             </span>
             <button
               onClick={() => setShowDataModal(true)}
@@ -565,7 +565,7 @@ export default function App() {
                           borderRadius: '5px', padding: '3px 5px 3px 8px',
                           fontSize: '10px', color: '#007AFF', fontWeight: '600',
                         }}>
-                          <span style={{ color: '#60A0EE', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>
+                          {BINDING_LEVEL[k] && <span style={{ color: '#60A0EE', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>}
                           {BINDING_LABELS[k]}
                           <button
                             onClick={() => handleBind(k, null)}
