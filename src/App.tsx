@@ -174,6 +174,10 @@ export default function App() {
       setActiveElement('mark')
       setMarkOpenSection('Geometry')
     }
+    // Clear per-category shape overrides when geometry encoding is removed
+    if (attr === 'markGeometry' && variable === null) {
+      setMarkConfig(prev => ({ ...prev, categoryShapes: undefined }))
+    }
     // Auto-sync LV2 alignment count whenever any binding is made
     if (variable !== null) {
       setCol1Config((prev) => ({ ...prev, alignCount: layers.length }))
