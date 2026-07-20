@@ -208,14 +208,15 @@ function MarkLabel({ pos, text }: { pos: 'top'|'bottom'|'left'|'right'; text: st
 
 // ── Mark size binding multiplier ───────────────────────────────────────────────
 
+// Returns true for any numerical variable binding (old dataset-specific keys + universal key)
+function isNumericalVar(v: DataVariable | null): boolean {
+  return v === 'numerical' || v === 'weight' || v === 'count'
+}
+
 function markSizeMultiplier(variable: DataVariable, layerIdx: number, layers: LayerData[]): number {
   const maxPct = Math.max(...layers.map(l => l.percentage), 1)
-  if (variable === 'weight') {
-    const pct = layers[layerIdx % Math.max(1, layers.length)]?.percentage ?? maxPct
-    return 0.2 + 1.8 * (pct / maxPct)
-  }
-  if (variable === 'count') return Math.min(2, layers.length / 5)
-  return 1
+  const pct = layers[layerIdx % Math.max(1, layers.length)]?.percentage ?? maxPct
+  return 0.2 + 1.8 * (pct / maxPct)
 }
 
 // ── Anchor offset helpers ──────────────────────────────────────────────────────
@@ -500,7 +501,7 @@ function Level2Content({
 }) {
   const color  = layers[0]?.color ?? collection1Config.color
   const maxPct = Math.max(...layers.map(l => l.percentage), 1)
-  const heightOverride = bindings.scatterSize === 'weight' && collection1Config.arrangement === 'scattering'
+  const heightOverride = isNumericalVar(bindings.scatterSize) && collection1Config.arrangement === 'scattering'
     ? Math.max(0.5, ((layers[0]?.percentage ?? 50) / maxPct) * WEIGHT_MAX_H)
     : undefined
 
@@ -561,7 +562,7 @@ function Level3Content({
         if (collection1Config.arrangement === 'scattering') {
           const dim = collection1Config.scatterDimensions
           if (alignAxis === 'X') return dim.x
-          return bindings.scatterSize === 'weight'
+          return isNumericalVar(bindings.scatterSize)
             ? Math.max(0.5, (g.pct / maxPct) * WEIGHT_MAX_H)
             : dim.y
         }
@@ -584,7 +585,7 @@ function Level3Content({
         if (collection1Config.arrangement === 'scattering') {
           const dim = collection1Config.scatterDimensions
           if (alignAxis === 'X') {
-            return bindings.scatterSize === 'weight'
+            return isNumericalVar(bindings.scatterSize)
               ? Math.max(0.5, (g.pct / maxPct) * WEIGHT_MAX_H)
               : dim.y
           }
@@ -650,7 +651,7 @@ function Level3Content({
   return (
     <group>
       {groups.map(({ position, color, name, pct }, i) => {
-        const heightOverride = bindings.scatterSize === 'weight' && collection1Config.arrangement === 'scattering'
+        const heightOverride = isNumericalVar(bindings.scatterSize) && collection1Config.arrangement === 'scattering'
           ? Math.max(0.5, (pct / maxPct) * WEIGHT_MAX_H)
           : undefined
         // Apply per-category geometry override for this group's layer
