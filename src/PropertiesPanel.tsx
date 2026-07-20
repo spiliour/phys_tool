@@ -645,6 +645,17 @@ function MarkProperties({
       {/* ── Spatial ── */}
       <AttributeCategory icon={ICONS.spatial} title="Spatial" open={acc.isOpen('Spatial')} onToggle={() => acc.toggle('Spatial')}>
         <Vec3Input label="Position"    value={config.position}    onChange={(v) => onChange({ ...config, position: v })}    min={-10} max={10}  step={0.1} />
+        <Row label="Scale">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input type="range" min={0.1} max={10} step={0.1}
+              value={config.scale ?? 1}
+              onChange={(e) => onChange({ ...config, scale: Number(e.target.value) })}
+              style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+            <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>
+              {(config.scale ?? 1).toFixed(1)}×
+            </span>
+          </div>
+        </Row>
         <Vec3Input
           label="Size"
           value={config.size}

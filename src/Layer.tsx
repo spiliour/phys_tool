@@ -53,6 +53,8 @@ function buildMaterial(material: MarkMaterial, color: string): THREE.Material {
 
 // ── Fill instance matrices ────────────────────────────────────────────────────
 
+const SCATTER_SCALE = 5  // scatter particles are 5× larger than the base mark size
+
 function fillInstanceMatrices(
   mesh: THREE.InstancedMesh,
   count: number,
@@ -74,7 +76,7 @@ function fillInstanceMatrices(
       Math.random() * Math.PI * 2,
       Math.random() * Math.PI * 2,
     )
-    dummy.scale.set(size.x, size.y, size.z)
+    dummy.scale.set(size.x * SCATTER_SCALE, size.y * SCATTER_SCALE, size.z * SCATTER_SCALE)
     dummy.updateMatrix()
     mesh.setMatrixAt(i, dummy.matrix)
   }
@@ -165,10 +167,10 @@ function ScatteredGLBInstances({
     })
   }, [mat, clones])
 
-  // Per-axis scale including user markSize
-  const sx = normScale * markSize.x
-  const sy = normScale * markSize.y
-  const sz = normScale * markSize.z
+  // Per-axis scale including user markSize and scatter size boost
+  const sx = normScale * markSize.x * SCATTER_SCALE
+  const sy = normScale * markSize.y * SCATTER_SCALE
+  const sz = normScale * markSize.z * SCATTER_SCALE
   // Centering offset in the primitive's pre-scale space.
   // After scale is applied, scale ⊙ center cancels this, leaving geometry
   // centred at the group origin regardless of the GLB's own origin.

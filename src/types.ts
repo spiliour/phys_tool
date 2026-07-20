@@ -30,7 +30,8 @@ export interface MarkConfig {
   color: string
   // Spatial (applied directly at Level 1; used as instance-scale multipliers at Levels 2–3)
   position:    Vec3   // scene-space offset from origin
-  size:        Vec3   // scale multipliers (1 = default size)
+  scale:       number // uniform scale multiplier on top of per-axis size (default 1)
+  size:        Vec3   // per-axis scale multipliers (1 = default size)
   orientation: Vec3   // rotation in degrees
   // Structural deformation
   structural: StructuralConfig

@@ -248,10 +248,11 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
   const s     = L1_MARK_SCALE
   const color = resolveMarkColor(0, bindings, layers, config.color, colorMode, colorGradient)
 
+  const sc = config.scale ?? 1
   const sz = {
-    x: config.size.x * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, 0, layers) : 1),
-    y: config.size.y * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, 0, layers) : 1),
-    z: config.size.z * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, 0, layers) : 1),
+    x: config.size.x * sc * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, 0, layers) : 1),
+    y: config.size.y * sc * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, 0, layers) : 1),
+    z: config.size.z * sc * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, 0, layers) : 1),
   }
   const halfH = s * sz.y * 0.036 + 0.5
   const halfW = s * sz.x * 0.036 + 0.5
@@ -311,11 +312,12 @@ function AlignedMarks({
     return resolveMarkColor(i, bindings, layers, color, colorMode, colorGradient)
   }
 
+  const msc = markConfig.scale ?? 1
   function getScale(i: number): [number, number, number] {
     const sz = {
-      x: markConfig.size.x * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, i, layers) : 1),
-      y: markConfig.size.y * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, i, layers) : 1),
-      z: markConfig.size.z * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, i, layers) : 1),
+      x: markConfig.size.x * msc * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, i, layers) : 1),
+      y: markConfig.size.y * msc * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, i, layers) : 1),
+      z: markConfig.size.z * msc * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, i, layers) : 1),
     }
     return [s * sz.x, s * sz.y, s * sz.z]
   }
@@ -384,6 +386,9 @@ function CollectionInstance({
   colLabelConfig:    LabelConfig
   layerIndex:        number
 }) {
+  const msc = markConfig.scale ?? 1
+  const scaledMarkSize = { x: markConfig.size.x * msc, y: markConfig.size.y * msc, z: markConfig.size.z * msc }
+
   if (collection1Config.arrangement === 'alignment') {
     return (
       <group position={position}>
@@ -407,7 +412,7 @@ function CollectionInstance({
         count={collection1Config.pilingCount}
         markShape={markConfig.shape}
         markMaterial={markConfig.material}
-        markSize={markConfig.size}
+        markSize={scaledMarkSize}
         color={color}
         structural={markConfig.structural}
         customModelUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
@@ -427,7 +432,7 @@ function CollectionInstance({
       particleCount={Math.max(5, scatterCount)}
       markShape={markConfig.shape}
       markMaterial={markConfig.material}
-      markSize={markConfig.size}
+      markSize={scaledMarkSize}
       structural={markConfig.structural}
       customModelUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
       labelShow={colLabelConfig.show}
@@ -517,8 +522,9 @@ function Level3Content({
             : dim.y
         }
         const c1 = collection1Config
-        const sizeAlongX = markConfig.size.x * MARK_BASE_D
-        const sizeAlongY = markConfig.size.y * MARK_BASE_D
+        const msc2 = markConfig.scale ?? 1
+        const sizeAlongX = markConfig.size.x * msc2 * MARK_BASE_D
+        const sizeAlongY = markConfig.size.y * msc2 * MARK_BASE_D
         if (alignAxis === 'X') {
           return c1.alignAxis === 'X'
             ? (c1.alignCount - 1) * c1.alignSpacing + sizeAlongX
@@ -541,14 +547,15 @@ function Level3Content({
           return dim.x
         }
         const c1 = collection1Config
+        const msc2 = markConfig.scale ?? 1
         if (alignAxis === 'X') {
           return c1.alignAxis === 'Y'
-            ? (c1.alignCount - 1) * c1.alignSpacing + markConfig.size.y * MARK_BASE_D
-            : markConfig.size.y * MARK_BASE_D
+            ? (c1.alignCount - 1) * c1.alignSpacing + markConfig.size.y * msc2 * MARK_BASE_D
+            : markConfig.size.y * msc2 * MARK_BASE_D
         }
         return c1.alignAxis === 'X'
-          ? (c1.alignCount - 1) * c1.alignSpacing + markConfig.size.x * MARK_BASE_D
-          : markConfig.size.x * MARK_BASE_D
+          ? (c1.alignCount - 1) * c1.alignSpacing + markConfig.size.x * msc2 * MARK_BASE_D
+          : markConfig.size.x * msc2 * MARK_BASE_D
       })
 
       const totalSpan = extents.reduce((a, b) => a + b, 0) + (groupCount - 1) * alignSpacing
