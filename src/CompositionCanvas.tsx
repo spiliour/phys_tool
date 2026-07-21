@@ -481,6 +481,8 @@ function CollectionInstance({
       labelData={labelData}
       seed={scatterSeed}
       boundingVolume={collection1Config.scatterBoundingVolume ?? 'box'}
+      showBounds={collection1Config.scatterShowBounds ?? true}
+      orientation={collection1Config.scatterOrientation ?? 'random'}
     />
   )
 }

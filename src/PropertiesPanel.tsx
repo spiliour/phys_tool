@@ -983,6 +983,38 @@ function CollectionProperties({
               </DropZone>
             )}
 
+            {/* Orientation */}
+            <Row label="Orientation">
+              <div style={{ display: 'flex', width: '100%' }}>
+                {(['random', 'static'] as const).map((v, idx) => (
+                  <button key={v} onClick={() => onChange({ ...config, scatterOrientation: v })}
+                    style={{
+                      flex: 1, padding: '5px 0',
+                      background: (config.scatterOrientation ?? 'random') === v ? '#5E5CE6' : '#F2F2F7',
+                      color:      (config.scatterOrientation ?? 'random') === v ? '#fff'    : '#6C6C70',
+                      border: '1px solid', borderColor: (config.scatterOrientation ?? 'random') === v ? '#5E5CE6' : '#E5E5EA',
+                      borderRadius: idx === 0 ? '6px 0 0 6px' : '0 6px 6px 0',
+                      cursor: 'pointer', fontFamily: 'inherit', fontSize: '11px', fontWeight: '600',
+                    }}>
+                    {v === 'random' ? 'Random' : 'Static'}
+                  </button>
+                ))}
+              </div>
+            </Row>
+
+            {/* Show bounds */}
+            <Row label="Show Bounds">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={config.scatterShowBounds ?? true}
+                  onChange={e => onChange({ ...config, scatterShowBounds: e.target.checked })}
+                  style={{ accentColor: '#5E5CE6', width: '14px', height: '14px', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '11px', color: '#6C6C70' }}>Visible</span>
+              </label>
+            </Row>
+
             {/* Reseed */}
             {onReseed && (
               <Row label="Placement">

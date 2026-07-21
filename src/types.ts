@@ -68,6 +68,8 @@ export interface CollectionConfig {
   scatterDimensions:     Vec3      // bounding box / sphere dimensions
   scatterDensity:        number    // particles per unit³ (used when scatterMode === 'density')
   scatterBoundingVolume?: 'box' | 'sphere'
+  scatterShowBounds?:    boolean
+  scatterOrientation?:   'random' | 'static'
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
 }

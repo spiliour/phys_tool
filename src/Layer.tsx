@@ -29,6 +29,8 @@ interface LayerProps {
   labelData:            LayerLabelData
   seed?:                number
   boundingVolume?:      'box' | 'sphere'
+  showBounds?:          boolean
+  orientation?:         'random' | 'static'
 }
 
 const DEFAULT_SIZE: Vec3 = { x: 1, y: 1, z: 1 }
@@ -75,6 +77,7 @@ function fillInstanceMatrices(
   width: number, height: number, depth: number,
   size: Vec3,
   vol: 'box' | 'sphere' = 'box',
+  orient: 'random' | 'static' = 'random',
 ) {
   const dummy = new THREE.Object3D()
   const hw = width  * 0.40
@@ -82,11 +85,15 @@ function fillInstanceMatrices(
   const hd = depth  * 0.40
   for (let i = 0; i < count; i++) {
     dummy.position.set(...sampleScatterPos(hw, hh, hd, vol))
-    dummy.rotation.set(
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI * 2,
-    )
+    if (orient === 'random') {
+      dummy.rotation.set(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+      )
+    } else {
+      dummy.rotation.set(0, 0, 0)
+    }
     dummy.scale.set(size.x * SCATTER_SCALE, size.y * SCATTER_SCALE, size.z * SCATTER_SCALE)
     dummy.updateMatrix()
     mesh.setMatrixAt(i, dummy.matrix)
@@ -99,7 +106,7 @@ function fillInstanceMatrices(
 // instance and override materials imperatively.
 
 function ScatteredGLBInstances({
-  url, count, width, height, depth, markSize, markMaterial, color, seed, boundingVolume,
+  url, count, width, height, depth, markSize, markMaterial, color, seed, boundingVolume, orientation,
 }: {
   url:             string
   count:           number
@@ -111,6 +118,7 @@ function ScatteredGLBInstances({
   color:           string
   seed:            number
   boundingVolume:  'box' | 'sphere'
+  orientation:     'random' | 'static'
 }) {
   const { scene: gltfScene } = useGLTF(url)
 
@@ -138,13 +146,11 @@ function ScatteredGLBInstances({
     const hd = depth * 0.40
     return Array.from({ length: count }, () => ({
       position: sampleScatterPos(hw, hh, hd, boundingVolume),
-      rotation: [
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2,
-      ] as [number, number, number],
+      rotation: orientation === 'random'
+        ? [Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2] as [number, number, number]
+        : [0, 0, 0] as [number, number, number],
     }))
-  }, [count, width, height, depth, seed, boundingVolume])
+  }, [count, width, height, depth, seed, boundingVolume, orientation])
 
   // Clone scene once per instance
   const clones = useMemo(
@@ -213,6 +219,7 @@ export function Layer({
   markSize = DEFAULT_SIZE, structural = DEFAULT_STRUCTURAL,
   customModelUrl,
   labelShow, labelData, seed = 0, boundingVolume = 'box',
+  showBounds = true, orientation = 'random',
 }: LayerProps) {
   const instanceRef = useRef<THREE.InstancedMesh>(null)
 
@@ -235,8 +242,8 @@ export function Layer({
   useEffect(() => {
     const mesh = instanceRef.current
     if (!mesh) return
-    fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize, boundingVolume)
-  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed, boundingVolume])
+    fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize, boundingVolume, orientation)
+  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed, boundingVolume, orientation])
 
   useEffect(() => () => { geo.dispose() },      [geo])
   useEffect(() => () => { edgesGeo.dispose() }, [edgesGeo])
@@ -245,9 +252,9 @@ export function Layer({
 
   return (
     <group position={position}>
-      <lineSegments geometry={edgesGeo}>
+      {showBounds && <lineSegments geometry={edgesGeo}>
         <lineBasicMaterial color="#666666" transparent opacity={0.7} />
-      </lineSegments>
+      </lineSegments>}
 
       {useCustom ? (
         <Suspense fallback={null}>
@@ -260,6 +267,7 @@ export function Layer({
             color={color}
             seed={seed}
             boundingVolume={boundingVolume}
+            orientation={orientation}
           />
         </Suspense>
       ) : (
