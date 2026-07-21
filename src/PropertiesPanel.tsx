@@ -923,7 +923,7 @@ function CollectionProperties({
                     borderRadius: '6px', cursor: 'pointer',
                     fontSize: '11px', fontWeight: '600', fontFamily: 'inherit',
                   }}>
-                    {mode === 'count' ? 'Count' : 'Density'}
+                    {mode === 'count' ? 'Population' : 'Density'}
                   </button>
                 ))}
               </div>

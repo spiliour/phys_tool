@@ -18,7 +18,7 @@ const BINDING_LABELS: Record<keyof DataBindings, string> = {
   markColor:    'Color',
   markGeometry: 'Geometry',
   scatterSize:  'Scatter - Size',
-  scatterCount: 'Scatter - Count',
+  scatterCount: 'Scatter - Population',
   c1AlignCount: 'Count',
   c2AlignCount: 'Count',
   markSizeX:    'Width',

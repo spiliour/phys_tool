@@ -137,7 +137,7 @@ export function RadialBindMenu({
     { action: 'label',                           label: 'Label',    icon: 'Aa', section: 'mark',       varTypes: ['numerical', 'categorical'], excludeArrangements: ['scattering'] },
     // ── Collection ──
     { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter - Size',  icon: '⊞', section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
-    { action: 'bind',  bindKey: 'scatterCount', label: 'Scatter - Count', icon: '#',  section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
+    { action: 'bind',  bindKey: 'scatterCount', label: 'Scatter - Population', icon: '#',  section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
     { action: 'label',                           label: 'Label',              icon: 'Aa', section: 'collection', varTypes: ['numerical', 'categorical'],                             minLevel: 2 },
   ]
 
