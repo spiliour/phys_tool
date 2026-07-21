@@ -189,13 +189,17 @@ def fracture_bisect(source, n_pieces, cut_spread, cut_strategy):
 # Slower than bisect (O(N²) clips + N booleans). Recommended for ≤ 50 pieces.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def voronoi_cell_mesh(seed_idx, seeds):
+def voronoi_cell_mesh(seed_idx, seeds, cube_size):
     """
     Build the Voronoi cell for seeds[seed_idx] as a bmesh cube clipped by
     perpendicular-bisector planes from all other seeds.
+
+    cube_size bounds the cell: seeds on the object's boundary have Voronoi cells
+    that are open (unbounded) on the outward side, so they're only limited by this
+    starting cube. Keeping it just larger than the object stops those cells from
+    becoming giant shards when the boolean can't fully trim them.
     """
-    # Start with a cube large enough to cover the whole normalised object
-    bpy.ops.mesh.primitive_cube_add(size=6.0, location=(0, 0, 0))
+    bpy.ops.mesh.primitive_cube_add(size=cube_size, location=(0, 0, 0))
     cell_obj = bpy.context.active_object
     cell_obj.name = f'VCell_{seed_idx}'
 
@@ -236,22 +240,34 @@ def fracture_voronoi(source, n_pieces, cut_spread, original_mats=None):
         random.uniform(-spread, spread),
     )) for _ in range(n_pieces)]
 
+    # Object extent (normalised → ≈2). The bounding cube is kept just larger so
+    # boundary cells stay tight; any fragment bigger than this is a glitch.
+    sbb  = source.bound_box
+    sext = max(max(v[0] for v in sbb) - min(v[0] for v in sbb),
+               max(v[1] for v in sbb) - min(v[1] for v in sbb),
+               max(v[2] for v in sbb) - min(v[2] for v in sbb), 0.001)
+    cube_size   = sext * 1.25 + 0.1    # ≈2.6 for a 2-unit object
+    max_frag_ext = sext * 1.2          # reject fragments larger than the whole object
+
     fragments = []
+    rejected  = 0
 
     for i, seed in enumerate(seeds):
         print(f"  Voronoi cell {i+1}/{n_pieces}…")
 
-        cell_obj = voronoi_cell_mesh(i, seeds)
+        cell_obj = voronoi_cell_mesh(i, seeds, cube_size)
 
         if len(cell_obj.data.vertices) == 0:
             bpy.data.objects.remove(cell_obj)
             continue
 
-        # Boolean INTERSECT: cell ∩ source  →  one fragment
+        # Boolean INTERSECT: cell ∩ source  →  one fragment.
+        # EXACT (not FAST): the remeshed source is manifold, and FAST leaves
+        # self-intersecting spikes on the boundary cells that read as glitches.
         bool_mod            = cell_obj.modifiers.new('Bool', type='BOOLEAN')
         bool_mod.operation  = 'INTERSECT'
         bool_mod.object     = source
-        bool_mod.solver     = 'FAST'
+        bool_mod.solver     = 'EXACT'
 
         bpy.context.view_layer.objects.active = cell_obj
         try:
@@ -262,6 +278,16 @@ def fracture_voronoi(source, n_pieces, cut_spread, original_mats=None):
             continue
 
         if len(cell_obj.data.vertices) > 0:
+            # Safety net: drop any fragment larger than the object (a degenerate
+            # cell the boolean failed to trim) so no spike survives.
+            fb   = cell_obj.bound_box
+            fext = max(max(v[0] for v in fb) - min(v[0] for v in fb),
+                       max(v[1] for v in fb) - min(v[1] for v in fb),
+                       max(v[2] for v in fb) - min(v[2] for v in fb))
+            if fext > max_frag_ext:
+                rejected += 1
+                bpy.data.objects.remove(cell_obj)
+                continue
             # Assign original material so fragments match the source appearance
             if original_mats:
                 cell_obj.data.materials.clear()
@@ -270,6 +296,9 @@ def fracture_voronoi(source, n_pieces, cut_spread, original_mats=None):
             fragments.append(cell_obj)
         else:
             bpy.data.objects.remove(cell_obj)
+
+    if rejected:
+        print(f"[shatter] Voronoi: dropped {rejected} oversized/degenerate fragment(s)")
 
     # Remove the original source (cells hold the fragments now)
     bpy.data.objects.remove(source)

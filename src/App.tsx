@@ -7,8 +7,8 @@ import {
 import { HierarchyPanel }    from './HierarchyPanel'
 import { PropertiesPanel }   from './PropertiesPanel'
 import { CompositionCanvas } from './CompositionCanvas'
-import { SceneSave, SaveDialog, LoadDialog, loadSaves, persistSaves } from './SaveLoadModal'
-import { LeftDataPanel, VarChip } from './LeftDataPanel'
+import { SceneSave, SaveDialog, LoadDialog, loadSaves, persistSaves, captureThumbnail } from './SaveLoadModal'
+import { LeftDataPanel, VarChip, DatasetReferenceCard } from './LeftDataPanel'
 import { RadialBindMenu } from './RadialBindMenu'
 import { resolveCustomModel } from './models'
 
@@ -24,6 +24,7 @@ const BINDING_LABELS: Record<keyof DataBindings, string> = {
   markSizeX:    'Width',
   markSizeY:    'Height',
   markSizeZ:    'Depth',
+  markScale:    'Scale',
 }
 
 const BINDING_LEVEL: Record<keyof DataBindings, string> = {
@@ -32,6 +33,7 @@ const BINDING_LEVEL: Record<keyof DataBindings, string> = {
   markSizeX:    '',
   markSizeY:    '',
   markSizeZ:    '',
+  markScale:    '',
   scatterSize:  '',
   scatterCount: '',
   c1AlignCount: 'Lv2',
@@ -41,11 +43,15 @@ const BINDING_LEVEL: Record<keyof DataBindings, string> = {
 const DATASET_VAR_LABELS: Record<string, { numerical: string; categorical: string }> = {
   garbageInOcean: { numerical: 'Weight',  categorical: 'Garbage Type' },
   mahler:         { numerical: 'Number of Instruments', categorical: 'Orchestra Section' },
+  co2Emissions:   { numerical: 'CO₂ Emissions (Mt)', categorical: 'Country' },
+  mushroomToxicity: { numerical: 'Danger Score', categorical: 'Name' },
 }
 
 const DATASET_TITLES: Record<string, string> = {
   garbageInOcean: 'Garbage in the Ocean',
   mahler:         "Mahler's Symphony No. 8 Orchestra",
+  co2Emissions:   'CO₂ Emissions by Country',
+  mushroomToxicity: 'Mushroom danger score',
 }
 
 // ── Default state ─────────────────────────────────────────────────────────────
@@ -128,12 +134,13 @@ export default function App() {
   const [bindings,        setBindings]        = useState<DataBindings>({
     markColor: null, markGeometry: null, scatterSize: null, scatterCount: null,
     c1AlignCount: null, c2AlignCount: null,
-    markSizeX: null, markSizeY: null, markSizeZ: null,
+    markSizeX: null, markSizeY: null, markSizeZ: null, markScale: null,
   })
   const [markLabelConfig, setMarkLabelConfig] = useState<LabelConfig>(DEFAULT_LABEL)
   const [colLabelConfig,  setColLabelConfig]  = useState<LabelConfig>(DEFAULT_LABEL)
   const [colorMode,     setColorMode]     = useState<'distinct' | 'continuous'>('distinct')
   const [colorGradient, setColorGradient] = useState({ from: '#EE6655', to: '#4488EE' })
+  const [colorTint,     setColorTint]     = useState(false)  // tint GLB material instead of replacing it
   const [markOpenSection, setMarkOpenSection] = useState<string | undefined>(undefined)
   const [scatterSeed,     setScatterSeed]     = useState(0)
   const [decorations,        setDecorations]        = useState<DecorationConfig[]>([])
@@ -198,10 +205,24 @@ export default function App() {
   }
 
   function handleBindLabel(section: 'mark' | 'collection', variable: DataVariable, position: keyof LabelSlots) {
-    const updater = (prev: LabelConfig) => ({
-      ...prev, show: true,
-      slots: { ...prev.slots, [position]: variable },
-    })
+    // Scattered marks expose only Top / Below, but each side holds two values:
+    // Top fills top→left, Below fills bottom→right, so a second label sits beside the first.
+    const scatterMark = section === 'mark' && col1Config.arrangement === 'scattering'
+    // Surface marks always label above; each pick fills the next free slot, all joined.
+    const surfaceMark = section === 'mark' && col1Config.arrangement === 'surface'
+    const firstFree = (s: LabelSlots): keyof LabelSlots =>
+      s.top == null ? 'top' : s.left == null ? 'left' : s.right == null ? 'right' : s.bottom == null ? 'bottom' : 'top'
+    const updater = (prev: LabelConfig) => {
+      let target: keyof LabelSlots = position
+      if (surfaceMark) {
+        target = firstFree(prev.slots)
+      } else if (scatterMark && position === 'top') {
+        target = prev.slots.top == null ? 'top' : (prev.slots.left == null ? 'left' : 'top')
+      } else if (scatterMark && position === 'bottom') {
+        target = prev.slots.bottom == null ? 'bottom' : (prev.slots.right == null ? 'right' : 'bottom')
+      }
+      return { ...prev, show: true, slots: { ...prev.slots, [target]: variable } }
+    }
     if (section === 'mark') setMarkLabelConfig(updater)
     else setColLabelConfig(updater)
   }
@@ -241,15 +262,17 @@ export default function App() {
       markConfig, col1Config, col2Config, sceneConfig,
       bindings, markLabelConfig, colLabelConfig,
       decorations, layers, activeDataset,
+      colorMode, colorGradient, colorTint,
     }
   }
 
   function doSave(name: string) {
     const saves = loadSaves()
+    const data = { ...captureState(), thumbnail: captureThumbnail() }
     if (currentSaveId) {
       const idx = saves.findIndex((s) => s.id === currentSaveId)
       if (idx >= 0) {
-        saves[idx] = { ...saves[idx], name, data: captureState() }
+        saves[idx] = { ...saves[idx], name, data }
         persistSaves(saves)
         setCurrentSaveName(name)
         setModalMode('none')
@@ -257,7 +280,7 @@ export default function App() {
       }
     }
     const id = `save_${Date.now()}`
-    const newSave: SceneSave = { id, name, createdAt: new Date().toISOString(), data: captureState() }
+    const newSave: SceneSave = { id, name, createdAt: new Date().toISOString(), data }
     persistSaves([...saves, newSave])
     setCurrentSaveId(id)
     setCurrentSaveName(name)
@@ -289,7 +312,13 @@ export default function App() {
     }
     setCol1Config(d.col1Config ?? DEFAULT_COLLECTION1)
     setCol2Config(d.col2Config ?? DEFAULT_COLLECTION2)
-    setSceneConfig(d.sceneConfig ?? DEFAULT_SCENE)
+    // Migrate the old boolean occlusion flag to the new mode (true → optimized).
+    const rawScene = d.sceneConfig ?? DEFAULT_SCENE
+    const occ = rawScene.sceneLabelOcclude
+    setSceneConfig({
+      ...rawScene,
+      sceneLabelOcclude: typeof occ === 'boolean' ? (occ ? 'optimized' : 'off') : occ,
+    })
     // Migrate old saves that used dataset-specific varNames to universal keys
     const migrateVar = (v: DataVariable | null): DataVariable | null => {
       if (v === 'garbageType' || v === 'section') return 'categorical' as DataVariable
@@ -307,6 +336,7 @@ export default function App() {
       markSizeX:    migrateVar(rawBindings.markSizeX    ?? null),
       markSizeY:    migrateVar(rawBindings.markSizeY    ?? null),
       markSizeZ:    migrateVar(rawBindings.markSizeZ    ?? null),
+      markScale:    migrateVar(rawBindings.markScale    ?? null),
     })
     const migrateSlots = (cfg: LabelConfig): LabelConfig => ({
       ...cfg,
@@ -322,6 +352,9 @@ export default function App() {
     setDecorations((d.decorations ?? []).map((dec: DecorationConfig) => resolveCustomModel(dec)))
     setLayers(d.layers ?? DEFAULT_LAYERS)
     if (d.activeDataset != null) setActiveDataset(d.activeDataset)
+    setColorMode(d.colorMode ?? 'distinct')
+    setColorGradient(d.colorGradient ?? { from: '#EE6655', to: '#4488EE' })
+    setColorTint(d.colorTint ?? false)
     setCurrentSaveId(save.id)
     setCurrentSaveName(save.name)
     setActiveDecorationId(null)
@@ -426,6 +459,9 @@ export default function App() {
           />
         </div>
 
+        {/* Dataset reference — title, image and source link */}
+        <DatasetReferenceCard datasetKey={activeDataset} />
+
       </div>
 
       {/* Center: 3D canvas */}
@@ -453,6 +489,7 @@ export default function App() {
           decorations={decorations}
           colorMode={colorMode}
           colorGradient={colorGradient}
+          colorTint={colorTint}
           scatterSeed={scatterSeed}
           datasetTitle={DATASET_TITLES[activeDataset]}
           pathTracingActive={pathTracingActive}
@@ -555,13 +592,15 @@ export default function App() {
             colorMode={colorMode}
             colorGradient={colorGradient}
             onColorGradientChange={setColorGradient}
+            colorTint={colorTint}
+            onColorTintChange={setColorTint}
             markOpenSection={markOpenSection}
             onReseed={() => setScatterSeed(s => s + 1)}
           />
         </div>
 
-        {/* Pinned data variables section */}
-        <div style={{ borderTop: '1px solid #E5E5EA', padding: '14px 14px 16px', flexShrink: 0 }}>
+        {/* Pinned data variables section — capped so it can't crowd out the properties */}
+        <div style={{ borderTop: '1px solid #E5E5EA', padding: '14px 14px 16px', flexShrink: 0, maxHeight: '42%', overflowY: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
             <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
               Data
@@ -578,13 +617,23 @@ export default function App() {
               const activeKeys = (Object.keys(bindings) as Array<keyof DataBindings>)
                 .filter(k => bindings[k] === v.varName)
 
-              // Collect label binding tags from mark + collection label configs
+              // Collect label binding tags from mark + collection label configs.
+              // For scattered marks the paired slots (top+left, bottom+right) both
+              // read as Top / Below so the tag matches the picker the user saw.
+              const isScatterMark = col1Config.arrangement === 'scattering'
+              const isSurfaceMark = col1Config.arrangement === 'surface'
+              const markPosName = (pos: 'top' | 'bottom' | 'left' | 'right') =>
+                isSurfaceMark
+                  ? 'Above'
+                  : isScatterMark
+                    ? (pos === 'top' || pos === 'left' ? 'Top' : 'Below')
+                    : pos[0].toUpperCase() + pos.slice(1)
               const labelTags: Array<{ key: string; label: string; onRemove: () => void }> = []
               ;(['top', 'bottom', 'left', 'right'] as const).forEach(pos => {
                 if (markLabelConfig.slots[pos] === v.varName) {
                   labelTags.push({
                     key: `mark-${pos}`,
-                    label: `Label ${pos[0].toUpperCase() + pos.slice(1)}`,
+                    label: `Label ${markPosName(pos)}`,
                     onRemove: () => setMarkLabelConfig(prev => ({ ...prev, slots: { ...prev.slots, [pos]: null } })),
                   })
                 }
@@ -672,9 +721,7 @@ export default function App() {
 
       {modalMode === 'load' && (
         <LoadDialog
-          saves={loadSaves()}
           onLoad={handleLoad}
-          onDelete={handleDeleteSave}
           onClose={() => setModalMode('none')}
           currentName={currentSaveName ?? 'scene'}
           currentData={captureState()}

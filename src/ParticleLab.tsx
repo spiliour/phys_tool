@@ -12,10 +12,13 @@ import { OutputPass }      from 'three/examples/jsm/postprocessing/OutputPass.js
 import * as THREE from 'three'
 import {
   type SceneSave, type ViewType, type DataRow, type DataField, type LabPresetHandle,
+  type ColumnMeta, DATASET_POLLUTION, DATASET_GENERIC, ReferencePanel, ReferenceButton, referenceForData, matchDataset,
   DEFAULT_DATA, Sec, SLabel, RowLabel, secBtnSt,
   LabNavTitle, LabPresetRow, LabDataPanel,
-  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
+  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewBar,
+  type LabView,
 } from './LabShared'
+import { MODEL_PRESETS } from './models'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -182,7 +185,7 @@ function TrailRenderer({ simRef, count, trailLen, renderOptsRef }: {
 
 // ── Particle simulation ───────────────────────────────────────────────────────
 
-function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOptsRef, paused, instanceGeo, instanceMat, instanceSize }: {
+function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOptsRef, paused, instanceGeo, instanceMat, instanceSize, speedRef }: {
   simRef: React.MutableRefObject<SimData | null>
   sourceMesh: THREE.Mesh; count: number; size: number
   forcesRef: React.MutableRefObject<Forces>
@@ -191,6 +194,7 @@ function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOpts
   instanceGeo?: THREE.BufferGeometry | null
   instanceMat?: THREE.Material | null
   instanceSize?: number
+  speedRef?: React.MutableRefObject<number>
 }) {
   const meshRef    = useRef<THREE.InstancedMesh>(null)
   const matRef     = useRef<THREE.MeshStandardMaterial | null>(null)
@@ -271,7 +275,7 @@ function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOpts
     if (!mesh || !sim) return
     if (paused) return
 
-    const dt = Math.min(delta, 0.05); const t = clock.getElapsedTime()
+    const dt = Math.min(delta, 0.05) * (speedRef?.current ?? 1); const t = clock.getElapsedTime()
     const { pos, vel, origin, normal } = sim
     const { gravity, turbulence, vortex, attraction, damping, emitSpeed } = forcesRef.current
     const { colorMode, blending, brightness, solidColor } = renderOptsRef.current
@@ -350,13 +354,14 @@ function ParticleSystem({ simRef, sourceMesh, count, size, forcesRef, renderOpts
 
 // ── Shape wrappers ────────────────────────────────────────────────────────────
 
-function BuiltinParticles({ shape, simRef, count, size, forcesRef, renderOptsRef, paused, xOffset = 0, instanceGeo, instanceMat, instanceSize }: {
+function BuiltinParticles({ shape, simRef, count, size, forcesRef, renderOptsRef, paused, xOffset = 0, instanceGeo, instanceMat, instanceSize, speedRef }: {
   shape: 'sphere' | 'cube'; simRef: React.MutableRefObject<SimData | null>
   count: number; size: number; forcesRef: React.MutableRefObject<Forces>
   renderOptsRef: React.MutableRefObject<RenderOpts>; paused?: boolean; xOffset?: number
   instanceGeo?: THREE.BufferGeometry | null
   instanceMat?: THREE.Material | null
   instanceSize?: number
+  speedRef?: React.MutableRefObject<number>
 }) {
   const mesh = useMemo(() => {
     const geo = shape === 'sphere' ? new THREE.SphereGeometry(1, 32, 16) : new THREE.BoxGeometry(2, 2, 2, 8, 8, 8)
@@ -366,13 +371,14 @@ function BuiltinParticles({ shape, simRef, count, size, forcesRef, renderOptsRef
     return m
   }, [shape, xOffset])
 
-  return <ParticleSystem key={shape+count+xOffset} simRef={simRef} sourceMesh={mesh} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} instanceGeo={instanceGeo} instanceMat={instanceMat} instanceSize={instanceSize} />
+  return <ParticleSystem key={shape+count+xOffset} simRef={simRef} sourceMesh={mesh} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} instanceGeo={instanceGeo} instanceMat={instanceMat} instanceSize={instanceSize} speedRef={speedRef} />
 }
 
-function ModelParticles({ url, simRef, count, size, forcesRef, renderOptsRef, paused, xOffset = 0 }: {
+function ModelParticles({ url, simRef, count, size, forcesRef, renderOptsRef, paused, xOffset = 0, speedRef }: {
   url: string; simRef: React.MutableRefObject<SimData | null>
   count: number; size: number; forcesRef: React.MutableRefObject<Forces>
   renderOptsRef: React.MutableRefObject<RenderOpts>; paused?: boolean; xOffset?: number
+  speedRef?: React.MutableRefObject<number>
 }) {
   const gltf = useLoader(GLTFLoader, url)
   const mesh = useMemo<THREE.Mesh | null>(() => {
@@ -393,7 +399,7 @@ function ModelParticles({ url, simRef, count, size, forcesRef, renderOptsRef, pa
   }, [gltf, xOffset])
 
   if (!mesh) return null
-  return <ParticleSystem key={mesh.uuid+count+xOffset} simRef={simRef} sourceMesh={mesh} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} />
+  return <ParticleSystem key={mesh.uuid+count+xOffset} simRef={simRef} sourceMesh={mesh} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} speedRef={speedRef} />
 }
 
 // ── Multi-instance comparison: 4 side-by-side with fixed counts ──────────────
@@ -457,10 +463,10 @@ function MultiScene({ shape, modelUrl, size, forcesRef, renderOptsRef, paused, i
           )}
           <Html center position={[STATIC_X[i], -1.7, 0]} style={{ pointerEvents: 'none' }}>
             <div style={{ textAlign: 'center', whiteSpace: 'nowrap', userSelect: 'none' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#c0c0e0', letterSpacing: 0.3 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#c0c0e0', letterSpacing: 0.3 }}>
                 {count.toLocaleString()}
               </div>
-              <div style={{ fontSize: 9, color: '#6060a0', marginTop: 2 }}>particles</div>
+              <div style={{ fontSize: 11, color: '#8888b8', marginTop: 2 }}>particles</div>
             </div>
           </Html>
         </group>
@@ -569,28 +575,24 @@ function DynamicForcesCycler({ forcesRef }: { forcesRef: React.MutableRefObject<
 // ⇒ more, faster particles. Works in the static view (cities side-by-side) and
 // the dynamic/effect views (one lungs cycling through the cities).
 
-const POLLUTION_MODEL_URL   = import.meta.env.BASE_URL + 'assets/models/lungs_-_normal_study.glb'
-const POLLUTION_PRESET_NAME = 'lungs - pollution'   // seeds the preset when saved under this name
+// Bundled lungs model — offered as a Center-model choice (the air-pollution example).
+const POLLUTION_MODEL_URL = import.meta.env.BASE_URL + 'assets/models/lungs_-_normal_study.glb'
 
-const POLLUTION_DATA: DataRow[] = [
-  { category: 'Copenhagen', value: 9,  percentage: 10  },
-  { category: 'Paris',      value: 14, percentage: 15  },
-  { category: 'Athens',     value: 22, percentage: 24  },
-  { category: 'Beijing',    value: 55, percentage: 60  },
-  { category: 'Delhi',      value: 92, percentage: 100 },
-]
+// Adjustable cloud options (exposed in the panel so the example is reproducible).
+// `cycle` = step the Dynamic view through each data row (the "example" arrangement);
+// off by default so picking a model just shows one calm cloud.
+interface CloudOpts { modelUrl: string; size: number; spread: number; low: string; high: string; cycle: boolean }
+const CLOUD_DEFAULTS = { size: 0.013, spread: 1.0, low: '#3ec46f', high: '#e23b3b' }
+// Central-model choices for the data cloud: lungs (default) + the model presets.
+const CLOUD_MODELS = [{ name: 'Lungs', url: POLLUTION_MODEL_URL }, ...MODEL_PRESETS]
 
 // PM2.5 → cloud density and flow speed (more pollution ⇒ more, faster particles).
 const pollutionCount = (pm: number) => Math.round(Math.min(Math.max(pm * 13.5, 50), 1800))
 const pollutionSpeed = (pm: number) => 0.5 + pm * 0.03
 
-// Simple two-colour gradient, clean → polluted (HSL lerp keeps it smooth and
-// saturated). Sampled by each city's rank so it steps evenly across cities
-// instead of clustering the low-PM ones (PM2.5 values are heavily skewed).
-const POLL_LOW  = new THREE.Color('#3ec46f')   // clean
-const POLL_HIGH = new THREE.Color('#e23b3b')   // polluted
-function rampColor(t: number) {
-  return POLL_LOW.clone().lerpHSL(POLL_HIGH, Math.min(Math.max(t, 0), 1))
+// Two-colour gradient, clean → polluted (HSL lerp keeps it smooth and saturated).
+function rampColor(t: number, low: string, high: string) {
+  return new THREE.Color(low).lerpHSL(new THREE.Color(high), Math.min(Math.max(t, 0), 1))
 }
 // Even 0..1 tone per city, ordered by PM2.5 rank (robust to data order & gaps).
 function cityTones(cities: DataRow[]): number[] {
@@ -649,17 +651,18 @@ function LungsMesh({ url, xOffset }: { url: string; xOffset: number }) {
 // PM2.5: more pollution ⇒ more particles, oscillating faster.
 const CLOUD_A_MIN   = 0.6     // min oscillation amplitude (stays near the centre)
 const CLOUD_A_MAX   = 2.1     // max amplitude (plunges through the far side of the lungs)
-const PARTICLE_SIZE = 0.013   // tiny, delicate spheres
 const TRAIL_SAMPLES = 8       // length of the trajectory line (frames of history)
 const TURB_FREQ     = 1.3     // spatial scale of the swirl
 const TURB_SPEED    = 0.7     // how fast the swirl evolves
 
-function PollutionCloud({ count, speed, tone, xOffset }: {
-  count: number; speed: number; tone: number; xOffset: number
+function PollutionCloud({ count, speed, tone, xOffset, playSpeed = 1, size, spread, low, high }: {
+  count: number; speed: number; tone: number; xOffset: number; playSpeed?: number
+  size: number; spread: number; low: string; high: string
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const geo     = useMemo(() => new THREE.SphereGeometry(1, 10, 10), [])
-  const color   = useMemo(() => rampColor(tone), [tone])
+  const color   = useMemo(() => rampColor(tone, low, high), [tone, low, high])
+  const tAcc    = useRef(0)   // playback-speed-scaled clock (no jumps on change)
 
   // Per-particle oscillation: a random axis through the centre (amplitude A,
   // angular freq ω scaled by pollution speed, phase φ) → centre + axis·A·cos(ωt+φ),
@@ -676,12 +679,13 @@ function PollutionCloud({ count, speed, tone, xOffset }: {
       dir[i*3] = dx / L; dir[i*3+1] = dy / L; dir[i*3+2] = dz / L
       // Bias toward smaller amplitudes so the cloud concentrates near the centre,
       // with a few particles reaching far enough to punch through the lungs.
-      amp[i] = CLOUD_A_MIN + Math.pow(Math.random(), 1.7) * (CLOUD_A_MAX - CLOUD_A_MIN)
+      // `spread` scales how far the cloud reaches out.
+      amp[i] = (CLOUD_A_MIN + Math.pow(Math.random(), 1.7) * (CLOUD_A_MAX - CLOUD_A_MIN)) * spread
       omg[i] = baseFreq * (0.7 + Math.random() * 0.6)
       pha[i] = Math.random() * Math.PI * 2
     }
     return { dir, amp, omg, pha }
-  }, [count, speed])
+  }, [count, speed, spread])
 
   // Swirl angle (radians) — differential rotation about the centre. Scales a
   // little with pollution.
@@ -700,10 +704,11 @@ function PollutionCloud({ count, speed, tone, xOffset }: {
     return g
   }, [count])
 
-  useFrame(state => {
+  useFrame((_, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
-    const tt = state.clock.getElapsedTime()
+    tAcc.current += delta * playSpeed
+    const tt = tAcc.current
     const { dir, amp, omg, pha } = osc
     const T = TRAIL_SAMPLES, hist = trail.hist, head = trail.head
     const ts = tt * TURB_SPEED
@@ -726,7 +731,7 @@ function PollutionCloud({ count, speed, tone, xOffset }: {
       const pz = ry * sX + z1 * cX
       _dummy.position.set(px, py, pz)
       _dummy.quaternion.set(0, 0, 0, 1)
-      _dummy.scale.setScalar(PARTICLE_SIZE)
+      _dummy.scale.setScalar(size)
       _dummy.updateMatrix()
       mesh.setMatrixAt(i, _dummy.matrix)
       if (!trail.inited) {                     // first frame: seed whole history at current pos
@@ -772,33 +777,38 @@ function PollutionCloud({ count, speed, tone, xOffset }: {
   )
 }
 
-// One city: lungs (graceful if the model is missing) + its pollution cloud.
-function CityUnit({ pm25, tone, xOffset }: { pm25: number; tone: number; xOffset: number }) {
+// One city: the central model (graceful if missing) + its pollution cloud.
+function CityUnit({ pm25, tone, xOffset, playSpeed = 1, cloud }: {
+  pm25: number; tone: number; xOffset: number; playSpeed?: number; cloud: CloudOpts
+}) {
   return (
     <group>
       <SafeModel>
         <Suspense fallback={null}>
-          <LungsMesh url={POLLUTION_MODEL_URL} xOffset={xOffset} />
+          <LungsMesh url={cloud.modelUrl} xOffset={xOffset} />
         </Suspense>
       </SafeModel>
-      <PollutionCloud count={pollutionCount(pm25)} speed={pollutionSpeed(pm25)} tone={tone} xOffset={xOffset} />
+      <PollutionCloud count={pollutionCount(pm25)} speed={pollutionSpeed(pm25)} tone={tone} xOffset={xOffset}
+        playSpeed={playSpeed} size={cloud.size} spread={cloud.spread} low={cloud.low} high={cloud.high} />
     </group>
   )
 }
 
-function PollutionLabel({ city, xOffset }: { city: DataRow; xOffset: number }) {
+function PollutionLabel({ city, xOffset, y = -2.5, scale = 1 }: {
+  city: DataRow; xOffset: number; y?: number; scale?: number
+}) {
   return (
-    <Html center position={[xOffset, -2.3, 0]} style={{ pointerEvents: 'none' }}>
+    <Html center position={[xOffset, y, 0]} style={{ pointerEvents: 'none' }}>
       <div style={POLL_LABEL}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#e0e0f0', letterSpacing: 0.3 }}>{city.category}</div>
-        <div style={{ fontSize: 11, color: '#c8a08a', fontVariantNumeric: 'tabular-nums' }}>{city.value} µg/m³ · {pollutionCount(city.value).toLocaleString()} particles</div>
+        <div style={{ fontSize: 17 * scale, fontWeight: 600, color: '#e0e0f0', letterSpacing: 0.3 }}>{city.category}</div>
+        <div style={{ fontSize: 14 * scale, color: '#c8a08a', fontVariantNumeric: 'tabular-nums' }}>{city.value} µg/m³ · {pollutionCount(city.value).toLocaleString()} particles</div>
       </div>
     </Html>
   )
 }
 
 // Static view: every city side-by-side, each animating.
-function PollutionMulti({ cities }: { cities: DataRow[] }) {
+function PollutionMulti({ cities, cloud }: { cities: DataRow[]; cloud: CloudOpts }) {
   const n = cities.length, spacing = 3.4, offset = (n - 1) / 2
   const tones = cityTones(cities)
   return (
@@ -807,7 +817,7 @@ function PollutionMulti({ cities }: { cities: DataRow[] }) {
         const x = (i - offset) * spacing
         return (
           <group key={i}>
-            <CityUnit pm25={c.value} tone={tones[i]} xOffset={x} />
+            <CityUnit pm25={c.value} tone={tones[i]} xOffset={x} cloud={cloud} />
             <PollutionLabel city={c} xOffset={x} />
           </group>
         )
@@ -816,13 +826,26 @@ function PollutionMulti({ cities }: { cities: DataRow[] }) {
   )
 }
 
-// Dynamic / effect view: one lungs, cycling through the cities every few seconds.
-function PollutionSingle({ cities }: { cities: DataRow[] }) {
+// Dynamic / effect view, cycle OFF: ONE model + ONE cloud — the tunable building
+// block. Represents the dataset as a whole (count/speed from the average value);
+// no cycling/clusters, so picking a model doesn't jump to the finished look.
+function PollutionSingle({ cities, playSpeed = 1, cloud }: {
+  cities: DataRow[]; playSpeed?: number; cloud: CloudOpts
+}) {
+  const avg = cities.reduce((s, c) => s + c.value, 0) / Math.max(cities.length, 1)
+  return <CityUnit pm25={avg} tone={0.5} xOffset={0} playSpeed={playSpeed} cloud={cloud} />
+}
+
+// Dynamic / effect view, cycle ON: one lungs, stepping through each row every few
+// seconds with its label — the saved "example" arrangement.
+function PollutionCycle({ cities, playSpeed = 1, showLabels = true, cloud }: {
+  cities: DataRow[]; playSpeed?: number; showLabels?: boolean; cloud: CloudOpts
+}) {
   const [idx, setIdx] = useState(0)
   const elapsed = useRef(0), idxRef = useRef(0)
   const tones = cityTones(cities)
   useFrame((_, delta) => {
-    elapsed.current += delta
+    elapsed.current += delta * playSpeed
     if (elapsed.current > 3.5) {
       elapsed.current = 0
       idxRef.current = (idxRef.current + 1) % Math.max(cities.length, 1)
@@ -833,19 +856,25 @@ function PollutionSingle({ cities }: { cities: DataRow[] }) {
   if (!city) return null
   return (
     <>
-      {/* key by idx so the cloud re-seeds at the new city's count/speed */}
-      <CityUnit key={idx} pm25={city.value} tone={tones[idx] ?? 0} xOffset={0} />
-      <PollutionLabel city={city} xOffset={0} />
+      {/* key by idx so the cloud re-seeds at the new row's count/speed */}
+      <CityUnit key={idx} pm25={city.value} tone={tones[idx] ?? 0} xOffset={0} playSpeed={playSpeed} cloud={cloud} />
+      {showLabels && <PollutionLabel city={city} xOffset={0} y={-1.7} scale={1.18} />}
     </>
   )
 }
 
-function PollutionScene({ view, data }: { view: ViewType; data: DataRow[] }) {
+function PollutionScene({ view, data, playSpeed = 1, showLabels = true, cloud }: {
+  view: ViewType; data: DataRow[]; playSpeed?: number; showLabels?: boolean; cloud: CloudOpts
+}) {
   const cities = data.filter(d => d.value != null)
   if (!cities.length) return null
-  return view === 'static'
-    ? <PollutionMulti cities={cities} />
-    : <PollutionSingle cities={cities} />
+  // Compare (static) keeps its own pacing/labels; the playback options only steer
+  // the dynamic single-lungs view.
+  if (view === 'static') return <PollutionMulti cities={cities} cloud={cloud} />
+  // Dynamic: cycle through rows (the saved example) or show one calm cloud.
+  return cloud.cycle
+    ? <PollutionCycle cities={cities} playSpeed={playSpeed} showLabels={showLabels} cloud={cloud} />
+    : <PollutionSingle cities={cities} playSpeed={playSpeed} cloud={cloud} />
 }
 
 // Frames the pollution scene: sets camera distance + fov (independent of the view
@@ -864,12 +893,13 @@ function SceneCamera({ dist, fov }: { dist: number; fov: number }) {
 
 // ── Scene assembly ────────────────────────────────────────────────────────────
 
-function SceneContent({ shape, modelUrl, count, size, forcesRef, renderOptsRef, paused }: {
+function SceneContent({ shape, modelUrl, count, size, forcesRef, renderOptsRef, paused, speedRef }: {
   shape: ParticleShape; modelUrl: string | null
   count: number; size: number
   forcesRef: React.MutableRefObject<Forces>
   renderOptsRef: React.MutableRefObject<RenderOpts>
   paused?: boolean
+  speedRef?: React.MutableRefObject<number>
 }) {
   const simRef   = useRef<SimData | null>(null)
   const trailKey = `${shape}-${modelUrl ?? ''}-${count}`
@@ -884,11 +914,11 @@ function SceneContent({ shape, modelUrl, count, size, forcesRef, renderOptsRef, 
   return (
     <>
       {(shape === 'sphere' || shape === 'cube') && (
-        <BuiltinParticles shape={shape} simRef={simRef} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} />
+        <BuiltinParticles shape={shape} simRef={simRef} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} speedRef={speedRef} />
       )}
       {shape === 'model' && modelUrl && (
         <Suspense fallback={null}>
-          <ModelParticles url={modelUrl} simRef={simRef} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} />
+          <ModelParticles url={modelUrl} simRef={simRef} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} paused={paused} speedRef={speedRef} />
         </Suspense>
       )}
       {trailOn && !paused && (
@@ -900,7 +930,7 @@ function SceneContent({ shape, modelUrl, count, size, forcesRef, renderOptsRef, 
 
 // ── Per-view canvas ───────────────────────────────────────────────────────────
 
-function ViewCanvas({ viewType, shape, modelUrl, count, size, forcesRef, renderOptsRef, instanceGeoUrl, instanceSize, pollution, data }: {
+function ViewCanvas({ viewType, shape, modelUrl, count, size, forcesRef, renderOptsRef, instanceGeoUrl, instanceSize, pollution, cloud, data, playSpeed = 1, speedRef, showLabels = true }: {
   viewType: ViewType; shape: ParticleShape; modelUrl: string | null
   count: number; size: number
   forcesRef: React.MutableRefObject<Forces>
@@ -908,7 +938,11 @@ function ViewCanvas({ viewType, shape, modelUrl, count, size, forcesRef, renderO
   instanceGeoUrl?: string | null
   instanceSize?: number
   pollution?: boolean
+  cloud: CloudOpts
   data?: DataRow[]
+  playSpeed?: number
+  speedRef?: React.MutableRefObject<number>
+  showLabels?: boolean
 }) {
   const dynamicForcesRef = useRef<Forces>({ ...FORCE_PRESETS.Swarm })
   const isStatic  = viewType === 'static'
@@ -934,7 +968,7 @@ function ViewCanvas({ viewType, shape, modelUrl, count, size, forcesRef, renderO
             <directionalLight position={[3, 5, 4]} intensity={1.1} />
             <directionalLight position={[-4, -2, -3]} intensity={0.4} color="#88aaff" />
             <SceneCamera dist={pollDist} fov={55} />
-            <PollutionScene view={viewType} data={data ?? []} />
+            <PollutionScene view={viewType} data={data ?? []} playSpeed={playSpeed} showLabels={showLabels} cloud={cloud} />
           </>
         ) : (
           <>
@@ -955,7 +989,7 @@ function ViewCanvas({ viewType, shape, modelUrl, count, size, forcesRef, renderO
               <SceneContent
                 shape={shape} modelUrl={modelUrl} count={count} size={size}
                 forcesRef={forcesRef} renderOptsRef={renderOptsRef}
-                paused={false}
+                paused={false} speedRef={speedRef}
               />
             )}
             {isDynamic && <DynamicForcesCycler forcesRef={dynamicForcesRef} />}
@@ -1031,13 +1065,39 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
   useEffect(() => { forcesRef.current = forces },     [forces])
   useEffect(() => { renderOptsRef.current = render }, [render])
 
-  const [view1, setView1] = useState<ViewType>('effect')
+  // Dynamic/Compare view + playback options. Dynamic = the single animated system
+  // (pollution preset: one lungs cycling through cities); Compare = the paused
+  // side-by-side comparison. Smooth/transition doesn't apply to particles.
+  const [view,       setView]       = useState<LabView>('dynamic')
+  const [showLabels, setShowLabels] = useState(true)
+  const [animSpeed,  setAnimSpeed]  = useState(1.0)
+  const animSpeedRef = useRef(1.0)
+  useEffect(() => { animSpeedRef.current = animSpeed }, [animSpeed])
+  const view1: ViewType = view === 'compare' ? 'static' : 'effect'
   // const [view2, setView2] = useState<ViewType | null>(null)
   const [showAdvanced,    setShowAdvanced]    = useState(false)
 
 
   const [data, setData] = useState<DataRow[]>(DEFAULT_DATA)
-  const [pollution, setPollution] = useState(false)  // lungs + PM2.5 cloud preset mode
+  // The data cloud is driven by the CENTER MODEL, not the dataset: pick a central
+  // model and the particle cloud forms around it (count/speed from the data). No
+  // model by default → generic particle sandbox. The air-pollution preset restores
+  // the lungs model + its dataset, so loading it brings the example back.
+  const [cloudModelUrl,  setCloudModelUrl]  = useState<string | null>(null)
+  const [cloudModelName, setCloudModelName] = useState('')
+  const [cloudSize,      setCloudSize]      = useState(CLOUD_DEFAULTS.size)
+  const [cloudSpread,    setCloudSpread]    = useState(CLOUD_DEFAULTS.spread)
+  const [cloudLow,       setCloudLow]       = useState(CLOUD_DEFAULTS.low)
+  const [cloudHigh,      setCloudHigh]      = useState(CLOUD_DEFAULTS.high)
+  const [cloudCycle,     setCloudCycle]     = useState(false)  // step Dynamic through rows
+  const cloudMode = cloudModelUrl != null
+  const cloud: CloudOpts = { modelUrl: cloudModelUrl ?? '', size: cloudSize, spread: cloudSpread, low: cloudLow, high: cloudHigh, cycle: cloudCycle }
+  // Reference is derived from the current dataset (not the preset): choosing a
+  // dataset with a reference shows its card, auto-opening when it changes.
+  const reference = useMemo(() => referenceForData(data), [data])
+  const [showReference, setShowReference] = useState(false)
+  useEffect(() => { setShowReference(!!reference) }, [reference])
+  const [dataColumns,   setDataColumns]   = useState<ColumnMeta[] | undefined>(undefined)
   const [draggingField, setDraggingField] = useState<DataField | null>(null)
   const [presets,       setPresets]       = useState<SceneSave[]>(() => loadPresets())
   const [selPresetId,   setSelPresetId]   = useState('')
@@ -1058,12 +1118,14 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
   const savePreset = useCallback((name: string) => {
     const save: SceneSave = {
       id: Date.now().toString(), name, createdAt: new Date().toISOString(),
-      data: { shape, fileName, count, size, forces: { ...forces }, render: { ...render }, pollution, dataRows: data },
+      // Cloud mode is derived from the dataset (dataRows), not stored as a flag.
+      data: { shape, fileName, count, size, forces: { ...forces }, render: { ...render }, dataRows: data,
+              cloud: { ...cloud, name: cloudModelName } },
     }
     const next = [save, ...presets]
     setPresets(next); persistPresets(next); setSelPresetId(save.id); setSaveName(null)
     return save
-  }, [shape, fileName, count, size, forces, render, pollution, data, presets])
+  }, [shape, fileName, count, size, forces, render, data, cloudModelUrl, cloudModelName, cloudSize, cloudSpread, cloudLow, cloudHigh, cloudCycle, presets])
 
   const loadPreset = useCallback((id: string) => {
     const p = presets.find(x => x.id === id); if (!p) return
@@ -1074,12 +1136,30 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
     if (d.forces) setForces({ ...DEFAULT_FORCES, ...(d.forces as Partial<Forces>) })
     if (d.render) setRender({ ...DEFAULT_RENDER, ...(d.render as Partial<RenderOpts>) })
     if (d.fileName) setFileName(d.fileName as string)
-    // Lungs pollution preset: restore the flag + seed the city dataset (legacy
-    // presets saved under the name get seeded too).
-    const isPollution = p.name.trim().toLowerCase() === POLLUTION_PRESET_NAME
-    if (d.dataRows)        setData(d.dataRows as DataRow[])
-    else if (isPollution)  setData(POLLUTION_DATA)
-    setPollution((d.pollution as boolean | undefined) ?? isPollution)
+    // Restore the cloud: the central model (which turns the cloud on) + appearance.
+    // Always set the model explicitly (null = none) so a no-model preset clears it.
+    const c = d.cloud as (Partial<CloudOpts> & { name?: string }) | undefined
+    if (c) {
+      setCloudModelUrl(c.modelUrl ? c.modelUrl : null)
+      setCloudModelName(c.name ?? '')
+      if (c.size   != null) setCloudSize(c.size)
+      if (c.spread != null) setCloudSpread(c.spread)
+      if (c.low)  setCloudLow(c.low)
+      if (c.high) setCloudHigh(c.high)
+      if (c.cycle != null) setCloudCycle(c.cycle)
+    }
+    // Re-link the saved rows to their canonical dataset (by content) so the
+    // reference + dataset variables come back; otherwise use the rows as-is.
+    const savedRows = d.dataRows as DataRow[] | undefined
+    const ds = savedRows ? matchDataset(savedRows) : null
+    if (ds)             { setData(ds.data); setDataColumns(ds.columns) }
+    else if (savedRows) { setData(savedRows); setDataColumns(DATASET_GENERIC.columns) }
+    // Legacy pollution presets (saved before these fields): seed the lungs + cycle
+    // so the example's Dynamic view still steps through the cities.
+    if (ds === DATASET_POLLUTION) {
+      if (!c)               { setCloudModelUrl(POLLUTION_MODEL_URL); setCloudModelName('Lungs') }
+      if (!c || c.cycle == null) setCloudCycle(true)
+    }
   }, [presets])
 
   const deletePreset = useCallback((id: string) => {
@@ -1126,6 +1206,34 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
             />
           )}
 
+          {/* Particles — one section: Count/Size for the sim, Size/Spread for the cloud */}
+          <Sec>
+            <SLabel>Particles</SLabel>
+            {!cloudMode && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <RowLabel>Count: {count.toLocaleString()}</RowLabel>
+                <input type="range" min={200} max={8000} step={100} value={count} onChange={e => setCount(Number(e.target.value))} style={sl} />
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <RowLabel>Size: {(cloudMode ? cloudSize : size).toFixed(3)}</RowLabel>
+              {cloudMode
+                ? <input type="range" min={0.005} max={0.04} step={0.001} value={cloudSize} onChange={e => setCloudSize(Number(e.target.value))} style={sl} />
+                : <input type="range" min={0.01}  max={0.15} step={0.005} value={size}      onChange={e => setSize(Number(e.target.value))}      style={sl} />}
+            </div>
+            {cloudMode && (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <RowLabel>Spread: {cloudSpread.toFixed(2)}×</RowLabel>
+                  <input type="range" min={0.4} max={2} step={0.05} value={cloudSpread} onChange={e => setCloudSpread(Number(e.target.value))} style={sl} />
+                </div>
+                <div style={{ marginTop: 2 }}>
+                  <Toggle on={cloudCycle} onClick={() => setCloudCycle(v => !v)} label="Cycle through data (Dynamic)" />
+                </div>
+              </>
+            )}
+          </Sec>
+
           {/* Effect / quick force presets */}
           <Sec>
             <SLabel>Effect</SLabel>
@@ -1139,7 +1247,8 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
             </div>
           </Sec>
 
-          {/* Source */}
+          {/* Source (sphere/cube + GLB drop) — commented out */}
+          {false && (
           <Sec>
             <SLabel>Source</SLabel>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -1162,60 +1271,7 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
             <input id="glb-particle-input" type="file" accept=".glb,.gltf" style={{ display: 'none' }}
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
           </Sec>
-
-          {/* Particles */}
-          <Sec>
-            <SLabel>Particles</SLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <RowLabel>Count: {count.toLocaleString()}</RowLabel>
-              <input type="range" min={200} max={8000} step={100} value={count} onChange={e => setCount(Number(e.target.value))} style={sl} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <RowLabel>Size: {size.toFixed(3)}</RowLabel>
-              <input type="range" min={0.01} max={0.15} step={0.005} value={size} onChange={e => setSize(Number(e.target.value))} style={sl} />
-            </div>
-            {/* Custom instance geometry — static view only */}
-            <div style={{ fontSize: 9, color: 'var(--lab-text-3)', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, marginTop: 4 }}>Instance shape (static)</div>
-            <div
-              onDrop={e => {
-                e.preventDefault()
-                const f = e.dataTransfer.files[0]
-                if (!f) return
-                if (instanceGeoUrl) URL.revokeObjectURL(instanceGeoUrl)
-                setInstanceGeoUrl(URL.createObjectURL(f))
-                setInstanceGeoName(f.name)
-              }}
-              onDragOver={e => e.preventDefault()}
-              onClick={() => document.getElementById('glb-instance-input')!.click()}
-              style={{
-                border: `1px dashed ${instanceGeoUrl ? 'var(--lab-accent)' : 'var(--lab-border)'}`,
-                borderRadius: 8, padding: '10px', textAlign: 'center',
-                cursor: 'pointer', fontSize: 10,
-                color: instanceGeoUrl ? 'var(--lab-accent)' : 'var(--lab-text-3)', background: 'var(--lab-surface)',
-              }}
-            >
-              {instanceGeoName || 'Drop GLB or click to browse'}
-            </div>
-            <input id="glb-instance-input" type="file" accept=".glb,.gltf" style={{ display: 'none' }}
-              onChange={e => {
-                const f = e.target.files?.[0]; if (!f) return
-                if (instanceGeoUrl) URL.revokeObjectURL(instanceGeoUrl)
-                setInstanceGeoUrl(URL.createObjectURL(f))
-                setInstanceGeoName(f.name)
-              }} />
-            {instanceGeoUrl && (
-              <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                  <RowLabel>Instance size: {instanceSize.toFixed(2)}</RowLabel>
-                  <input type="range" min={0.05} max={2.0} step={0.05} value={instanceSize} onChange={e => setInstanceSize(Number(e.target.value))} style={sl} />
-                </div>
-                <button onClick={() => { URL.revokeObjectURL(instanceGeoUrl); setInstanceGeoUrl(null); setInstanceGeoName('') }}
-                  style={{ fontSize: 10, padding: '4px 0', background: 'none', border: '1px solid var(--lab-border)', borderRadius: 6, color: 'var(--lab-text-3)', cursor: 'pointer' }}>
-                  Remove
-                </button>
-              </>
-            )}
-          </Sec>
+          )}
 
           {/* Forces */}
           <Sec>
@@ -1228,6 +1284,27 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
             ))}
           </Sec>
 
+          {/* Center model — pick one to form the data cloud around it (none by default) */}
+          <Sec>
+            <SLabel>Center model</SLabel>
+            <select value={cloudModelName || '__none__'}
+              onChange={e => {
+                const v = e.target.value
+                if (v === '__none__')   { setCloudModelUrl(null); setCloudModelName(''); return }
+                if (v === '__upload__') { document.getElementById('cloud-model-input')!.click(); return }
+                const m = CLOUD_MODELS.find(mm => mm.name === v)
+                if (m) { setCloudModelUrl(m.url); setCloudModelName(m.name) }
+              }}
+              style={{ width: '100%', background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', color: cloudModelName ? 'var(--lab-text)' : 'var(--lab-text-3)', borderRadius: 6, fontSize: 11, padding: '6px 8px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <option value="__none__">None</option>
+              {CLOUD_MODELS.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+              {cloudModelName && !CLOUD_MODELS.some(m => m.name === cloudModelName) && <option value={cloudModelName}>{cloudModelName}</option>}
+              <option value="__upload__">Upload custom GLB…</option>
+            </select>
+            <input id="cloud-model-input" type="file" accept=".glb,.gltf" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (!f) return; setCloudModelUrl(URL.createObjectURL(f)); setCloudModelName(f.name) }} />
+          </Sec>
+
         </div>
 
         {/* Global preset row (hub) sits just above the data panel when embedded. */}
@@ -1237,25 +1314,26 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
           </div>
         )}
 
-        <LabDataPanel
-          data={data} draggingField={draggingField}
-          onDragStart={setDraggingField} onDragEnd={() => setDraggingField(null)}
-          onDataChange={setData}
-        />
+        <LabDataPanel data={data} columnsOverride={dataColumns} onDataChange={setData} />
       </div>
 
       {/* ── Advanced panel ── */}
       <LabAdvancedPanel open={showAdvanced}>
-        <Sec>
-          <SLabel>Lungs pollution</SLabel>
-          <Toggle on={pollution} onClick={() => { const nv = !pollution; setPollution(nv); if (nv) setData(POLLUTION_DATA) }} label="Enable pollution mode" />
-          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
-            Lungs at the centre; particles oscillate through it like electrons. Each
-            city's PM2.5 (data value) drives the cloud's density and oscillation
-            speed. Static view = cities side-by-side; Dynamic/Effect = one lungs
-            cycling through cities.
-          </div>
-        </Sec>
+        {cloudMode ? (
+          <Sec>
+            <SLabel>Cloud colors</SLabel>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="color" value={cloudLow} onChange={e => setCloudLow(e.target.value)}
+                style={{ width: 32, height: 22, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+              <span style={{ fontSize: 10, color: 'var(--lab-text-2)' }}>Clean · {cloudLow}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="color" value={cloudHigh} onChange={e => setCloudHigh(e.target.value)}
+                style={{ width: 32, height: 22, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+              <span style={{ fontSize: 10, color: 'var(--lab-text-2)' }}>Polluted · {cloudHigh}</span>
+            </div>
+          </Sec>
+        ) : (<>
         <Sec>
           <SLabel>Color</SLabel>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -1321,13 +1399,14 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
             </div>
           )}
         </Sec>
+        </>)}
       </LabAdvancedPanel>
 
       {/* ── Viewport ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
 
         <div style={{ flex: 1, position: 'relative' }}>
-          <ViewCanvas viewType={view1} shape={shape} modelUrl={modelUrl} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} instanceGeoUrl={instanceGeoUrl} instanceSize={instanceSize} pollution={pollution} data={data} />
+          <ViewCanvas viewType={view1} shape={shape} modelUrl={modelUrl} count={count} size={size} forcesRef={forcesRef} renderOptsRef={renderOptsRef} instanceGeoUrl={instanceGeoUrl} instanceSize={instanceSize} pollution={cloudMode} cloud={cloud} data={data} playSpeed={animSpeed} speedRef={animSpeedRef} showLabels={showLabels} />
         </div>
 
         {/* LEGACY two-view split — commented out
@@ -1344,7 +1423,17 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
         />
         */}
 
-        <LabViewToggle view={view1} onChange={setView1} />
+        <LabViewBar view={view} onChange={setView} options={{
+          showLabels, onShowLabels: setShowLabels,
+          speed: animSpeed, onSpeed: setAnimSpeed,
+          // Smooth/transition doesn't apply to particles → no mode toggle.
+        }} />
+
+        {/* Reference — only offered when the loaded preset carries one. */}
+        {reference && !showReference && <ReferenceButton onClick={() => setShowReference(true)} />}
+        {reference && showReference && (
+          <ReferencePanel reference={reference} onClose={() => setShowReference(false)} />
+        )}
       </div>
     </div>
   )

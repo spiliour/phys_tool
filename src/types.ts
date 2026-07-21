@@ -52,7 +52,7 @@ export interface MarkConfig {
 }
 
 // ── Collection ────────────────────────────────────────────────────────────────
-export type CollectionArrangement = 'alignment' | 'scattering' | 'stacking' | 'piling'
+export type CollectionArrangement = 'alignment' | 'scattering' | 'stacking' | 'piling' | 'surface'
 
 export interface CollectionConfig {
   arrangement:       CollectionArrangement
@@ -72,8 +72,14 @@ export interface CollectionConfig {
   scatterOrientation?:   'random' | 'static'
   scatterExclusionId?:   string | null
   scatterEven?:          boolean
+  scatterSizeAxes?:      { x: boolean; y: boolean; z: boolean }  // axes the Scatter-Size encoding grows (default Y)
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
+  // Surface placement — marks scattered onto a decoration's surface, standing
+  // along its normals (e.g. mushrooms on a log)
+  surfaceTargetId?:  string | null  // decoration to place marks on
+  surfaceCount?:     number         // number of marks (default 24)
+  surfaceScale?:     number         // mark size multiplier (default 1)
 }
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
@@ -81,12 +87,39 @@ export type HdriPreset =
   | 'city' | 'warehouse' | 'sunset' | 'dawn'
   | 'forest' | 'night' | 'studio' | 'apartment'
 
-export type BackgroundMode = 'dark' | 'ocean'
+export type BackgroundMode = 'dark' | 'ocean' | 'color' | 'gradient' | 'hdri' | 'sky'
+
+// Label occlusion: 'off' none, 'full' raycasts the whole scene (thorough, slow),
+// 'optimized' raycasts only decorations (fast).
+export type LabelOccludeMode = 'off' | 'full' | 'optimized'
 
 export interface SceneConfig {
   background:  BackgroundMode
   hdriPreset:  HdriPreset
   focalLength: number
+  // Background appearance
+  bgColor?:          string   // 'color' mode
+  bgGradientTop?:    string   // 'gradient' mode
+  bgGradientBottom?: string   // 'gradient' mode
+  hdriBlur?:         number   // 'hdri' background blur (0–1)
+  hdriIntensity?:    number   // 'hdri' background brightness
+  // Lighting
+  exposure?:         number   // tone-mapping exposure
+  envRotation?:      number   // HDRI rotation in degrees (reflections + hdri bg)
+  // Sky ('sky' mode)
+  skyElevation?:     number   // sun elevation in degrees
+  skyAzimuth?:       number   // sun azimuth in degrees
+  // Atmosphere / ground
+  stars?:            boolean
+  fog?:              boolean
+  fogColor?:         string
+  fogNear?:          number
+  fogFar?:           number
+  grid?:             boolean
+  sceneTitleShow?:   boolean
+  sceneTitleOffset?: number   // world-unit Y distance from origin (default 9)
+  sceneTitleBelow?:  boolean  // false = above (default), true = below
+  sceneLabelOcclude?: LabelOccludeMode // hide floating labels when behind geometry
 }
 
 // ── Label configuration ───────────────────────────────────────────────────────
@@ -112,6 +145,7 @@ export interface DataBindings {
   markSizeX:     DataVariable | null
   markSizeY:     DataVariable | null
   markSizeZ:     DataVariable | null
+  markScale:     DataVariable | null  // uniform scale of the whole mark
 }
 
 export interface LabelConfig {

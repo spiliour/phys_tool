@@ -20,10 +20,36 @@ export const PRESETS: SceneSave[] = Object.entries(_presetMods).map(([path, mod]
   return { id: `preset_${raw}`, name, createdAt: '', data: mod.default }
 })
 
+// ── Viewport thumbnail ────────────────────────────────────────────────────────
+
+// Grab the WebGL canvas and return a small JPEG data URL for the scene preview.
+// (The Canvas is created with preserveDrawingBuffer so its last frame is readable.)
+export function captureThumbnail(maxW = 320): string | undefined {
+  const canvas = document.querySelector('canvas')
+  if (!canvas) return undefined
+  try {
+    const srcW  = canvas.width || maxW
+    const srcH  = canvas.height || maxW
+    const scale = Math.min(1, maxW / srcW)
+    const w = Math.max(1, Math.round(srcW * scale))
+    const h = Math.max(1, Math.round(srcH * scale))
+    const off = document.createElement('canvas')
+    off.width = w; off.height = h
+    const ctx = off.getContext('2d')
+    if (!ctx) return undefined
+    ctx.drawImage(canvas, 0, 0, w, h)
+    return off.toDataURL('image/jpeg', 0.72)
+  } catch {
+    return undefined   // e.g. a tainted canvas — just skip the preview
+  }
+}
+
 // ── Export helper ─────────────────────────────────────────────────────────────
 
 export function exportScene(name: string, data: Record<string, unknown>) {
-  const payload = JSON.stringify(data, null, 2)
+  // Embed a fresh viewport screenshot so the exported preset shows a preview.
+  const withThumb = { ...data, thumbnail: captureThumbnail() ?? data.thumbnail }
+  const payload = JSON.stringify(withThumb, null, 2)
   const blob    = new Blob([payload], { type: 'application/json' })
   const url     = URL.createObjectURL(blob)
   const a       = document.createElement('a')
@@ -120,9 +146,7 @@ export function SaveDialog({ initialName, onSave, onClose }: SaveDialogProps) {
 // ── Load dialog ───────────────────────────────────────────────────────────────
 
 interface LoadDialogProps {
-  saves:       SceneSave[]
   onLoad:      (save: SceneSave) => void
-  onDelete:    (id: string) => void
   onClose:     () => void
   currentName: string
   currentData: Record<string, unknown>
@@ -139,16 +163,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function LoadDialog({ saves, onLoad, onDelete, onClose, currentName, currentData }: LoadDialogProps) {
+export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDialogProps) {
   const [hoverId, setHoverId] = useState<string | null>(null)
 
-  function row(s: SceneSave, showDelete: boolean, last: boolean) {
+  function row(s: SceneSave, last: boolean) {
+    const thumb = s.data?.thumbnail as string | undefined
     return (
       <div
         key={s.id}
         style={{
-          display: 'flex', alignItems: 'center', gap: '10px',
-          padding: '11px 20px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '11px',
+          padding: '10px 20px', cursor: 'pointer',
           background: hoverId === s.id ? '#F8F8FA' : 'transparent',
           borderBottom: last ? 'none' : '1px solid #F2F2F7',
           transition: 'background 0.08s',
@@ -157,27 +182,24 @@ export function LoadDialog({ saves, onLoad, onDelete, onClose, currentName, curr
         onMouseEnter={() => setHoverId(s.id)}
         onMouseLeave={() => setHoverId(null)}
       >
+        <div style={{
+          width: '62px', height: '44px', flexShrink: 0,
+          borderRadius: '6px', overflow: 'hidden', background: '#F2F2F7',
+          border: '1px solid #E5E5EA',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {thumb
+            ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            : <span style={{ fontSize: '15px', color: '#C7C7CC' }}>▦</span>}
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '13px', fontWeight: '600', color: '#1D1D1F' }}>{s.name}</div>
+          <div style={{ fontSize: '13px', fontWeight: '600', color: '#1D1D1F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
           {s.createdAt && (
             <div style={{ fontSize: '10px', color: '#8E8E93', marginTop: '2px' }}>
               {new Date(s.createdAt).toLocaleString()}
             </div>
           )}
         </div>
-        {showDelete && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(s.id) }}
-            title="Delete"
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: '#FF3B30', fontSize: '17px', lineHeight: 1,
-              padding: '4px 6px', flexShrink: 0,
-            }}
-          >
-            ×
-          </button>
-        )}
       </div>
     )
   }
@@ -198,24 +220,14 @@ export function LoadDialog({ saves, onLoad, onDelete, onClose, currentName, curr
         <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
 
           {/* Presets */}
-          {PRESETS.length > 0 && (
+          {PRESETS.length > 0 ? (
             <>
               <SectionLabel>Presets</SectionLabel>
-              {PRESETS.map((s, i) => row(s, false, i === PRESETS.length - 1))}
+              {PRESETS.map((s, i) => row(s, i === PRESETS.length - 1))}
             </>
-          )}
-
-          {/* User saves */}
-          {saves.length > 0 && (
-            <>
-              <SectionLabel>My Saves</SectionLabel>
-              {saves.map((s, i) => row(s, true, i === saves.length - 1))}
-            </>
-          )}
-
-          {PRESETS.length === 0 && saves.length === 0 && (
+          ) : (
             <div style={{ padding: '36px 20px', textAlign: 'center', color: '#8E8E93', fontSize: '13px' }}>
-              No saved scenes yet
+              No scenes yet
             </div>
           )}
         </div>

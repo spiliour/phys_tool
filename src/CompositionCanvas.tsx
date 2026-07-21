@@ -1,6 +1,6 @@
-import { useRef, useMemo, useEffect, Suspense, createContext, useContext } from 'react'
+import { useRef, useMemo, useEffect, useState, useCallback, Suspense, createContext, useContext } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import { OrbitControls, Environment, Sky, Html, useGLTF } from '@react-three/drei'
+import { OrbitControls, Environment, Sky, Stars, Grid, Html, useGLTF } from '@react-three/drei'
 import {
   PathTracingRenderer, PhysicalPathTracingMaterial, DynamicPathTracingSceneGenerator,
 } from 'three-gpu-pathtracer'
@@ -9,7 +9,7 @@ import * as THREE from 'three'
 import {
   CompositionLevel, MarkConfig, CollectionConfig, SceneConfig, LayerData,
   DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig,
-  MarkShape, MarkMaterial, StructuralConfig,
+  MarkShape, MarkMaterial, StructuralConfig, Vec3,
 } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 import { MODEL_PRESETS, MODEL_SCALE_OVERRIDES } from './models'
@@ -19,10 +19,12 @@ import { MODEL_PRESETS, MODEL_SCALE_OVERRIDES } from './models'
 interface ColorCtx {
   colorMode:     'distinct' | 'continuous'
   colorGradient: { from: string; to: string }
+  colorTint:     boolean   // tint the GLB material instead of replacing it
 }
 const ColorContext = createContext<ColorCtx>({
   colorMode: 'distinct',
   colorGradient: { from: '#EE6655', to: '#4488EE' },
+  colorTint: false,
 })
 
 function lerpHex(from: string, to: string, t: number): string {
@@ -45,7 +47,8 @@ function resolveMarkColor(
   return layers[i % Math.max(1, layers.length)]?.color ?? fallback
 }
 import { MarkMaterialElement } from './MarkMaterial'
-import { Layer, LayerLabelData } from './Layer'
+import { Layer, LayerLabelData, SCATTER_SCALE, ExclusionZone, MarkLabelPair, LabelOccludeContext, occludeProp } from './Layer'
+import { SurfacePlacement } from './SurfacePlacement'
 import { PilingLayer } from './PilingLayer'
 import { Physics } from '@react-three/rapier'
 
@@ -107,6 +110,19 @@ const L1_MARK_SCALE = 14
 
 // ── Custom GLTF model mesh ────────────────────────────────────────────────────
 
+// Per-axis extent of each custom model relative to ws × size (largest axis ≈ 1).
+// Populated when CustomModelMesh measures the GLB; read by the exclusion zone.
+type ModelAspect = { x: number; y: number; z: number }
+const modelAspectCache = new Map<string, ModelAspect>()
+
+// Reactive mirror of modelAspectCache so the exclusion zone recomputes once a
+// custom-model decoration has actually been measured (e.g. right after a reload,
+// where the exclusion is restored before its GLB finishes loading).
+const ModelAspectContext = createContext<{
+  aspects: Record<string, ModelAspect>
+  report:  (url: string, a: ModelAspect) => void
+}>({ aspects: {}, report: () => {} })
+
 function CustomModelMesh({
   url, material, color, sz,
 }: {
@@ -135,6 +151,11 @@ function CustomModelMesh({
       const dims   = new THREE.Vector3()
       box.getSize(dims)
       const maxDim = Math.max(dims.x, dims.y, dims.z, 0.001)
+      modelAspectCache.set(url, {
+        x: (dims.x / maxDim) * scaleOverride,
+        y: (dims.y / maxDim) * scaleOverride,
+        z: (dims.z / maxDim) * scaleOverride,
+      })
       const ns     = (MARK_BASE / maxDim) * scaleOverride
       const center = new THREE.Vector3()
       box.getCenter(center)
@@ -163,6 +184,14 @@ function CustomModelMesh({
     return c
   }, [scene, url, material, color])
 
+  // Publish the measured aspect so the exclusion zone can react to it (the memo
+  // above ran during render and populated modelAspectCache for this url).
+  const { report } = useContext(ModelAspectContext)
+  useEffect(() => {
+    const a = modelAspectCache.get(url)
+    if (a) report(url, a)
+  }, [url, report, normalizedObj])
+
   return (
     <group scale={sz}>
       <primitive object={normalizedObj} />
@@ -186,6 +215,28 @@ function computeLabelValues(slots: LabelSlots, layers: LayerData[], layerIndex: 
       result[pos] = layer?.name ?? '?'
   }
   return result
+}
+
+// Per-scattered-mark labels (mark i ← data row i, cycling), split by side.
+// Top + Left slots float above the mark; Bottom + Right slots float below —
+// so up to two values can share a side, joined into one tag.
+function markLabelStrings(slots: LabelSlots, layers: LayerData[], count: number): MarkLabelPair[] {
+  return Array.from({ length: count }, (_, i) => {
+    const ld = computeLabelValues(slots, layers, i)
+    const above = [ld.top, ld.left].filter(Boolean).join('  ·  ')
+    const below = [ld.bottom, ld.right].filter(Boolean).join('  ·  ')
+    return { above: above || null, below: below || null }
+  })
+}
+
+// Surface-placement labels: every bound variable joined into one tag placed
+// above the mark along its normal (no side split).
+function surfaceLabelStrings(slots: LabelSlots, layers: LayerData[], count: number): (string | null)[] {
+  return Array.from({ length: count }, (_, i) => {
+    const ld = computeLabelValues(slots, layers, i)
+    const parts = [ld.top, ld.left, ld.right, ld.bottom].filter(Boolean)
+    return parts.length ? parts.join('  ·  ') : null
+  })
 }
 
 const LABEL_SHADOW = '0 0 6px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,1)'
@@ -257,7 +308,8 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
   const s     = L1_MARK_SCALE
   const color = resolveMarkColor(0, bindings, layers, config.color, colorMode, colorGradient)
 
-  const sc = config.scale ?? 1
+  const sc = (config.scale ?? 1)
+    * (bindings.markScale ? markSizeMultiplier(bindings.markScale, 0, layers) : 1)
   const sz = {
     x: config.size.x * sc * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, 0, layers) : 1),
     y: config.size.y * sc * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, 0, layers) : 1),
@@ -344,10 +396,11 @@ function AlignedMarks({
 
   const msc = markConfig.scale ?? 1
   function getScale(i: number): [number, number, number] {
+    const uni = msc * (bindings.markScale ? markSizeMultiplier(bindings.markScale, i, layers) : 1)
     const sz = {
-      x: markConfig.size.x * msc * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, i, layers) : 1),
-      y: markConfig.size.y * msc * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, i, layers) : 1),
-      z: markConfig.size.z * msc * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, i, layers) : 1),
+      x: markConfig.size.x * uni * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, i, layers) : 1),
+      y: markConfig.size.y * uni * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, i, layers) : 1),
+      z: markConfig.size.z * uni * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, i, layers) : 1),
     }
     return [s * sz.x, s * sz.y, s * sz.z]
   }
@@ -421,28 +474,84 @@ function CollectionInstance({
   scatterSeed:       number
   decorations?:      DecorationConfig[]
 }) {
+  const { colorMode, colorGradient, colorTint } = useContext(ColorContext)
+  const { aspects } = useContext(ModelAspectContext)
   const msc = markConfig.scale ?? 1
   const scaledMarkSize = { x: markConfig.size.x * msc, y: markConfig.size.y * msc, z: markConfig.size.z * msc }
 
-  const exclusionZone = useMemo(() => {
+  // Per-row encodings (one mark per data row) apply to scattering and to
+  // surface placement — both distribute one mark per row over a region/surface.
+  const perRowArrangement = collection1Config.arrangement === 'scattering' || collection1Config.arrangement === 'surface'
+  // Per-instance sizes when a size/scale encoding is active: scaled by that row's value.
+  const sizeEncActive = perRowArrangement && (
+    bindings.markScale !== null || bindings.markSizeX !== null ||
+    bindings.markSizeY !== null || bindings.markSizeZ !== null
+  )
+  // Per-instance colours when a colour encoding is active: coloured by that row's value.
+  const colorEncActive = perRowArrangement && bindings.markColor !== null
+  const perRowActive = sizeEncActive || colorEncActive
+
+  const instanceSizes = useMemo<Vec3[] | undefined>(() => {
+    if (!sizeEncActive) return undefined
+    return layers.map((_, i) => {
+      const uni = bindings.markScale ? markSizeMultiplier(bindings.markScale, i, layers) : 1
+      return {
+        x: scaledMarkSize.x * uni * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, i, layers) : 1),
+        y: scaledMarkSize.y * uni * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, i, layers) : 1),
+        z: scaledMarkSize.z * uni * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, i, layers) : 1),
+      }
+    })
+  }, [
+    sizeEncActive, layers,
+    bindings.markScale, bindings.markSizeX, bindings.markSizeY, bindings.markSizeZ,
+    scaledMarkSize.x, scaledMarkSize.y, scaledMarkSize.z,
+  ])
+
+  const instanceColors = useMemo<string[] | undefined>(() => {
+    if (!colorEncActive) return undefined
+    return layers.map((_, i) => resolveMarkColor(i, bindings, layers, color, colorMode, colorGradient))
+  }, [colorEncActive, layers, bindings, color, colorMode, colorGradient])
+
+  const exclusionZone = useMemo<ExclusionZone | undefined>(() => {
     const decId = collection1Config.scatterExclusionId
     if (!decId) return undefined
     const dec = decorations?.find(d => d.id === decId)
     if (!dec) return undefined
     const ws = L1_MARK_SCALE * MARK_BASE
-    const baseRadius = dec.shape === 'sphere'
-      ? ws * 0.52 * Math.max(dec.size.x, dec.size.y, dec.size.z)
-      : (ws / 2) * Math.sqrt(dec.size.x ** 2 + dec.size.y ** 2 + dec.size.z ** 2)
-    const radius = baseRadius * 1.05
-    return {
-      center: [
-        dec.position.x - position[0],
-        dec.position.y - position[1],
-        dec.position.z - position[2],
-      ] as [number, number, number],
-      radius,
+    // half the scatter mark's largest world dimension, so mark bodies clear the surface
+    const maxMark = instanceSizes
+      ? instanceSizes.reduce((m, sz) => Math.max(m, sz.x, sz.y, sz.z), 0)
+      : Math.max(scaledMarkSize.x, scaledMarkSize.y, scaledMarkSize.z)
+    const markR = (MARK_BASE * SCATTER_SCALE / 2) * maxMark
+    const center: [number, number, number] = [
+      dec.position.x - position[0],
+      dec.position.y - position[1],
+      dec.position.z - position[2],
+    ]
+    if (dec.shape === 'sphere') {
+      const radius = ws * 0.52 * Math.max(dec.size.x, dec.size.y, dec.size.z) * 1.05 + markR
+      return { kind: 'sphere', center, radius }
     }
-  }, [collection1Config.scatterExclusionId, decorations, position[0], position[1], position[2]])
+    // Box zone hugging the decoration's bounding box. Custom models are normalised
+    // to max-dim = ws × size, so scale each axis by the measured aspect ratio
+    // (falls back to a cube until the GLB has been measured once).
+    const aspect = dec.shape === 'custom' && dec.customModelUrl
+      ? aspects[dec.customModelUrl] ?? modelAspectCache.get(dec.customModelUrl) ?? { x: 1, y: 1, z: 1 }
+      : { x: 1, y: 1, z: 1 }
+    return {
+      kind: 'box',
+      center,
+      half: [
+        (ws / 2) * dec.size.x * aspect.x * 1.05 + markR,
+        (ws / 2) * dec.size.y * aspect.y * 1.05 + markR,
+        (ws / 2) * dec.size.z * aspect.z * 1.05 + markR,
+      ],
+    }
+  }, [
+    collection1Config.scatterExclusionId, decorations,
+    position[0], position[1], position[2],
+    scaledMarkSize.x, scaledMarkSize.y, scaledMarkSize.z, instanceSizes, aspects,
+  ])
 
   if (collection1Config.arrangement === 'alignment') {
     return (
@@ -475,21 +584,59 @@ function CollectionInstance({
     )
   }
 
+  if (collection1Config.arrangement === 'surface') {
+    const target = decorations?.find(d => d.id === collection1Config.surfaceTargetId)
+    if (!target) return null
+    // With a size/colour encoding, place one mark per data row; otherwise use the count slider.
+    const surfaceCount = perRowActive ? layers.length : (collection1Config.surfaceCount ?? 24)
+    const surfaceLabels = markLabelConfig.show
+      ? surfaceLabelStrings(markLabelConfig.slots, layers, surfaceCount)
+      : undefined
+    return (
+      <SurfacePlacement
+        dec={target}
+        markShape={markConfig.shape}
+        markMaterial={markConfig.material}
+        markSize={scaledMarkSize}
+        color={color}
+        count={surfaceCount}
+        surfaceScale={collection1Config.surfaceScale ?? 1}
+        seed={scatterSeed}
+        structural={markConfig.structural}
+        markUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
+        instanceSizes={instanceSizes}
+        instanceColors={instanceColors}
+        colorTint={colorTint}
+        markLabels={surfaceLabels}
+      />
+    )
+  }
+
   // Scattering / stacking
   const { scatterDimensions: dim, scatterCount, scatterDensity, scatterMode } = collection1Config
+  // The Scatter-Size encoding value (heightOverride) grows only the chosen axes
+  // (defaults to Y). Unselected axes keep their configured dimension.
+  const sizeAxes = collection1Config.scatterSizeAxes ?? { x: false, y: true, z: false }
+  const dimX = heightOverride != null && sizeAxes.x ? heightOverride : dim.x
+  const dimY = heightOverride != null && sizeAxes.y ? heightOverride : dim.y
+  const dimZ = heightOverride != null && sizeAxes.z ? heightOverride : dim.z
   const dataLayerCount = bindings.scatterCount !== null
     ? Math.max(1, Math.round(layers[layerIndex % Math.max(1, layers.length)]?.percentage ?? scatterCount))
     : null
   const effectiveCount = dataLayerCount !== null
     ? dataLayerCount
-    : (scatterMode ?? 'count') === 'density'
-      ? Math.max(5, Math.round(scatterDensity * dim.x * (heightOverride ?? dim.y) * dim.z))
-      : scatterCount
-  const h        = heightOverride ?? dim.y
+    : perRowActive
+      ? layers.length   // size / colour encoding: one scattered mark per data row
+      : (scatterMode ?? 'count') === 'density'
+        ? Math.max(5, Math.round(scatterDensity * dimX * dimY * dimZ))
+        : scatterCount
   const labelData = computeLabelValues(colLabelConfig.slots, layers, layerIndex)
+  const markLabels = markLabelConfig.show
+    ? markLabelStrings(markLabelConfig.slots, layers, effectiveCount)
+    : undefined
   return (
     <Layer
-      width={dim.x} depth={dim.z} height={h}
+      width={dimX} depth={dimZ} height={dimY}
       color={color}
       position={position}
       particleCount={effectiveCount}
@@ -506,6 +653,10 @@ function CollectionInstance({
       orientation={collection1Config.scatterOrientation ?? 'random'}
       exclusionZone={exclusionZone}
       evenDistribution={collection1Config.scatterEven ?? false}
+      instanceSizes={instanceSizes}
+      instanceColors={instanceColors}
+      colorTint={colorTint}
+      markLabels={markLabels}
     />
   )
 }
@@ -713,9 +864,22 @@ function Level3Content({
 
 // ── Decoration mesh ───────────────────────────────────────────────────────────
 
-function DecorationMesh({ config }: { config: DecorationConfig }) {
+function DecorationMesh({
+  config, onRegister, onUnregister,
+}: {
+  config: DecorationConfig
+  onRegister?:   (id: string, obj: THREE.Object3D) => void
+  onUnregister?: (id: string) => void
+}) {
   const geo = useMemo(() => makeMarkGeometry(config.shape), [config.shape])
   useEffect(() => () => { geo.dispose() }, [geo])
+
+  // Register this decoration's group as a label occluder (used by 'optimized' mode).
+  const groupRef = useRef<THREE.Group>(null)
+  useEffect(() => {
+    if (groupRef.current) onRegister?.(config.id, groupRef.current)
+    return () => onUnregister?.(config.id)
+  }, [config.id, onRegister, onUnregister])
 
   const DEG = Math.PI / 180
   const s   = L1_MARK_SCALE
@@ -723,6 +887,7 @@ function DecorationMesh({ config }: { config: DecorationConfig }) {
 
   return (
     <group
+      ref={groupRef}
       position={[config.position.x, config.position.y, config.position.z]}
       rotation={rot}
     >
@@ -910,15 +1075,84 @@ function PathTracerController({
 
 // ── Scene environment ─────────────────────────────────────────────────────────
 
+// Sun direction from elevation / azimuth angles.
+function skySun(elevationDeg: number, azimuthDeg: number): [number, number, number] {
+  const el = elevationDeg * Math.PI / 180
+  const az = azimuthDeg * Math.PI / 180
+  const d = 100
+  return [d * Math.cos(el) * Math.sin(az), d * Math.sin(el), d * Math.cos(el) * Math.cos(az)]
+}
+
+// Vertical two-colour gradient set as the scene background.
+function GradientBackground({ top, bottom }: { top: string; bottom: string }) {
+  const scene = useThree(s => s.scene)
+  const tex = useMemo(() => {
+    const c = document.createElement('canvas')
+    c.width = 2; c.height = 512
+    const ctx = c.getContext('2d')!
+    const g = ctx.createLinearGradient(0, 0, 0, 512)
+    g.addColorStop(0, top); g.addColorStop(1, bottom)
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 512)
+    const t = new THREE.CanvasTexture(c)
+    t.colorSpace = THREE.SRGBColorSpace
+    return t
+  }, [top, bottom])
+  useEffect(() => {
+    const prev = scene.background
+    scene.background = tex
+    return () => { if (scene.background === tex) scene.background = prev; tex.dispose() }
+  }, [scene, tex])
+  return null
+}
+
+// Keep tone-mapping exposure in sync with the scene config.
+function ExposureControl({ value }: { value: number }) {
+  const gl = useThree(s => s.gl)
+  useEffect(() => { gl.toneMappingExposure = value }, [gl, value])
+  return null
+}
+
+export function sceneExposure(config: SceneConfig): number {
+  if (config.exposure != null) return config.exposure
+  return config.background === 'ocean' ? 0.95 : config.background === 'dark' ? 1.35 : 1.2
+}
+
 function SceneEnvironment({ config }: { config: SceneConfig }) {
-  const isSea = config.background === 'ocean'
+  const mode  = config.background
+  const isSea = mode === 'ocean'
+  const rot   = (config.envRotation ?? 0) * Math.PI / 180
+  const envRotation: [number, number, number] = [0, rot, 0]
+
   return (
     <>
-      {isSea
-        ? <color attach="background" args={['#7ab8d4']} />
-        : <color attach="background" args={['#050505']} />
-      }
-      <Environment preset={config.hdriPreset} background={false} />
+      {/* ── Background ── */}
+      {mode === 'dark'     && <color attach="background" args={['#050505']} />}
+      {mode === 'ocean'    && <color attach="background" args={['#7ab8d4']} />}
+      {mode === 'color'    && <color attach="background" args={[config.bgColor ?? '#202024']} />}
+      {mode === 'gradient' && <GradientBackground top={config.bgGradientTop ?? '#3a5f8a'} bottom={config.bgGradientBottom ?? '#0a0a12'} />}
+
+      {/* HDRI: always lights the scene; shown as background only in 'hdri' mode */}
+      <Environment
+        preset={config.hdriPreset}
+        background={mode === 'hdri'}
+        backgroundBlurriness={config.hdriBlur ?? 0}
+        backgroundIntensity={config.hdriIntensity ?? 1}
+        environmentRotation={envRotation}
+        backgroundRotation={envRotation}
+      />
+
+      <ExposureControl value={sceneExposure(config)} />
+
+      {/* Procedural sky */}
+      {mode === 'sky' && (
+        <Sky
+          distance={450000}
+          sunPosition={skySun(config.skyElevation ?? 20, config.skyAzimuth ?? 140)}
+          turbidity={8} rayleigh={2} mieCoefficient={0.005} mieDirectionalG={0.8}
+        />
+      )}
+
+      {/* Ocean preset: sky + fog + reflective water */}
       {isSea && (
         <>
           <Sky
@@ -933,6 +1167,21 @@ function SceneEnvironment({ config }: { config: SceneConfig }) {
           </mesh>
         </>
       )}
+
+      {/* Optional atmosphere / ground */}
+      {config.stars && <Stars radius={120} depth={50} count={4000} factor={4} saturation={0} fade speed={0.4} />}
+      {config.fog && !isSea && (
+        <fog attach="fog" args={[config.fogColor ?? '#8090a0', config.fogNear ?? 20, config.fogFar ?? 150]} />
+      )}
+      {config.grid && (
+        <Grid
+          position={[0, 0, 0]} args={[60, 60]} infiniteGrid
+          cellSize={1} cellThickness={0.6} cellColor="#6b6b6b"
+          sectionSize={5} sectionThickness={1} sectionColor="#9a9a9a"
+          fadeDistance={70} fadeStrength={1}
+        />
+      )}
+
       <ambientLight    intensity={isSea ? 0.50 : 0.18} />
       <directionalLight position={[8,  18, 6]}  intensity={isSea ? 1.4 : 1.8} color={isSea ? '#fff8e0' : '#fffaf0'} />
       <directionalLight position={[-6,  4, -8]} intensity={isSea ? 0.6 : 0.4}  color={isSea ? '#c0e8ff' : '#c0ccff'} />
@@ -955,6 +1204,7 @@ interface CompositionCanvasProps {
   decorations:       DecorationConfig[]
   colorMode:         'distinct' | 'continuous'
   colorGradient:     { from: string; to: string }
+  colorTint:         boolean
   scatterSeed:       number
   datasetTitle?:     string
   // Path tracing
@@ -966,12 +1216,36 @@ interface CompositionCanvasProps {
 export function CompositionCanvas({
   level, markConfig, collection1Config, collection2Config, sceneConfig, layers, bindings,
   markLabelConfig, colLabelConfig, decorations,
-  colorMode, colorGradient, scatterSeed, datasetTitle,
+  colorMode, colorGradient, colorTint, scatterSeed, datasetTitle,
   pathTracingActive, onSamplesUpdate, downloadRenderRef,
 }: CompositionCanvasProps) {
   const fov     = focalLengthToFov(sceneConfig.focalLength)
   const initPos = CAMERA_POSITIONS[level]
   const isSea   = sceneConfig.background === 'ocean'
+
+  // Measured custom-model aspects, kept in state so the exclusion zone recomputes
+  // once a decoration's GLB has loaded (matters after a reload).
+  const [modelAspects, setModelAspects] = useState<Record<string, ModelAspect>>({})
+  const reportAspect = useCallback((url: string, a: ModelAspect) => {
+    setModelAspects(prev => {
+      const ex = prev[url]
+      if (ex && ex.x === a.x && ex.y === a.y && ex.z === a.z) return prev
+      return { ...prev, [url]: a }
+    })
+  }, [])
+
+  // Registered decoration groups — the occluder set for 'optimized' label hiding.
+  const [occluderMap, setOccluderMap] = useState<Record<string, THREE.Object3D>>({})
+  const registerOccluder = useCallback((id: string, obj: THREE.Object3D) => {
+    setOccluderMap(prev => (prev[id] === obj ? prev : { ...prev, [id]: obj }))
+  }, [])
+  const unregisterOccluder = useCallback((id: string) => {
+    setOccluderMap(prev => { const n = { ...prev }; delete n[id]; return n })
+  }, [])
+  const occludeValue = useMemo(() => ({
+    mode: sceneConfig.sceneLabelOcclude ?? 'off',
+    occluders: Object.values(occluderMap).map(o => ({ current: o })),
+  }), [sceneConfig.sceneLabelOcclude, occluderMap])
 
   return (
     <Canvas
@@ -981,14 +1255,16 @@ export function CompositionCanvas({
       gl={{
         antialias: true,
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: isSea ? 0.95 : 1.35,
+        toneMappingExposure: sceneExposure(sceneConfig),
         preserveDrawingBuffer: true,
       }}
     >
       <CameraController level={level} fov={fov} focalLength={sceneConfig.focalLength} />
       <SceneEnvironment config={sceneConfig} />
 
-      <ColorContext.Provider value={{ colorMode, colorGradient }}>
+      <ModelAspectContext.Provider value={{ aspects: modelAspects, report: reportAspect }}>
+      <ColorContext.Provider value={{ colorMode, colorGradient, colorTint }}>
+      <LabelOccludeContext.Provider value={occludeValue}>
       <Physics gravity={[0, -9.81, 0]} timeStep="vary">
 
       {level === 1 && (
@@ -1025,23 +1301,32 @@ export function CompositionCanvas({
 
       {/* Decorations rendered at all levels */}
       {decorations.map((dec) => (
-        <DecorationMesh key={dec.id} config={dec} />
+        <DecorationMesh key={dec.id} config={dec} onRegister={registerOccluder} onUnregister={unregisterOccluder} />
       ))}
 
-      {/* Dataset title — floats above the scene */}
-      {datasetTitle && (
-        <Html zIndexRange={[1, 0]} position={[0, 9, 0]} center style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
-          <span style={{
-            fontSize: '16px', fontWeight: '600',
-            color: '#ffffff',
-          }}>
+      {/* Dataset title — floats above/below the scene */}
+      {datasetTitle && (sceneConfig.sceneTitleShow ?? true) && (
+        <Html
+          zIndexRange={[1, 0]}
+          position={[
+            0,
+            (sceneConfig.sceneTitleBelow ? -1 : 1) * (sceneConfig.sceneTitleOffset ?? 2.5),
+            0,
+          ]}
+          center
+          occlude={occludeProp(occludeValue)}
+          style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}
+        >
+          <span style={{ fontSize: '16px', fontWeight: '600', color: '#ffffff' }}>
             {datasetTitle}
           </span>
         </Html>
       )}
 
       </Physics>
+      </LabelOccludeContext.Provider>
       </ColorContext.Provider>
+      </ModelAspectContext.Provider>
 
       <OrbitControls makeDefault dampingFactor={0.08} minDistance={1} maxDistance={400} target={[0, 0, 0]} />
 

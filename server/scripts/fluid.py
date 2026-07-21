@@ -128,15 +128,21 @@ if container_path and os.path.exists(container_path):
             bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-        # Normalise: fit to 1.5 units × user scale, centre horizontally, seat at z = -0.8 + Y offset
-        # container_y is in Three.js Y space; Three.js Y = Blender Z, so add it to the Z component.
+        # Normalise: fit to ~2.8 units × user scale so the cavity spans many voxels
+        # (a small container's interior collapses under the solidified walls).
+        # Then seat the BOTTOM just above the domain floor so the opening faces up
+        # under the inflow. container_y is Three.js Y (= Blender Z) — an extra lift.
         bbox    = [cont.matrix_world @ Vector(c) for c in cont.bound_box]
         xs      = [v.x for v in bbox]; ys = [v.y for v in bbox]; zs = [v.z for v in bbox]
         max_dim = max(max(xs)-min(xs), max(ys)-min(ys), max(zs)-min(zs), 0.001)
-        cont.scale = (1.5 / max_dim * container_scale,) * 3
+        cont.scale = (2.8 / max_dim * container_scale,) * 3
         bpy.ops.object.transform_apply(scale=True)
+        # Recompute the scaled height, then seat the bottom at z = -1.9 (+ user Y).
+        bbox2  = [cont.matrix_world @ Vector(c) for c in cont.bound_box]
+        zs2    = [v.z for v in bbox2]
+        half_h = (max(zs2) - min(zs2)) / 2.0
         bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
-        cont.location = (0, 0, -0.8 + container_y)
+        cont.location = (0, 0, -1.9 + half_h + container_y)
         bpy.ops.object.transform_apply(location=True)
 
         # Recalculate normals consistently outward so Mantaflow sees a clean surface
@@ -146,11 +152,13 @@ if container_path and os.path.exists(container_path):
         bpy.ops.mesh.normals_make_consistent(inside=False)
         bpy.ops.object.mode_set(mode='OBJECT')
 
-        # Solidify walls to at least 3× the voxel size so the collision grid can see them.
-        # Domain = 4 units; voxel = 4 / resolution.  E.g. res=24 → voxel≈0.167 → thickness≥0.5
+        # Solidify walls just enough for the collision grid to see them (~1.5 voxels),
+        # thin so they don't eat the interior cavity the fluid needs to fill.
+        # Domain = 4 units; voxel = 4 / resolution.
         voxel = 4.0 / resolution
         solid = cont.modifiers.new('Solidify', type='SOLIDIFY')
-        solid.thickness = max(0.2, voxel * 3)
+        solid.thickness = max(0.05, voxel * 1.5)
+        solid.offset    = 1.0   # thicken outward (normals point out), keeping the cavity intact
         bpy.ops.object.modifier_apply(modifier=solid.name)
 
         cont_mod = add_fluid(cont, 'EFFECTOR')

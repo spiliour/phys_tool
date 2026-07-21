@@ -22,7 +22,7 @@ type MenuOption = BindOption | LabelOption
 
 // ── Layout helpers ─────────────────────────────────────────────────────────────
 
-const RADIUS  = 88
+const RADIUS  = 110
 const BTN     = 46
 
 function arcPositions(n: number, centerDeg: number, spreadDeg: number, r: number) {
@@ -134,7 +134,8 @@ export function RadialBindMenu({
     { action: 'bind',  bindKey: 'markSizeX',    label: 'Width',    icon: '↔',  section: 'mark',       varTypes: ['numerical'] },
     { action: 'bind',  bindKey: 'markSizeY',    label: 'Height',   icon: '↕',  section: 'mark',       varTypes: ['numerical'] },
     { action: 'bind',  bindKey: 'markSizeZ',    label: 'Depth',    icon: '⊙',  section: 'mark',       varTypes: ['numerical'] },
-    { action: 'label',                           label: 'Label',    icon: 'Aa', section: 'mark',       varTypes: ['numerical', 'categorical'], excludeArrangements: ['scattering'] },
+    { action: 'bind',  bindKey: 'markScale',    label: 'Scale',    icon: '⤢',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'label',                           label: 'Label',    icon: 'Aa', section: 'mark',       varTypes: ['numerical', 'categorical'] },
     // ── Collection ──
     { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter - Size',  icon: '⊞', section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
     { action: 'bind',  bindKey: 'scatterCount', label: 'Scatter - Population', icon: '#',  section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
@@ -152,7 +153,10 @@ export function RadialBindMenu({
   const markOpts: MenuOption[] = RULES.filter(r => r.section === 'mark' && ruleMatches(r)) as MenuOption[]
   const colOpts:  MenuOption[] = RULES.filter(r => r.section === 'collection' && ruleMatches(r)) as MenuOption[]
 
-  const markPos = arcPositions(markOpts.length, 180, 100, RADIUS)
+  // Wider spread on the mark side: it can hold up to 6 options (Color, Width,
+  // Height, Depth, Scale, Label) and needs room so the buttons don't overlap.
+  const markSpread = markOpts.length > 3 ? 150 : 90
+  const markPos = arcPositions(markOpts.length, 180, markSpread, RADIUS)
   const colPos  = arcPositions(colOpts.length,    0,  70, RADIUS)
 
   const allItems = [
@@ -232,18 +236,34 @@ export function RadialBindMenu({
         {icon} {label}
       </button>
     )
+    // Scattered marks float in 3D, so only top / below make sense — and each
+    // side accepts two values (App fills the paired slot), shown side by side.
+    const scatterMark = pendingSection === 'mark' && col1Arrangement === 'scattering'
+    // Surface marks always label above (along the normal); each pick adds another value.
+    const surfaceMark = pendingSection === 'mark' && col1Arrangement === 'surface'
     return (
       <>
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }} onClick={() => setStep('radial')} />
         <div style={{ ...cardStyle, left: x - 100, top: y - 110 }}>
           <CardHeader>Label position</CardHeader>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-            {posBtn('top', '↑', 'Top')}
-            <div style={{ display: 'flex', gap: '4px' }}>
-              {posBtn('left',  '←', 'Left')}
-              {posBtn('right', '→', 'Right')}
-            </div>
-            {posBtn('bottom', '↓', 'Bottom')}
+            {surfaceMark ? (
+              posBtn('top', '↑', 'Above')
+            ) : scatterMark ? (
+              <>
+                {posBtn('top', '↑', 'Top')}
+                {posBtn('bottom', '↓', 'Below')}
+              </>
+            ) : (
+              <>
+                {posBtn('top', '↑', 'Top')}
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {posBtn('left',  '←', 'Left')}
+                  {posBtn('right', '→', 'Right')}
+                </div>
+                {posBtn('bottom', '↓', 'Bottom')}
+              </>
+            )}
           </div>
         </div>
       </>

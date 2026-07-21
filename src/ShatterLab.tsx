@@ -1,25 +1,31 @@
 import { useRef, useState, useCallback, useMemo, Suspense, useEffect } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useLoader }        from '@react-three/fiber'
-import { OrbitControls, Environment, Bounds, useBounds, Html } from '@react-three/drei'
+import { OrbitControls, Environment, Html } from '@react-three/drei'
 import { GLTFLoader }       from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { Physics, RigidBody, CuboidCollider } from '@react-three/rapier'
 import type { RapierRigidBody } from '@react-three/rapier'
 import * as THREE from 'three'
 import {
-  type SceneSave, type Shape, type ViewType, type DataRow, type DataField, type LabPresetHandle,
+  type SceneSave, type Shape, type DataRow, type DataField, type LabPresetHandle,
+  type ColumnMeta,
   secBtnSt, Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabModelSection, LabDataPanel,
-  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
+  LabAdvancedToggle, LabAdvancedPanel, LabViewBar,
+  ReferencePanel, ReferenceButton, referenceForData,
+  type LabView,
+  DATASET_BANK, DATASET_GENERIC, DATASETS,
   serverFetch,
 } from './LabShared'
+import { MODEL_PRESETS } from './models'
 
 const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
 
 type FractureMethod = 'bisect' | 'voronoi'
 type CutStrategy   = 'random' | 'largest'
+type ShatterAnim   = 'exploded' | 'gravity'   // dynamic-view animation style
 
-// ShatterLab-specific data: 4 piece-count categories for the comparison view
+// ShatterLab-specific data: default piece-count categories for the comparison view
 const SHATTER_DATA: DataRow[] = [
   { category: 'Fine',   value: 1,  percentage: 25 },
   { category: 'Low',    value: 5,  percentage: 25 },
@@ -27,9 +33,74 @@ const SHATTER_DATA: DataRow[] = [
   { category: 'High',   value: 50, percentage: 25 },
 ]
 
-// Piece counts and X positions for the static comparison view
-const COMPARE_PIECES = [1, 5, 15, 50]
-const COMPARE_X      = [-4.5, -1.5, 1.5, 4.5]
+// Bank-failures preset: dataset (with its reference) lives in LabShared.
+// Matched as a substring of the preset name (like the whale preset in Deform).
+const BANK_DATA    = DATASET_BANK.data
+const BANK_COLUMNS = DATASET_BANK.columns
+const BANK_PRESET_MATCH = /bank|co2|failure/
+
+// Every data row bakes one object whose piece count IS the row's value.
+const pieceCount = (row: DataRow) => Math.max(1, Math.min(200, Math.round(row.value)))
+// X positions for n side-by-side compare groups.
+const compareX = (i: number, n: number) => (i - (n - 1) / 2) * 3.0
+
+// Unit shown after each value in the cycling label ("140 bank failures"). Derived
+// from the current dataset's value-column label; falls back to "pieces".
+function valueUnit(data: DataRow[], columns?: ColumnMeta[]): string {
+  const ds  = DATASETS.find(d => d.data === data)
+  const col = (columns ?? ds?.columns)?.find(c => c.field === 'value')
+  return col ? col.label.toLowerCase() : 'pieces'
+}
+
+// ── Baked-model persistence (IndexedDB) ───────────────────────────────────────
+// GLBs are far too big for localStorage, so a preset's baked fragments live in
+// IndexedDB keyed by the preset id. The localStorage preset just carries a
+// `hasModels` flag; the geometry is rehydrated into blob URLs on load.
+
+const IDB_NAME = 'phys_tool_labs'
+const IDB_STORE = 'shatter_models'
+interface BakedRecord { buffers: (ArrayBuffer | null)[]; rows: DataRow[]; unit: string }
+
+function idbOpen(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1)
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE) }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror   = () => reject(req.error)
+  })
+}
+async function idbPut(key: string, value: BakedRecord): Promise<void> {
+  const db = await idbOpen()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite')
+    tx.objectStore(IDB_STORE).put(value, key)
+    tx.oncomplete = () => resolve()
+    tx.onerror    = () => reject(tx.error)
+  })
+  db.close()
+}
+async function idbGet(key: string): Promise<BakedRecord | undefined> {
+  const db = await idbOpen()
+  const rec = await new Promise<BakedRecord | undefined>((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly')
+    const req = tx.objectStore(IDB_STORE).get(key)
+    req.onsuccess = () => resolve(req.result as BakedRecord | undefined)
+    req.onerror   = () => reject(req.error)
+  })
+  db.close()
+  return rec
+}
+async function idbDelete(key: string): Promise<void> {
+  const db = await idbOpen()
+  await new Promise<void>(resolve => {
+    const tx = db.transaction(IDB_STORE, 'readwrite')
+    tx.objectStore(IDB_STORE).delete(key)
+    tx.oncomplete = () => resolve()
+    tx.onerror    = () => resolve()
+  })
+  db.close()
+}
+const GLB_MIME = 'model/gltf-binary'
 
 const SHATTER_PRESETS_KEY = 'phys_tool_shatter_presets'
 function loadPresets(): SceneSave[] {
@@ -39,132 +110,156 @@ function persistPresets(saves: SceneSave[]) {
   localStorage.setItem(SHATTER_PRESETS_KEY, JSON.stringify(saves))
 }
 
-// ── Camera fit ────────────────────────────────────────────────────────────────
+// ── One object's explode-and-return animation (used by the cycling view) ──────
+// No Bounds/camera-fit here: bakes are normalized (max-dim 2 at origin), so the
+// parent canvas keeps a fixed camera and the objects swap without view jumps.
+// Fragment origins are cached in userData so revisiting a url mid-animation
+// (the loader caches scenes) never captures exploded positions as "rest".
 
-function FitCamera() {
-  const api = useBounds()
-  useEffect(() => { api.refresh().fit() }, [api])
-  return null
+// Explosion offset per fragment. Each fragment's geometry-bbox centre gives its
+// position within the object; the offset from the group centroid, scaled by a
+// factor, uniformly EXPANDS the object. Because it's proportional to distance
+// (not a fixed push), every object — 3 pieces or 157 — looks equally exploded at
+// the same factor. mesh.position starts at 0 (geometry holds the shape), so
+// setting position = off × factor is the whole explosion.
+interface FragOff { mesh: THREE.Mesh; off: THREE.Vector3 }
+
+function explodeOffsets(root: THREE.Object3D): FragOff[] {
+  const meshes: THREE.Mesh[] = []
+  root.traverse(n => { if ((n as THREE.Mesh).isMesh) meshes.push(n as THREE.Mesh) })
+  const centers = meshes.map(m => {
+    m.geometry.computeBoundingBox()
+    return m.geometry.boundingBox!.getCenter(new THREE.Vector3())
+  })
+  const group = new THREE.Vector3()
+  centers.forEach(c => group.add(c))
+  if (centers.length) group.divideScalar(centers.length)
+  return meshes.map((mesh, i) => {
+    const off = centers[i].clone().sub(group)
+    if (off.length() < 1e-4) off.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.15)
+    return { mesh, off }
+  })
 }
 
-// ── Effect view (animated pieces flying out) ──────────────────────────────────
-
-interface FragAnim { mesh: THREE.Object3D; origin: THREE.Vector3; dir: THREE.Vector3 }
-
-function ExplodedView({ url }: { url: string }) {
+function CycleExploded({ url, speed = 1, amount }: { url: string; speed?: number; amount: number }) {
   const gltf      = useLoader(GLTFLoader, url)
-  const fragments = useRef<FragAnim[]>([])
+  const fragments = useRef<FragOff[]>([])
   const elapsed   = useRef(0)
+  const amtRef    = useRef(amount)
+  amtRef.current  = amount
 
   useEffect(() => {
-    const meshes: THREE.Object3D[] = []
-    gltf.scene.updateWorldMatrix(true, true)
-    gltf.scene.traverse(n => { if ((n as THREE.Mesh).isMesh) meshes.push(n) })
-
-    const center = new THREE.Vector3()
-    meshes.forEach(m => { const p = new THREE.Vector3(); m.getWorldPosition(p); center.add(p) })
-    if (meshes.length) center.divideScalar(meshes.length)
-
-    fragments.current = meshes.map(mesh => {
-      const origin = new THREE.Vector3(); mesh.getWorldPosition(origin)
-      const dir = origin.clone().sub(center)
-      if (dir.length() < 0.001) dir.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
-      return { mesh, origin: origin.clone(), dir: dir.normalize() }
-    })
+    fragments.current = explodeOffsets(gltf.scene)
     elapsed.current = 0
+    fragments.current.forEach(({ mesh }) => mesh.position.set(0, 0, 0))
   }, [gltf])
 
   useFrame((_, delta) => {
-    elapsed.current += delta
-    const t = (Math.sin(elapsed.current * 1.0 - Math.PI / 2) + 1) / 2
-    fragments.current.forEach(({ mesh, origin, dir }) => {
-      mesh.position.copy(origin).addScaledVector(dir, t * 1.5)
-    })
+    elapsed.current += delta * speed
+    const t = (Math.sin(elapsed.current * 1.0 - Math.PI / 2) + 1) / 2   // 0 → 1 → 0
+    const k = t * amtRef.current
+    fragments.current.forEach(({ mesh, off }) => mesh.position.copy(off).multiplyScalar(k))
   })
 
+  return <primitive object={gltf.scene} />
+}
+
+// ── Dynamic view: cycle through the baked objects one after another ───────────
+// Like the air-pollution preset: each data row's object gets the stage for one
+// animation cycle (exploded) or a few seconds (gravity), with its label below.
+
+const CYCLE_EXPLODED = Math.PI * 2   // one explode-and-return at speed 1
+const CYCLE_GRAVITY  = 5             // seconds per object in gravity mode
+
+function CyclingShatterView({ urls, rows, anim, impulse, physicsKey, speed, showLabels, unit, explode }: {
+  urls: (string | null)[]; rows: DataRow[]; anim: ShatterAnim
+  impulse: number; physicsKey: number; speed: number; showLabels: boolean; unit: string; explode: number
+}) {
+  // Only cycle through slots whose bake succeeded.
+  const slots = useMemo(
+    () => urls.map((u, i) => ({ url: u, row: rows[i] })).filter((s): s is { url: string; row: DataRow } => !!s.url && !!s.row),
+    [urls, rows]
+  )
+  const [idx, setIdx] = useState(0)
+  const elapsed = useRef(0), idxRef = useRef(0)
+  const period = anim === 'exploded' ? CYCLE_EXPLODED : CYCLE_GRAVITY
+
+  useEffect(() => { elapsed.current = 0; idxRef.current = 0; setIdx(0) }, [slots, anim])
+
+  useFrame((_, delta) => {
+    if (slots.length < 2) return
+    elapsed.current += delta * speed
+    if (elapsed.current >= period) {
+      elapsed.current = 0
+      idxRef.current = (idxRef.current + 1) % slots.length
+      setIdx(idxRef.current)
+    }
+  })
+
+  const slot = slots[idx] ?? slots[0]
+  if (!slot) return null
+
   return (
-    <Bounds fit clip observe margin={1.4}>
-      <FitCamera />
-      <primitive object={gltf.scene} />
-    </Bounds>
+    <>
+      {anim === 'exploded' ? (
+        <Suspense fallback={null}>
+          <CycleExploded key={`${idx}-${slot.url}`} url={slot.url} speed={speed} amount={explode} />
+        </Suspense>
+      ) : (
+        <Physics gravity={[0, -9.81, 0]} timeStep="vary" key={`${physicsKey}-${idx}-${slot.url}`}>
+          <Suspense fallback={null}>
+            <PhysicsSceneContent url={slot.url} impulse={impulse} />
+          </Suspense>
+        </Physics>
+      )}
+      {showLabels && (
+        <Html center position={[0, -2.6, 0]} style={{ pointerEvents: 'none' }}>
+          <div style={{ textAlign: 'center', whiteSpace: 'nowrap', userSelect: 'none', background: 'rgba(0,0,0,0.52)', padding: '4px 14px', borderRadius: 4 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#e0e0f0', letterSpacing: 0.4 }}>{slot.row.category}</div>
+            <div style={{ fontSize: 14, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{slot.row.value.toLocaleString()} {unit}</div>
+          </div>
+        </Html>
+      )}
+    </>
   )
 }
 
-// ── Static view (fragments at rest positions) ─────────────────────────────────
+// ── One statically exploded group from a single fracture GLB ─────────────────
+// Uniform expansion by `amount` (same factor for every object → same look). The
+// scene is cloned once; positions are re-applied whenever the amount changes.
 
-function StaticView({ url }: { url: string }) {
-  const gltf  = useLoader(GLTFLoader, url)
-  const scene = useMemo(() => gltf.scene.clone(true), [gltf])
-  return (
-    <Bounds fit clip observe margin={1.4}>
-      <FitCamera />
-      <primitive object={scene} />
-    </Bounds>
-  )
-}
-
-// ── One exploded group from a single fracture GLB ────────────────────────────
-// Each fragment's geometry bbox center gives its centroid in local space —
-// push it outward from the group centroid to create a static exploded look.
-
-const EXPLODE_DIST = 0.45
-
-function ExplodedGroup({ url }: { url: string }) {
-  const gltf  = useLoader(GLTFLoader, url)
-  const scene = useMemo(() => {
+function ExplodedGroup({ url, amount }: { url: string; amount: number }) {
+  const gltf = useLoader(GLTFLoader, url)
+  const { scene, offs } = useMemo(() => {
     const s = gltf.scene.clone(true)
-
-    const meshes: THREE.Mesh[] = []
-    s.traverse(n => { if ((n as THREE.Mesh).isMesh) meshes.push(n as THREE.Mesh) })
-
-    // Compute centroid of all fragment centres (local geometry bbox centres)
-    const groupCenter = new THREE.Vector3()
-    meshes.forEach(m => {
-      m.geometry.computeBoundingBox()
-      const lc = new THREE.Vector3()
-      m.geometry.boundingBox!.getCenter(lc)
-      groupCenter.add(lc)
-    })
-    if (meshes.length > 0) groupCenter.divideScalar(meshes.length)
-
-    // Push each fragment away from the group centroid
-    meshes.forEach(mesh => {
-      mesh.geometry.computeBoundingBox()
-      const lc = new THREE.Vector3()
-      mesh.geometry.boundingBox!.getCenter(lc)
-      const dir = lc.clone().sub(groupCenter)
-      if (dir.length() < 0.001) dir.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
-      dir.normalize()
-      mesh.position.addScaledVector(dir, EXPLODE_DIST)
-    })
-
-    return s
+    return { scene: s, offs: explodeOffsets(s) }
   }, [gltf])
-
+  // Cheap side-effect on render: R3F reads positions each frame.
+  offs.forEach(({ mesh, off }) => mesh.position.copy(off).multiplyScalar(amount))
   return <primitive object={scene} />
 }
 
-// ── Compare static view — 4 groups side by side, each statically exploded ────
-// All 4 group slots always render (labels appear immediately); geometry fills in
-// when the URL for that slot is ready.
+// ── Compare static view — all data rows side by side, each statically exploded ─
+// One group per data row (labels appear immediately); geometry fills in when the
+// URL for that slot is ready.
 
-function CompareStaticView({ urls }: { urls: (string | null)[] }) {
+function CompareStaticView({ urls, rows, unit, explode }: { urls: (string | null)[]; rows: DataRow[]; unit: string; explode: number }) {
   return (
     <>
-      {SHATTER_DATA.map((row, i) => (
-        <group key={i} position={[COMPARE_X[i], 0, 0]}>
+      {rows.map((row, i) => (
+        <group key={i} position={[compareX(i, rows.length), 0, 0]}>
           {urls[i] && (
             <Suspense fallback={null}>
-              <ExplodedGroup url={urls[i]!} />
+              <ExplodedGroup url={urls[i]!} amount={explode} />
             </Suspense>
           )}
           <Html center position={[0, -1.8, 0]} style={{ pointerEvents: 'none' }}>
             <div style={{ textAlign: 'center', whiteSpace: 'nowrap', userSelect: 'none' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#c0c0e0', letterSpacing: 0.3 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#c0c0e0', letterSpacing: 0.3 }}>
                 {row.category}
               </div>
-              <div style={{ fontSize: 9, color: 'var(--lab-text-3)', marginTop: 2 }}>
-                {row.value} {row.value === 1 ? 'piece' : 'pieces'}
+              <div style={{ fontSize: 11, color: '#9a9ab0', marginTop: 2 }}>
+                {row.value.toLocaleString()} {unit}
               </div>
             </div>
           </Html>
@@ -245,25 +340,27 @@ function PhysicsSceneContent({ url, impulse }: { url: string; impulse: number })
 }
 
 // ── Per-view canvas ───────────────────────────────────────────────────────────
-// Canvas is keyed by runId + viewType so it remounts once per run (or view switch),
-// never mid-run as individual compare URLs trickle in.
+// Canvas is keyed by runId + view so it remounts once per run (or view switch),
+// never mid-run. Compare shows every data row side by side; Dynamic cycles them
+// one after another (exploded animation or gravity physics).
 
-function ViewCanvas({ viewType, resultUrl, compareUrls, compareLoading, impulse, physicsKey, runId }: {
-  viewType: ViewType; resultUrl: string | null; compareUrls: (string | null)[]
+function ViewCanvas({ view, anim, compareUrls, rows, compareLoading, impulse, physicsKey, runId, speed = 1, showLabels = true, unit = 'pieces', explode = 0.6 }: {
+  view: LabView; anim: ShatterAnim; compareUrls: (string | null)[]; rows: DataRow[]
   compareLoading: boolean; impulse: number; physicsKey: number; runId: number
+  speed?: number; showLabels?: boolean; unit?: string; explode?: number
 }) {
-  const hasAnyCompare    = compareUrls.some(u => u !== null)
-  const showCompare      = viewType === 'static' && (hasAnyCompare || compareLoading)
-  const nothingYet       = !resultUrl && !hasAnyCompare && !compareLoading
+  const hasAnyCompare = compareUrls.some(u => u !== null)
+  const nothingYet    = !hasAnyCompare && !compareLoading
 
-  // Static view always gets the wide camera so it never jumps when URLs arrive
-  const fov = viewType === 'static' ? 60 : 40
-  const pos = viewType === 'static' ? [0, 2, 14] as const : [0, 1, 6] as const
+  // Compare gets the wide camera (all rows in frame); Dynamic frames one object.
+  const isCompare = view === 'compare'
+  const fov = isCompare ? 60 : 45
+  const pos = isCompare ? [0, 2, Math.max(10, rows.length * 2.8)] as const : [0, 1.2, 7.5] as const
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
       <Canvas
-        key={`${runId}-${viewType}`}
+        key={`${runId}-${view}`}
         camera={{ fov, position: pos }}
         gl={{ antialias: true }} style={{ background: '#000000' }}
       >
@@ -272,19 +369,13 @@ function ViewCanvas({ viewType, resultUrl, compareUrls, compareLoading, impulse,
         <Environment preset="city" />
         <OrbitControls makeDefault />
 
-        {showCompare ? (
-          <CompareStaticView urls={compareUrls} />
-        ) : resultUrl ? (
-          <Suspense fallback={null}>
-            {viewType === 'dynamic'
-              ? <Physics gravity={[0, -9.81, 0]} timeStep="vary" key={`${physicsKey}-${resultUrl}`}>
-                  <PhysicsSceneContent url={resultUrl} impulse={impulse} />
-                </Physics>
-              : viewType === 'static'
-                ? <StaticView key={resultUrl} url={resultUrl} />
-                : <ExplodedView key={resultUrl} url={resultUrl} />
-            }
-          </Suspense>
+        {isCompare ? (
+          (hasAnyCompare || compareLoading) && <CompareStaticView urls={compareUrls} rows={rows} unit={unit} explode={explode} />
+        ) : hasAnyCompare ? (
+          <CyclingShatterView
+            urls={compareUrls} rows={rows} anim={anim}
+            impulse={impulse} physicsKey={physicsKey} speed={speed} showLabels={showLabels} unit={unit} explode={explode}
+          />
         ) : null}
       </Canvas>
 
@@ -308,9 +399,7 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
   const [status,    setStatus]    = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [message,   setMessage]   = useState('')
   const [fileName,  setFileName]  = useState('')
-  const [resultUrl, setResultUrl] = useState<string | null>(null)
 
-  const [pieces,         setPieces]         = useState(10)
   const [cutSpread,      setCutSpread]      = useState(0.5)
   const [fractureMethod, setFractureMethod] = useState<FractureMethod>('bisect')
   const [cutStrategy,    setCutStrategy]    = useState<CutStrategy>('random')
@@ -318,16 +407,30 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
   const [adaptivity,     setAdaptivity]     = useState(0)
   const [impulse,        setImpulse]        = useState(1.5)
 
-  const [view1, setView1] = useState<ViewType>('effect')
-  // const [view2, setView2] = useState<ViewType | null>(null)
+  // Dynamic/Compare view + playback options. Dynamic cycles the baked objects one
+  // after another (exploded or gravity — chosen in the panel at the right of the
+  // viewport); Compare shows all data rows side by side.
+  const [view,       setView]       = useState<LabView>('dynamic')
+  const [anim,       setAnim]       = useState<ShatterAnim>('exploded')
+  const [animSpeed,  setAnimSpeed]  = useState(1.0)
+  const [showLabels, setShowLabels] = useState(true)
+  const [explode,    setExplode]    = useState(0.6)   // uniform-expansion factor
   const [physicsKey,    setPhysicsKey]    = useState(0)
   const [showAdvanced,  setShowAdvanced]  = useState(false)
 
-
-  const [data,      setData]   = useState<DataRow[]>(SHATTER_DATA)
+  const [data,        setData]        = useState<DataRow[]>(SHATTER_DATA)
+  const [dataColumns, setDataColumns] = useState<ColumnMeta[] | undefined>(undefined)
+  // Reference is derived from the current dataset (not stored on the preset), so
+  // picking a dataset from the panel shows it too. It auto-opens when it changes.
+  const reference = useMemo(() => referenceForData(data), [data])
+  const [showReference, setShowReference] = useState(false)
+  useEffect(() => { setShowReference(!!reference) }, [reference])
   const [draggingField,  setDraggingField]  = useState<DataField | null>(null)
-  // 4 separate GLB URLs for the static comparison view (one per piece count)
-  const [compareUrls,    setCompareUrls]    = useState<(string | null)[]>([null, null, null, null])
+  // One GLB URL per data row (piece count = the row's value), plus the rows
+  // snapshotted at bake time so labels always match the baked geometry.
+  const [compareUrls,    setCompareUrls]    = useState<(string | null)[]>([])
+  const [bakedRows,      setBakedRows]      = useState<DataRow[]>([])
+  const [bakedUnit,      setBakedUnit]      = useState('pieces')
   const [compareLoading, setCompareLoading] = useState(false)
   const [runId,          setRunId]          = useState(0)
   const [presets,       setPresets]       = useState<SceneSave[]>(() => loadPresets())
@@ -341,12 +444,11 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
     if (!file.name.endsWith('.glb') && !file.name.endsWith('.gltf')) return
     fileRef.current = file
     setFileName(file.name)
-    setResultUrl(null); setStatus('idle'); setMessage('')
+    setStatus('idle'); setMessage('')
   }, [])
 
-  useEffect(() => () => { if (resultUrl) URL.revokeObjectURL(resultUrl) }, [resultUrl])
   // Revoke old compare URLs when replaced (not on mount, only on cleanup)
-  const prevCompareUrls = useRef<(string | null)[]>([null, null, null, null])
+  const prevCompareUrls = useRef<(string | null)[]>([])
   useEffect(() => {
     const prev = prevCompareUrls.current
     prevCompareUrls.current = compareUrls
@@ -355,19 +457,22 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
 
   const run = useCallback(async (shape: Shape) => {
     if (shape === 'model' && !fileRef.current) { setMessage('Drop a GLB first'); return }
-    setStatus('loading'); setMessage('Blender is running…')
-    if (resultUrl) URL.revokeObjectURL(resultUrl)
-    setResultUrl(null)
-    setCompareUrls([null, null, null, null])
+    const rows = data.map(r => ({ ...r }))   // snapshot: labels stay in sync with bakes
+    const unit = valueUnit(data, dataColumns)
+    setStatus('loading'); setMessage(`Blender is running… (${rows.length} bakes)`)
+    setCompareUrls([])
+    setBakedRows(rows)
+    setBakedUnit(unit)
     setCompareLoading(true)
     setRunId(id => id + 1)
 
-    const fileForCompare = fileRef.current
+    const file = fileRef.current
 
-    // Fire 4 fracture jobs in parallel and set ALL results at once — no incremental
-    // state updates so the canvas never remounts mid-run.
+    // One fracture job per data row (piece count = the row's value), fired in
+    // parallel; ALL results set at once so the canvas never remounts mid-run.
     Promise.all(
-      COMPARE_PIECES.map(async (pc) => {
+      rows.map(async (row) => {
+        const pc = pieceCount(row)
         try {
           const p = { pieces: pc, cutSpread, cutStrategy, fractureMethod, voxelDiv, adaptivity }
           const qs = new URLSearchParams(Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)]))).toString()
@@ -376,70 +481,96 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
           else if (shape === 'cube') res = await serverFetch(`${SERVER}/shatter/cube?${qs}`)
           else {
             const fd = new FormData()
-            fd.append('model', fileForCompare!)
+            fd.append('model', file!)
             Object.entries(p).forEach(([k, v]) => fd.append(k, String(v)))
             res = await serverFetch(`${SERVER}/shatter`, { method: 'POST', body: fd })
           }
           if (res.ok) return URL.createObjectURL(await res.blob())
-          console.error(`[compare ${pc}] server error:`, res.status)
+          console.error(`[bake ${row.category} → ${pc} pieces] server error:`, res.status)
           return null
         } catch (e) {
-          console.error(`[compare ${pc}] failed:`, e)
+          console.error(`[bake ${row.category} → ${pc} pieces] failed:`, e)
           return null
         }
       })
-    ).then(urls => setCompareUrls(urls)).finally(() => setCompareLoading(false))
-
-    // Main single-run job (used by effect and dynamic views)
-    try {
-      const params = { pieces, cutSpread, cutStrategy, fractureMethod, voxelDiv, adaptivity }
-      const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))).toString()
-      let res: Response
-      if (shape === 'sphere') {
-        res = await serverFetch(`${SERVER}/shatter/sphere?${qs}`)
-      } else if (shape === 'cube') {
-        res = await serverFetch(`${SERVER}/shatter/cube?${qs}`)
-      } else {
-        const fd = new FormData()
-        fd.append('model', fileRef.current!)
-        Object.entries(params).forEach(([k, v]) => fd.append(k, String(v)))
-        res = await serverFetch(`${SERVER}/shatter`, { method: 'POST', body: fd })
-      }
-      if (!res.ok) { const e = await res.json().catch(() => ({ error: res.statusText })); throw new Error(e.error ?? res.statusText) }
-      setResultUrl(URL.createObjectURL(await res.blob()))
-      setStatus('done'); setMessage('')
-      setPhysicsKey(k => k + 1)
-    } catch (e) {
-      setStatus('error'); setMessage(e instanceof Error ? e.message : 'Unknown error')
-    }
-  }, [pieces, cutSpread, cutStrategy, fractureMethod, voxelDiv, adaptivity, resultUrl])
+    ).then(urls => {
+      setCompareUrls(urls)
+      const ok = urls.some(u => u !== null)
+      setStatus(ok ? 'done' : 'error')
+      setMessage(ok
+        ? (urls.every(u => u !== null) ? '' : 'Some bakes failed — see console')
+        : 'All bakes failed. Is the server running? (node server/server.mjs)')
+      if (ok) setPhysicsKey(k => k + 1)
+    }).finally(() => setCompareLoading(false))
+  }, [data, cutSpread, cutStrategy, fractureMethod, voxelDiv, adaptivity])
 
   const savePreset = useCallback((name: string) => {
+    // If objects are already baked, stash them in IndexedDB so reopening the
+    // preset restores the geometry without re-simulating. (The reference is not
+    // stored — it's derived from the dataset on load.)
+    const urls = compareUrls
+    const hasModels = urls.some(u => u !== null)
+    const id = Date.now().toString()
     const save: SceneSave = {
-      id: Date.now().toString(), name, createdAt: new Date().toISOString(),
-      data: { fileName, pieces, cutSpread, fractureMethod, cutStrategy, voxelDiv, adaptivity, impulse },
+      id, name, createdAt: new Date().toISOString(),
+      data: { fileName, cutSpread, fractureMethod, cutStrategy, voxelDiv, adaptivity, impulse, anim, dataRows: data, hasModels },
     }
     const next = [save, ...presets]
-    setPresets(next); persistPresets(next); setSelPresetId(save.id); setSaveName(null)
+    setPresets(next); persistPresets(next); setSelPresetId(id); setSaveName(null)
+    if (hasModels) {
+      const rows = bakedRows, unit = bakedUnit
+      ;(async () => {
+        const buffers = await Promise.all(urls.map(u => u ? fetch(u).then(r => r.arrayBuffer()) : Promise.resolve(null)))
+        await idbPut(id, { buffers, rows, unit })
+      })().catch(err => console.error('[shatter] saving baked models failed:', err))
+    }
     return save
-  }, [fileName, pieces, cutSpread, fractureMethod, cutStrategy, voxelDiv, adaptivity, impulse, presets])
+  }, [fileName, cutSpread, fractureMethod, cutStrategy, voxelDiv, adaptivity, impulse, anim, data, compareUrls, bakedRows, bakedUnit, presets])
 
   const loadPreset = useCallback((id: string) => {
     const p = presets.find(x => x.id === id); if (!p) return
     const d = p.data as Record<string, unknown>
-    if (d.pieces        != null) setPieces(d.pieces as number)
+    const isBank    = BANK_PRESET_MATCH.test(p.name.toLowerCase())
+    const savedRows = d.dataRows as DataRow[] | undefined
+    // Dataset + variable labels: bank preset seeds its dataset; otherwise saved
+    // rows. Setting the dataset drives the reference automatically (derived).
+    if (isBank)         { setData(BANK_DATA); setDataColumns(BANK_COLUMNS) }
+    else if (savedRows) { setData(savedRows); setDataColumns(DATASET_GENERIC.columns) }
+    if (d.anim)                  setAnim(d.anim as ShatterAnim)
     if (d.cutSpread     != null) setCutSpread(d.cutSpread as number)
     if (d.fractureMethod)        setFractureMethod(d.fractureMethod as FractureMethod)
     if (d.cutStrategy)           setCutStrategy(d.cutStrategy as CutStrategy)
     if (d.voxelDiv      != null) setVoxelDiv(d.voxelDiv as number)
     if (d.adaptivity    != null) setAdaptivity(d.adaptivity as number)
     if (d.impulse       != null) setImpulse(d.impulse as number)
-    setStatus('idle'); setMessage('')
+
+    // Restore baked geometry from IndexedDB if this preset carries it — no re-sim.
+    if (d.hasModels) {
+      setStatus('loading'); setMessage('Restoring saved objects…')
+      setCompareUrls([])
+      idbGet(id).then(rec => {
+        if (!rec) { setStatus('idle'); setMessage('Saved objects not found — re-bake to regenerate'); return }
+        const urls = rec.buffers.map(b => b ? URL.createObjectURL(new Blob([b], { type: GLB_MIME })) : null)
+        setBakedRows(rec.rows)
+        setBakedUnit(rec.unit)
+        setCompareUrls(urls)
+        setRunId(r => r + 1)
+        setPhysicsKey(k => k + 1)
+        setStatus('done'); setMessage('')
+      }).catch(err => {
+        console.error('[shatter] restoring baked models failed:', err)
+        setStatus('idle'); setMessage('Could not restore saved objects')
+      })
+    } else {
+      setStatus('idle'); setMessage('')
+      setCompareUrls([])
+    }
   }, [presets])
 
   const deletePreset = useCallback((id: string) => {
     const next = presets.filter(p => p.id !== id)
     setPresets(next); persistPresets(next)
+    idbDelete(id).catch(() => {})   // drop any stored baked models
     if (selPresetId === id) setSelPresetId('')
   }, [presets, selPresetId])
 
@@ -504,31 +635,38 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
                 <SegBtn active={fractureMethod === 'bisect'}  onClick={() => setFractureMethod('bisect')}>Bisect</SegBtn>
                 <SegBtn active={fractureMethod === 'voronoi'} onClick={() => setFractureMethod('voronoi')}>Voronoi</SegBtn>
               </div>
-              <div style={{ fontSize: 10, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
-                {fractureMethod === 'voronoi' ? 'Natural crack patterns — best ≤ 50 pieces' : 'Sequential plane cuts — fast, any count'}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <RowLabel>Pieces: {pieces}</RowLabel>
-              <input
-                type="range" min={2} max={200} step={1} value={pieces}
-                onChange={e => setPieces(Number(e.target.value))}
-                style={sl}
-              />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <RowLabel>Size variation: {cutSpread.toFixed(2)}</RowLabel>
               <input type="range" min={0.05} max={1} step={0.05} value={cutSpread}
                 onChange={e => setCutSpread(Number(e.target.value))} style={sl} />
-              <div style={{ fontSize: 10, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>0 = equal sizes · 1 = random sizes</div>
             </div>
+          </Sec>
+
+          {/* View — Dynamic animation style + explosion amount (used by Compare too) */}
+          <Sec>
+            <SLabel>View</SLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <RowLabel>Dynamic style</RowLabel>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <SegBtn active={anim === 'exploded'} onClick={() => setAnim('exploded')}>Exploded</SegBtn>
+                <SegBtn active={anim === 'gravity'}  onClick={() => setAnim('gravity')}>Gravity</SegBtn>
+              </div>
+            </div>
+            {anim === 'exploded' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <RowLabel>Explosion: {explode.toFixed(2)}×</RowLabel>
+                <input type="range" min={0} max={1.5} step={0.05} value={explode}
+                  onChange={e => setExplode(Number(e.target.value))} style={sl} />
+              </div>
+            )}
           </Sec>
 
           <LabModelSection
             fileName={fileName} onFile={handleFile} onRun={() => run('model')}
             isLoading={isLoading} message={message} status={status} inputId="glb-shatter-input"
+            models={MODEL_PRESETS}
           />
 
         </div>
@@ -540,11 +678,7 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
           </div>
         )}
 
-        <LabDataPanel
-          data={data} draggingField={draggingField}
-          onDragStart={setDraggingField} onDragEnd={() => setDraggingField(null)}
-          onDataChange={setData}
-        />
+        <LabDataPanel data={data} columnsOverride={dataColumns} onDataChange={setData} />
       </div>
 
       {/* ── Advanced panel (slides in over viewport) ── */}
@@ -554,9 +688,6 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={() => run('sphere')} disabled={isLoading} style={secBtnSt(isLoading)}>Sphere</button>
             <button onClick={() => run('cube')}   disabled={isLoading} style={secBtnSt(isLoading)}>Cube</button>
-          </div>
-          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
-            Run on a built-in shape without uploading a model.
           </div>
         </Sec>
 
@@ -593,14 +724,13 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
         </Sec>
 
         <Sec>
-          <SLabel>Physics (Dynamic view)</SLabel>
+          <SLabel>Physics (Gravity view)</SLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <RowLabel>Impulse: {impulse.toFixed(1)}</RowLabel>
             <input type="range" min={0} max={5} step={0.1} value={impulse}
               onChange={e => setImpulse(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--lab-accent)' }} />
-            <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>How hard pieces fly apart</div>
           </div>
-          {resultUrl && (
+          {compareUrls.some(u => u !== null) && (
             <button onClick={() => setPhysicsKey(k => k + 1)} style={secBtnSt(false)}>↺ Restart physics</button>
           )}
         </Sec>
@@ -611,29 +741,23 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
 
         <div style={{ flex: 1, position: 'relative' }}>
           <ViewCanvas
-            viewType={view1} resultUrl={resultUrl} compareUrls={compareUrls}
+            view={view} anim={anim} compareUrls={compareUrls} rows={bakedRows}
             compareLoading={compareLoading} impulse={impulse} physicsKey={physicsKey} runId={runId}
+            speed={animSpeed} showLabels={showLabels} unit={bakedUnit} explode={explode}
           />
         </div>
 
-        {/* LEGACY two-view split — commented out
-        {view2 !== null && (
-          <div style={{ flex: 1, position: 'relative', borderTop: '1px solid var(--lab-divider)' }}>
-            <ViewCanvas
-              viewType={view2} resultUrl={resultUrl} compareUrls={compareUrls}
-              compareLoading={compareLoading} impulse={impulse} physicsKey={physicsKey} runId={runId}
-            />
-          </div>
+        {/* ── Preset reference (bottom right) ── */}
+        {reference && !showReference && <ReferenceButton onClick={() => setShowReference(true)} />}
+        {reference && showReference && (
+          <ReferencePanel reference={reference} onClose={() => setShowReference(false)} />
         )}
-        <LabViewSelector
-          view1={view1} view2={view2}
-          onView1={v => setView1(v)} onView2={v => setView2(v)}
-          onAdd={() => setView2(view1 === 'effect' ? 'dynamic' : 'effect')}
-          onRemove={() => setView2(null)}
-        />
-        */}
 
-        <LabViewToggle view={view1} onChange={setView1} />
+        <LabViewBar view={view} onChange={setView} options={{
+          showLabels, onShowLabels: setShowLabels,
+          speed: animSpeed, onSpeed: setAnimSpeed,
+          // Exploded/Gravity lives in the viewport panel at the right → no mode here.
+        }} />
       </div>
     </div>
   )

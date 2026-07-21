@@ -7,9 +7,11 @@ import {
   type SceneSave, type ViewType, type DataRow, type DataField, type LabPresetHandle,
   DEFAULT_DATA, priBtnSt, secBtnSt, Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabDataPanel,
-  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
+  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewBar,
+  type LabView,
   serverFetch,
 } from './LabShared'
+import { MODEL_PRESETS } from './models'
 
 const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
 
@@ -78,14 +80,17 @@ function FluidScene({ geos, fps, playing, speed, viscosity, wireframe }: {
 }
 
 // ── Container preview — renders the imported GLB at the same position/scale ──
-// Mirrors the normalization Blender applies: fit to 1.5 units, center at y=-0.8
+// Mirrors the normalization Blender applies (fluid.py): fit to ~2.8 units and seat
+// the BOTTOM on the domain floor (y = -1.9) so the opening faces up under the inflow.
+const CONTAINER_FIT   = 2.8    // must match fluid.py `cont.scale = (2.8/max_dim…)`
+const CONTAINER_FLOOR = -1.9   // must match fluid.py seat `-1.9 + half_h`
 
 function ContainerPreview({ url, scale, yOffset }: { url: string; scale: number; yOffset: number }) {
   const gltf = useLoader(GLTFLoader, url)
 
   // Clone once per GLB load. Compute base bounding box at unit scale so the
   // reference dimensions don't drift as the user drags sliders.
-  const [baseScene, baseCenter, baseMaxDim] = useMemo(() => {
+  const [baseScene, baseCenter, baseMaxDim, baseSize] = useMemo(() => {
     const s = gltf.scene.clone(true)
     s.traverse(node => {
       if ((node as THREE.Mesh).isMesh) {
@@ -105,29 +110,31 @@ function ContainerPreview({ url, scale, yOffset }: { url: string; scale: number;
     const center = box.getCenter(new THREE.Vector3())
     s.scale.copy(savedScale)
     s.position.copy(savedPos)
-    return [s, center, Math.max(sz.x, sz.y, sz.z, 0.001)] as const
+    return [s, center, Math.max(sz.x, sz.y, sz.z, 0.001), sz] as const
   }, [gltf])
 
   // Direct mutation every render — R3F reads these from the Three.js object
   // each frame, so slider changes reflect immediately without swapping objects.
-  const k = (1.5 / baseMaxDim) * scale
+  const k     = (CONTAINER_FIT / baseMaxDim) * scale
+  const halfH = (baseSize.y / 2) * k
   baseScene.scale.setScalar(k)
-  baseScene.position.set(-baseCenter.x * k, -baseCenter.y * k - 0.8 + yOffset, -baseCenter.z * k)
+  // Seat the bottom (baseCenter.y - baseSize.y/2) at the floor, matching the bake.
+  baseScene.position.set(-baseCenter.x * k, CONTAINER_FLOOR + halfH - baseCenter.y * k + yOffset, -baseCenter.z * k)
 
   return <primitive object={baseScene} />
 }
 
 // ── Per-view canvas ───────────────────────────────────────────────────────────
 
-function ViewCanvas({ viewType, geos, fluidMeta, playing, speed, containerUrl, containerScale, containerY }: {
-  viewType: ViewType
+function ViewCanvas({ view, geos, fluidMeta, playing, speed, wireframe, containerUrl, containerScale, containerY }: {
+  view: LabView
   geos: THREE.BufferGeometry[]
   fluidMeta: { fps: number; viscosity: Viscosity } | null
-  playing: boolean; speed: number
+  playing: boolean; speed: number; wireframe: boolean
   containerUrl: string | null; containerScale: number; containerY: number
 }) {
-  const wireframe   = viewType === 'dynamic'
-  const isPlaying   = viewType === 'static' ? false : playing
+  // Dynamic plays the (always-smooth) simulation; Compare freezes it.
+  const isPlaying   = view === 'compare' ? false : playing
   const hasResult   = geos.length > 0
 
   return (
@@ -219,7 +226,8 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
   const [wireframe, setWireframe] = useState(false)
 
   // Views
-  const [view1, setView1] = useState<ViewType>('effect')
+  // Dynamic plays the simulation (always smooth — no sequencing); Compare freezes it.
+  const [view, setView] = useState<LabView>('dynamic')
   // const [view2, setView2] = useState<ViewType | null>(null)
   const [showAdvanced,    setShowAdvanced]    = useState(false)
 
@@ -247,6 +255,24 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
     setContainerScale(1.0)
     setContainerY(0.0)
   }, [])
+
+  // Dropdown container picker (same system as the other labs): a bundled model is
+  // fetched into a File so it can be uploaded to the bake; last option uploads.
+  const [loadingContainer, setLoadingContainer] = useState(false)
+  const pickContainer = useCallback(async (url: string, name: string) => {
+    setLoadingContainer(true)
+    try {
+      const blob = await (await fetch(url)).blob()
+      handleContainerFile(new File([blob], `${name}.glb`, { type: 'model/gltf-binary' }))
+    } catch { /* ignore fetch errors */ }
+    setLoadingContainer(false)
+  }, [handleContainerFile])
+  const handleContainerSelect = useCallback((val: string) => {
+    if (val === '__none__')   { handleRemoveContainer(); return }
+    if (val === '__upload__') { document.getElementById('fluid-container-input')!.click(); return }
+    const m = MODEL_PRESETS.find(x => x.url === val)
+    if (m) pickContainer(m.url, m.name)
+  }, [handleRemoveContainer, pickContainer])
 
   const stopPoll = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
@@ -409,7 +435,8 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
             />
           )}
 
-          {/* Fluid type */}
+          {/* Fluid type (Effect) — commented out */}
+          {false && (
           <Sec>
             <SLabel>Effect</SLabel>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -425,6 +452,7 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
               }[viscosity]}
             </div>
           </Sec>
+          )}
 
           {/* Simulation params */}
           <Sec>
@@ -439,19 +467,17 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
           {/* Container import */}
           <Sec>
             <SLabel>Container (optional)</SLabel>
-            <div
-              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleContainerFile(f) }}
-              onDragOver={e => e.preventDefault()}
-              onClick={() => !isBaking && document.getElementById('fluid-container-input')!.click()}
+            <select value="" disabled={isBaking} onChange={e => handleContainerSelect(e.target.value)}
               style={{
-                border: `1px dashed ${containerFile ? 'var(--lab-accent)' : 'var(--lab-border)'}`,
-                borderRadius: 8, padding: '14px 10px', textAlign: 'center',
-                cursor: isBaking ? 'default' : 'pointer', fontSize: 11,
-                color: containerFile ? 'var(--lab-accent)' : 'var(--lab-text-3)', background: 'var(--lab-surface)',
-              }}
-            >
-              {containerFile?.name ?? 'Drop a GLB — fluid fills the bowl'}
-            </div>
+                width: '100%', background: 'var(--lab-surface)', border: '1px solid var(--lab-border)',
+                color: containerFile ? 'var(--lab-text)' : 'var(--lab-text-3)', borderRadius: 6, fontSize: 11,
+                padding: '7px 8px', outline: 'none', cursor: isBaking ? 'default' : 'pointer', fontFamily: 'inherit',
+              }}>
+              <option value="">{loadingContainer ? 'Loading…' : (containerFile?.name || 'Select a container…')}</option>
+              {containerFile && <option value="__none__">None</option>}
+              {MODEL_PRESETS.map(m => <option key={m.url} value={m.url}>{m.name}</option>)}
+              <option value="__upload__">Upload custom GLB…</option>
+            </select>
             <input id="fluid-container-input" type="file" accept=".glb,.gltf" style={{ display: 'none' }}
               onChange={e => { const f = e.target.files?.[0]; if (f) handleContainerFile(f) }} />
             {containerFile && (
@@ -489,9 +515,6 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
               <button onClick={handleBake} style={priBtnSt(false)}>
                 {phase === 'error' ? '↺ Retry bake' : '▶ Bake simulation'}
               </button>
-              <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.4 }}>
-                Requires the simulation server: <code style={{ color: 'var(--lab-text-3)' }}>node server/server.mjs</code>
-              </div>
             </div>
           )}
 
@@ -530,11 +553,7 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
           </div>
         )}
 
-        <LabDataPanel
-          data={data} draggingField={draggingField}
-          onDragStart={setDraggingField} onDragEnd={() => setDraggingField(null)}
-          onDataChange={setData}
-        />
+        <LabDataPanel data={data} onDataChange={setData} />
       </div>
 
       {/* ── Advanced panel ── */}
@@ -552,9 +571,6 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
               }}>{r === 16 ? 'Fast' : r === 24 ? 'Default' : 'Quality'}</button>
             ))}
           </div>
-          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
-            {resolution === 16 ? '~20–40s bake time' : resolution === 24 ? '~1–3min bake time' : '~3–8min bake time'}
-          </div>
         </Sec>
         <Sec>
           <SLabel>Display</SLabel>
@@ -563,9 +579,6 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
               style={{ accentColor: 'var(--lab-accent)' }} />
             Wireframe
           </label>
-          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
-            Also toggled by switching to the Dynamic view.
-          </div>
         </Sec>
       </LabAdvancedPanel>
 
@@ -573,7 +586,7 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
 
         <div style={{ flex: 1, position: 'relative' }}>
-          <ViewCanvas viewType={view1} geos={geos} fluidMeta={fluidMeta} playing={playing} speed={speed} containerUrl={containerUrl} containerScale={containerScale} containerY={containerY} />
+          <ViewCanvas view={view} geos={geos} fluidMeta={fluidMeta} playing={playing} speed={speed} wireframe={wireframe} containerUrl={containerUrl} containerScale={containerScale} containerY={containerY} />
         </div>
 
         {/* LEGACY two-view split — commented out
@@ -590,7 +603,10 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
         />
         */}
 
-        <LabViewToggle view={view1} onChange={setView1} />
+        <LabViewBar view={view} onChange={setView} options={{
+          speed, onSpeed: setSpeed,
+          // Fluids are always smooth, no sequencing → only the speed option.
+        }} />
       </div>
     </div>
   )

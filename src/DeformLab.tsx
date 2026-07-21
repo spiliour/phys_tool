@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, Suspense, useMemo } from 'react'
+import { useRef, useState, useEffect, useCallback, Suspense, useMemo, createContext, useContext } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, Environment, Bounds, useBounds, Html } from '@react-three/drei'
 import { useLoader } from '@react-three/fiber'
@@ -6,13 +6,17 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import {
   type SceneSave, type Shape, type ViewType, type DataField, type DataRow,
-  type LabPresetHandle,
+  type LabPresetHandle, type ColumnMeta,
+  DATASET_EARTH, DATASET_WHALE, DATASET_GENERIC,
+  ReferencePanel, ReferenceButton, referenceForData,
   DEFAULT_DATA, VIEW_LABELS, secBtnSt, priBtnSt, floatSelSt, floatIcoSt,
   Sec, SLabel, RowLabel,
   LabNavTitle, LabPresetRow, LabModelSection, LabDataPanel,
-  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewToggle,
+  LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewBar,
+  type LabView, type DynMode,
   serverFetch,
 } from './LabShared'
+import { MODEL_PRESETS } from './models'
 
 const SERVER = import.meta.env.VITE_SERVER ?? 'http://localhost:3001'
 
@@ -47,48 +51,32 @@ const FX_GLOW_MAX      = 1.6    // max emissive intensity
 const FX_CRACK_FREQ    = 5.5    // crack network density
 
 export interface StressFx {
-  tint:       boolean
-  tintColor:  string
-  distort:    boolean
-  glow:       boolean
-  cracks:     boolean
-  desaturate: boolean
+  tint:         boolean
+  tintColor:    string
+  distort:      boolean
+  glow:         boolean
+  cracks:       boolean
+  crackDensity: number   // spatial frequency of the crack network
+  crackWidth:   number   // line thickness
+  desaturate:   boolean
 }
 
 export const FX_OFF: StressFx = {
-  tint: false, tintColor: '#d62828', distort: false, glow: false, cracks: false, desaturate: false,
+  tint: false, tintColor: '#d62828', distort: false, glow: false,
+  cracks: false, crackDensity: FX_CRACK_FREQ, crackWidth: 0.08, desaturate: false,
 }
+// Crack look pinned to the "Stretch - earth" preset (applied on every load of it).
+const FX_EARTH_CRACKS = { cracks: true, crackDensity: 16.0, crackWidth: 0.03 }
 // Seeded when the legacy "Stretch - earth" preset is loaded without saved fx.
-const FX_EARTH: StressFx = { ...FX_OFF, tint: true, distort: true }
+const FX_EARTH: StressFx = { ...FX_OFF, tint: true, distort: true, ...FX_EARTH_CRACKS }
 
-// ── Preset reference (optional side panel) ─────────────────────────────────────
-// A preset may carry a reference — a dataset title, an image and a source link —
-// shown in a side panel on demand. Images live in public/assets/references/.
-
-export interface PresetReference { title: string; image: string; link: string }
-
-const REF_ASSET_BASE = import.meta.env.BASE_URL + 'assets/references/'
-// Resolve a stored image (bare filename → references folder; full URL → as-is).
-function refImageSrc(image: string) {
-  return /^(https?:)?\/\//.test(image) || image.startsWith('/') ? image : REF_ASSET_BASE + image
-}
-
-// ── "Stretch - earth" seed dataset + reference ────────────────────────────────
-// Earth Overshoot Day per year, with Number of Earths ≈ 365 / (day-of-year of the
-// overshoot day) — i.e. how many Earths humanity's demand would need that year.
-const EARTH_DATA: DataRow[] = [
-  { category: '1972', value: 1.0, percentage: 0  },   // Dec 31 → ~1.0 Earths
-  { category: '1990', value: 1.2, percentage: 20 },   // Oct 23 → 1.2
-  { category: '2000', value: 1.4, percentage: 40 },   // Sep 23 → 1.4
-  { category: '2010', value: 1.7, percentage: 70 },   // Aug 8  → 1.7
-  { category: '2026', value: 1.9, percentage: 90 },   // → 1.9
-]
-
-const EARTH_REFERENCE: PresetReference = {
-  title: 'How many Earths needed in a year?',
-  image: 'earth-overshoot.png',   // drop this file in public/assets/references/
-  link:  'https://overshoot.footprintnetwork.org/newsroom/past-earth-overshoot-days-/',
-}
+// Datasets seeded by the earth / whale presets live in LabShared (they also
+// populate the data-panel dropdown); the references stay lab-local.
+const EARTH_DATA    = DATASET_EARTH.data
+const EARTH_COLUMNS = DATASET_EARTH.columns
+const WHALE_DATA    = DATASET_WHALE.data
+const WHALE_COLUMNS = DATASET_WHALE.columns
+const WHALE_PRESET_MATCH = 'whale'   // matched as a substring of the preset name
 
 function fxAnyOn(fx?: StressFx | null): fx is StressFx {
   return !!fx && (fx.tint || fx.distort || fx.glow || fx.cracks || fx.desaturate)
@@ -100,6 +88,8 @@ type FxUniforms = {
   uTime:       { value: number }
   uAmp:        { value: number }
   uCrack:      { value: number }
+  uCrackFreq:  { value: number }
+  uCrackWidth: { value: number }
   uDesat:      { value: number }
   uCrackColor: { value: THREE.Color }
 }
@@ -126,7 +116,6 @@ function ensureUniqueMaterials(root: THREE.Object3D) {
 // materials still compile their own programs.
 function installFxShader(root: THREE.Object3D) {
   const f  = FX_DISTORT_FREQ.toFixed(1)
-  const cf = FX_CRACK_FREQ.toFixed(1)
   root.traverse(n => {
     const m = n as THREE.Mesh
     if (!m.isMesh || !m.material) return
@@ -136,6 +125,7 @@ function installFxShader(root: THREE.Object3D) {
       if (mm.__fxU) return
       const u: FxUniforms = {
         uTime: { value: 0 }, uAmp: { value: 0 }, uCrack: { value: 0 }, uDesat: { value: 0 },
+        uCrackFreq: { value: FX_CRACK_FREQ }, uCrackWidth: { value: 0.08 },
         uCrackColor: { value: new THREE.Color('#d62828') },
       }
       mm.__fxU = u
@@ -148,6 +138,8 @@ function installFxShader(root: THREE.Object3D) {
         shader.uniforms.uTime       = u.uTime
         shader.uniforms.uAmp        = u.uAmp
         shader.uniforms.uCrack      = u.uCrack
+        shader.uniforms.uCrackFreq  = u.uCrackFreq
+        shader.uniforms.uCrackWidth = u.uCrackWidth
         shader.uniforms.uDesat      = u.uDesat
         shader.uniforms.uCrackColor = u.uCrackColor
 
@@ -164,7 +156,7 @@ function installFxShader(root: THREE.Object3D) {
         )
 
         // Fragment: desaturate the diffuse, then add glowing cracks to the emissive.
-        shader.fragmentShader = 'uniform float uCrack;\nuniform float uDesat;\nuniform vec3 uCrackColor;\nvarying vec3 vFxPos;\n' + shader.fragmentShader
+        shader.fragmentShader = 'uniform float uCrack;\nuniform float uCrackFreq;\nuniform float uCrackWidth;\nuniform float uDesat;\nuniform vec3 uCrackColor;\nvarying vec3 vFxPos;\n' + shader.fragmentShader
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <map_fragment>',
           `#include <map_fragment>
@@ -177,10 +169,21 @@ function installFxShader(root: THREE.Object3D) {
           '#include <emissivemap_fragment>',
           `#include <emissivemap_fragment>
           {
-            float fxField = sin(vFxPos.x * ${cf} + 1.3)
-                          + sin(vFxPos.y * ${cf} * 1.1)
-                          + sin(vFxPos.z * ${cf} + 2.1);
-            float fxLine = 1.0 - smoothstep(0.0, 0.08 + 0.25 * uCrack, abs(fxField));
+            // Low-frequency domain warp (in object space, so it scales with the
+            // density slider) — bends the field and kills the axis-aligned lattice.
+            vec3 fxW = vec3(
+              sin(vFxPos.y * 2.7 + 1.7) + sin(vFxPos.z * 3.3 + 4.2),
+              sin(vFxPos.z * 2.9 + 2.3) + sin(vFxPos.x * 3.1 + 0.7),
+              sin(vFxPos.x * 3.2 + 3.1) + sin(vFxPos.y * 2.8 + 5.3)
+            );
+            vec3 fxP = (vFxPos + fxW * 0.12) * uCrackFreq;
+            // Skewed, non-orthogonal directions at irrational-ish ratios so the
+            // waves never line up into a repeating symmetric pattern.
+            float fxField = sin(dot(fxP, vec3( 1.00,  0.37, -0.62))         + 1.3)
+                          + sin(dot(fxP, vec3(-0.48,  0.93,  0.21)) * 0.87  + 2.9)
+                          + sin(dot(fxP, vec3( 0.29, -0.55,  1.07)) * 1.19  + 5.1)
+                          + sin(dot(fxP, vec3( 1.63, -1.11,  0.87)) * 0.53  + 0.4) * 0.6;
+            float fxLine = 1.0 - smoothstep(0.0, uCrackWidth * (1.0 + 2.0 * uCrack), abs(fxField));
             totalEmissiveRadiance += uCrackColor * fxLine * uCrack * 2.0;
           }`
         )
@@ -219,10 +222,12 @@ function applyFx(root: THREE.Object3D, fx: StressFx, t: number, time: number) {
       }
       const u = mm.__fxU
       if (u) {
-        u.uTime.value  = time
-        u.uAmp.value   = fx.distort ? amt * FX_DISTORT_AMP : 0
-        u.uCrack.value = fx.cracks ? amt : 0
-        u.uDesat.value = fx.desaturate ? amt : 0
+        u.uTime.value       = time
+        u.uAmp.value        = fx.distort ? amt * FX_DISTORT_AMP : 0
+        u.uCrack.value      = fx.cracks ? amt : 0
+        u.uCrackFreq.value  = fx.crackDensity
+        u.uCrackWidth.value = fx.crackWidth
+        u.uDesat.value      = fx.desaturate ? amt : 0
         u.uCrackColor.value.copy(tint)
       }
     })
@@ -249,10 +254,23 @@ function persistDeformPresets(saves: SceneSave[]) {
 }
 
 // ── Camera fit ────────────────────────────────────────────────────────────────
+// The views remount on every bake (keyed by resultUrl), which would re-frame the
+// camera each time. FitContext carries the current model's identity + a persistent
+// ref, so FitCamera only fits when a *new* model/shape is loaded — re-simulations
+// keep the camera exactly where the user left it.
+const FitContext = createContext<{ key: string; ref: React.MutableRefObject<string> } | null>(null)
 
 function FitCamera() {
   const api = useBounds()
-  useEffect(() => { api.refresh().fit() }, [api])
+  const ctx = useContext(FitContext)
+  useEffect(() => {
+    if (ctx) {
+      if (ctx.ref.current === ctx.key) return   // already framed for this model
+      ctx.ref.current = ctx.key
+    }
+    api.refresh().fit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api])
   return null
 }
 
@@ -302,11 +320,12 @@ function EffectView({ url, speed, fx, data, playData }: {
         if (d < bestD) { bestD = d; best = i }
       }
       if (best !== activeIdxRef.current) { activeIdxRef.current = best; setActiveIdx(best) }
-      // Keep the label pinned just above the (stretching) object.
+      // Keep the label pinned just below the (stretching) object. `precise` walks
+      // the morphed vertices so it tracks the real bottom as the shape stretches.
       if (labelRef.current) {
-        boxRef.current.setFromObject(scene)
+        boxRef.current.setFromObject(scene, true)
         const c = boxRef.current.getCenter(ctrRef.current)
-        labelRef.current.position.set(c.x, boxRef.current.max.y + 0.15, c.z)
+        labelRef.current.position.set(c.x, boxRef.current.min.y - 0.28, c.z)
       }
     }
   })
@@ -314,7 +333,7 @@ function EffectView({ url, speed, fx, data, playData }: {
   const row = dataMode && data ? data[activeIdx] : null
 
   return (
-    <Bounds fit clip observe margin={1.2}>
+    <Bounds clip margin={1.2}>
       <FitCamera />
       <primitive object={scene} />
       {row && (
@@ -324,8 +343,8 @@ function EffectView({ url, speed, fx, data, playData }: {
               fontFamily: 'system-ui, sans-serif', whiteSpace: 'nowrap',
               background: 'rgba(0,0,0,0.52)', padding: '4px 14px', borderRadius: 4,
             }}>
-              <div style={{ fontSize: 13, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
-              <div style={{ fontSize: 12, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.value}</div>
+              <div style={{ fontSize: 16, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
+              <div style={{ fontSize: 14, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.value}</div>
             </div>
           </Html>
         </group>
@@ -398,7 +417,7 @@ function StaticView({ url, data, range, fx }: {
   }, [boxes])
 
   return (
-    <Bounds fit clip observe margin={1.2}>
+    <Bounds clip margin={1.2}>
       <FitCamera />
       {clones.map((clone, i) => {
         const box = boxes[i]
@@ -413,8 +432,8 @@ function StaticView({ url, data, range, fx }: {
                 fontFamily: 'system-ui, sans-serif', whiteSpace: 'nowrap',
                 background: 'rgba(0,0,0,0.52)', padding: '2px 8px', borderRadius: 4,
               }}>
-                <div style={{ fontSize: 11, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{data[i].category}</div>
-                <div style={{ fontSize: 11, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{data[i].value}</div>
+                <div style={{ fontSize: 14, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{data[i].category}</div>
+                <div style={{ fontSize: 13, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{data[i].value}</div>
               </div>
             </Html>
           </group>
@@ -463,7 +482,7 @@ function SliceView({ url, data, axis, showLabels }: {
   }, [scene, axisComp]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Bounds fit clip observe margin={1.4}>
+    <Bounds clip margin={1.4}>
       <FitCamera />
       <primitive object={scene} />
       {showLabels && segments.map((seg, i) => {
@@ -483,8 +502,8 @@ function SliceView({ url, data, axis, showLabels }: {
               fontFamily: 'system-ui, sans-serif', whiteSpace: 'nowrap',
               background: 'rgba(0,0,0,0.52)', padding: '2px 8px', borderRadius: 4,
             }}>
-              <div style={{ fontSize: 11, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
-              <div style={{ fontSize: 11, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.percentage}%</div>
+              <div style={{ fontSize: 14, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
+              <div style={{ fontSize: 13, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.value.toLocaleString()}</div>
             </div>
           </Html>
         )
@@ -502,8 +521,8 @@ function SliceView({ url, data, axis, showLabels }: {
 // (geometry lives at world origin). Animating from (0,0,0) → obj.position gives
 // the collapse-to-explode effect without any extra computation.
 
-function DynamicSliceView({ url, data, axis }: {
-  url: string; data: DataRow[]; axis: Axis
+function DynamicSliceView({ url, data, axis, speed = 1, showLabels = true }: {
+  url: string; data: DataRow[]; axis: Axis; speed?: number; showLabels?: boolean
 }) {
   const gltf  = useLoader(GLTFLoader, url)
   const scene = useMemo(() => gltf.scene.clone(true), [gltf])
@@ -540,9 +559,11 @@ function DynamicSliceView({ url, data, axis }: {
 
   const [labelsOn, setLabelsOn] = useState(false)
   const labelsRef = useRef(false)
+  const tAcc      = useRef(0)   // accumulated so speed changes don't jump the phase
 
-  useFrame(({ clock }) => {
-    const t    = clock.getElapsedTime() % ANIM_CYCLE
+  useFrame((_, delta) => {
+    tAcc.current += delta * speed
+    const t    = tAcc.current % ANIM_CYCLE
     const raw  = t <= ANIM_PAUSE              ? 0
                : t <= ANIM_PAUSE + ANIM_EXPLODE ? (t - ANIM_PAUSE) / ANIM_EXPLODE
                : 1
@@ -562,10 +583,10 @@ function DynamicSliceView({ url, data, axis }: {
   })
 
   return (
-    <Bounds fit margin={1.4}>
+    <Bounds margin={1.4}>
       <FitCamera />
       <primitive object={scene} />
-      {segments.map((seg, i) => {
+      {showLabels && segments.map((seg, i) => {
         const row = data[i]
         if (!row) return null
         const lx = axis === 'X' ? seg.center.x         : seg.box.max.x + 0.12
@@ -581,8 +602,8 @@ function DynamicSliceView({ url, data, axis }: {
               opacity: labelsOn ? 1 : 0,
               transition: 'opacity 0.4s ease',
             }}>
-              <div style={{ fontSize: 11, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
-              <div style={{ fontSize: 11, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.percentage}%</div>
+              <div style={{ fontSize: 14, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
+              <div style={{ fontSize: 13, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.value.toLocaleString()}</div>
             </div>
           </Html>
         )
@@ -599,7 +620,9 @@ const DYNA_HOLD  = 1.2   // seconds to hold each category (label visible)
 const DYNA_TRANS = 0.7   // seconds to animate between categories
 const DYNA_SLOT  = DYNA_HOLD + DYNA_TRANS
 
-function DynamicDeformView({ url, data, fx }: { url: string; data: DataRow[]; fx?: StressFx | null }) {
+function DynamicDeformView({ url, data, fx, speed = 1, showLabels = true }: {
+  url: string; data: DataRow[]; fx?: StressFx | null; speed?: number; showLabels?: boolean
+}) {
   const gltf   = useLoader(GLTFLoader, url)
   const active = fxAnyOn(fx)
   const scene = useMemo(() => {
@@ -626,7 +649,9 @@ function DynamicDeformView({ url, data, fx }: { url: string; data: DataRow[]; fx
   const [showLabel, setShowLabel] = useState(true)
   const activeIdxRef = useRef(0)
   const showLabelRef = useRef(true)
-  const startRef     = useRef<number | null>(null)
+  // Accumulated (speed-scaled) time; starts inside slot 0's hold phase so the
+  // first thing seen is a held category, and speed changes never jump the phase.
+  const tAcc = useRef(DYNA_TRANS)
 
   // Center of the Basis (undeformed) bounding box
   const labelCenter = useMemo(() => {
@@ -636,10 +661,9 @@ function DynamicDeformView({ url, data, fx }: { url: string; data: DataRow[]; fx
     return c
   }, [scene])
 
-  useFrame(({ clock }) => {
-    if (startRef.current === null) startRef.current = clock.getElapsedTime()
-    // Offset so that we start inside slot 0's hold phase (skip the initial transition)
-    const t      = clock.getElapsedTime() - startRef.current + DYNA_TRANS
+  useFrame(({ clock }, delta) => {
+    tAcc.current += delta * speed
+    const t      = tAcc.current
     const slotRaw = Math.floor(t / DYNA_SLOT)
     const slotIdx = slotRaw % N
     const phase   = t % DYNA_SLOT
@@ -664,30 +688,261 @@ function DynamicDeformView({ url, data, fx }: { url: string; data: DataRow[]; fx
   const row = data[activeIdx] ?? data[0]
 
   return (
-    <Bounds fit margin={1.6}>
+    <Bounds margin={1.6}>
       <FitCamera />
       <primitive object={scene} />
-      <Html center position={[labelCenter.x, labelCenter.y, labelCenter.z]} style={{ pointerEvents: 'none' }}>
-        <div style={{
-          fontFamily: 'system-ui, sans-serif', whiteSpace: 'nowrap', textAlign: 'center',
-          background: 'rgba(0,0,0,0.52)', padding: '4px 14px', borderRadius: 4,
-          opacity: showLabel ? 1 : 0, transition: 'opacity 0.35s ease',
-        }}>
-          <div style={{ fontSize: 13, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
-          <div style={{ fontSize: 12, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.value}</div>
-        </div>
-      </Html>
+      {showLabels && (
+        <Html center position={[labelCenter.x, labelCenter.y, labelCenter.z]} style={{ pointerEvents: 'none' }}>
+          <div style={{
+            fontFamily: 'system-ui, sans-serif', whiteSpace: 'nowrap', textAlign: 'center',
+            background: 'rgba(0,0,0,0.52)', padding: '4px 14px', borderRadius: 4,
+            opacity: showLabel ? 1 : 0, transition: 'opacity 0.35s ease',
+          }}>
+            <div style={{ fontSize: 16, color: '#e0e0f0', fontWeight: 600, letterSpacing: 0.4 }}>{row.category}</div>
+            <div style={{ fontSize: 14, color: '#a090e8', fontVariantNumeric: 'tabular-nums' }}>{row.value}</div>
+          </div>
+        </Html>
+      )}
+    </Bounds>
+  )
+}
+
+// Center + scale an object to max-dimension = `target`, matching what the Blender
+// bake does to every result (deform.py). This makes the raw preview / baking scene
+// share the exact size & placement of the simulated result.
+function normalizeToBake(obj: THREE.Object3D, target = 2) {
+  obj.updateWorldMatrix(true, true)
+  const box  = new THREE.Box3().setFromObject(obj)
+  const c    = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const sc   = target / Math.max(size.x, size.y, size.z, 1e-4)
+  obj.scale.setScalar(sc)
+  obj.position.set(-c.x * sc, -c.y * sc, -c.z * sc)
+  obj.updateMatrixWorld(true)
+}
+
+// Raw model preview (shown before a bake exists), normalised to match the result.
+function ModelPreview({ url }: { url: string }) {
+  const gltf  = useLoader(GLTFLoader, url)
+  const scene = useMemo(() => { const s = gltf.scene.clone(true); normalizeToBake(s); return s }, [gltf])
+  return (
+    <Bounds clip margin={1.3}>
+      <FitCamera />
+      <primitive object={scene} />
+    </Bounds>
+  )
+}
+
+// ── "Baking" animation ────────────────────────────────────────────────────────
+// While the Blender bake runs the model shows as a dense point cloud with only a
+// slight jitter (so the shape stays clear), with yellow particles dancing around
+// it — orbiting on tilted planes while pulsing in/out and bobbing.
+const BAKE_COLOR      = new THREE.Color('#5ad6ff')   // point cloud
+const BAKE_DANCE      = new THREE.Color('#ffd23a')   // cluster particles
+const BAKE_POINTS     = 9000
+const BAKE_CLUSTERS = 35    // clusters drifting near the surface
+const BAKE_CLUST_SZ = 22    // particles per cluster (dense knots)
+const BAKE_SPRING   = 3.5   // pull toward the current goal (smaller = slower/smoother)
+const BAKE_DAMP     = 4.0   // velocity damping (larger = calmer, less overshoot)
+const BAKE_STANDOFF = 0.12  // how far off the surface (× radius) the goals sit
+
+// Round, soft, per-point-alpha points (used for both the cloud and the smoke).
+const BAKE_PT_VERT = `
+  attribute float aAlpha;
+  uniform float uSize;
+  varying float vAlpha;
+  void main() {
+    vAlpha = aAlpha;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mv;
+    gl_PointSize = uSize * (350.0 / max(-mv.z, 0.001));
+  }
+`
+const BAKE_PT_FRAG = `
+  uniform vec3 uColor;
+  varying float vAlpha;
+  void main() {
+    float r = length(gl_PointCoord - 0.5);
+    if (r > 0.5) discard;
+    gl_FragColor = vec4(uColor, smoothstep(0.5, 0.0, r) * vAlpha);
+  }
+`
+
+function BakingScene({ url }: { url: string }) {
+  const gltf = useLoader(GLTFLoader, url)
+
+  // Dense, messy point cloud built from the (normalised) model's vertices, plus
+  // a per-point random direction so the cloud shimmers chaotically — not as a
+  // clean surface. Normalising here matches the result's size & placement.
+  const { base, dir, spd, phase, count, cx, cy, cz, radius, height } = useMemo(() => {
+    const s = gltf.scene.clone(true)
+    normalizeToBake(s)
+    const box  = new THREE.Box3().setFromObject(s)
+    const sph  = box.getBoundingSphere(new THREE.Sphere())
+    const size = box.getSize(new THREE.Vector3())
+    const c    = sph.center, rad = sph.radius || 1
+    const meshes: THREE.Mesh[] = []
+    s.traverse(n => { const m = n as THREE.Mesh; if (m.isMesh && m.geometry) meshes.push(m) })
+    const totalV = meshes.reduce((sum, m) => sum + m.geometry.attributes.position.count, 0)
+    const stride = Math.max(1, Math.floor(totalV / BAKE_POINTS))
+    const verts: number[] = []
+    const v = new THREE.Vector3()
+    meshes.forEach(m => {
+      const pos = m.geometry.attributes.position
+      for (let i = 0; i < pos.count; i += stride) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld)
+        verts.push(v.x, v.y, v.z)
+      }
+    })
+    const n = verts.length / 3
+    const b = new Float32Array(verts), dr = new Float32Array(n * 3)
+    const sp = new Float32Array(n), ph = new Float32Array(n)
+    for (let i = 0; i < n; i++) {
+      // Random unit direction (messy, not radial).
+      let dx = Math.random()*2-1, dy = Math.random()*2-1, dz = Math.random()*2-1
+      const l = Math.hypot(dx, dy, dz) || 1; dx/=l; dy/=l; dz/=l
+      dr[i*3] = dx; dr[i*3+1] = dy; dr[i*3+2] = dz
+      sp[i] = 0.7 + Math.random() * 1.8
+      ph[i] = Math.random() * Math.PI * 2
+      // Small static scatter — keeps points near the surface so the shape stays clear.
+      const j = Math.random() * rad * 0.03
+      b[i*3] += dx*j; b[i*3+1] += dy*j; b[i*3+2] += dz*j
+    }
+    return { base: b, dir: dr, spd: sp, phase: ph, count: n, cx: c.x, cy: c.y, cz: c.z, radius: rad, height: size.y || 1 }
+  }, [gltf])
+
+  const ptGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(base.slice(), 3))
+    g.setAttribute('aAlpha',   new THREE.BufferAttribute(new Float32Array(count), 1))
+    return g
+  }, [base, count])
+  const ptMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: { uSize: { value: radius * 0.05 }, uColor: { value: BAKE_COLOR } },
+    vertexShader: BAKE_PT_VERT, fragmentShader: BAKE_PT_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }), [radius])
+
+  // Clusters drift smoothly NEAR the surface: each has a goal a little off the
+  // surface (a vertex pushed out along its radial normal) and eases toward it with
+  // spring + damping. On arrival it picks a nearby goal, so it glides organically
+  // over the object. Particles ride along as a dense knot.
+  const clusters = useMemo(() => {
+    const C = BAKE_CLUSTERS, standoff = radius * BAKE_STANDOFF
+    const pos = new Float32Array(C*3), vel = new Float32Array(C*3), goal = new Float32Array(C*3)
+    // Goal = a surface vertex pushed outward from the centre by `standoff`.
+    const goalFrom = (arr: Float32Array, o: number, vi: number) => {
+      const vx = base[vi]-cx, vy = base[vi+1]-cy, vz = base[vi+2]-cz
+      const vl = Math.hypot(vx, vy, vz) || 1
+      arr[o] = base[vi] + vx/vl*standoff; arr[o+1] = base[vi+1] + vy/vl*standoff; arr[o+2] = base[vi+2] + vz/vl*standoff
+    }
+    for (let c = 0; c < C; c++) {
+      goalFrom(pos,  c*3, Math.floor(Math.random()*count)*3)
+      goalFrom(goal, c*3, Math.floor(Math.random()*count)*3)
+    }
+    // Per-particle tight local offset (so a cluster reads as a dense knot) + phase.
+    const M = C * BAKE_CLUST_SZ
+    const off = new Float32Array(M*3), jph = new Float32Array(M)
+    for (let i = 0; i < M; i++) {
+      let ox = Math.random()*2-1, oy = Math.random()*2-1, oz = Math.random()*2-1
+      const ol = Math.hypot(ox, oy, oz) || 1
+      const m = (Math.random() * radius * 0.035) / ol
+      off[i*3] = ox*m; off[i*3+1] = oy*m; off[i*3+2] = oz*m
+      jph[i] = Math.random() * Math.PI * 2
+    }
+    return { pos, vel, goal, off, jph, M }
+  }, [base, count, radius, cx, cy, cz])
+  const clustGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BAKE_CLUSTERS * BAKE_CLUST_SZ * 3), 3))
+    g.setAttribute('aAlpha',   new THREE.BufferAttribute(new Float32Array(BAKE_CLUSTERS * BAKE_CLUST_SZ), 1))
+    return g
+  }, [])
+  const clustMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: { uSize: { value: radius * 0.06 }, uColor: { value: BAKE_DANCE } },
+    vertexShader: BAKE_PT_VERT, fragmentShader: BAKE_PT_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }), [radius])
+
+  useFrame((state, delta) => {
+    const t = state.clock.getElapsedTime()
+
+    // Point cloud: only a very slight jitter, so the shape reads clearly.
+    const pp = (ptGeo.attributes.position as THREE.BufferAttribute).array as Float32Array
+    const pa = (ptGeo.attributes.aAlpha   as THREE.BufferAttribute).array as Float32Array
+    const amp = radius * 0.015
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3, ph = phase[i], spi = spd[i]
+      const disp = Math.sin(t * spi + ph) * amp
+      pp[i3]   = base[i3]   + dir[i3]   * disp
+      pp[i3+1] = base[i3+1] + dir[i3+1] * disp
+      pp[i3+2] = base[i3+2] + dir[i3+2] * disp
+      pa[i] = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(t * 2.2 + ph * 5.0))
+    }
+    ;(ptGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true
+    ;(ptGeo.attributes.aAlpha   as THREE.BufferAttribute).needsUpdate = true
+
+    // Clusters ease smoothly toward a goal near the surface (spring + damping);
+    // on arrival pick a nearby goal so the drift stays organic and continuous.
+    const { pos, vel, goal } = clusters
+    const dt = Math.min(delta, 0.05)
+    const damp = 1 - Math.min(BAKE_DAMP * dt, 0.5)
+    const standoff = radius * BAKE_STANDOFF, reach = radius * 0.06, minD = radius * 0.12
+    for (let c = 0; c < BAKE_CLUSTERS; c++) {
+      const c3 = c * 3
+      vel[c3]   = (vel[c3]   + (goal[c3]  -pos[c3])  *BAKE_SPRING*dt) * damp
+      vel[c3+1] = (vel[c3+1] + (goal[c3+1]-pos[c3+1])*BAKE_SPRING*dt) * damp
+      vel[c3+2] = (vel[c3+2] + (goal[c3+2]-pos[c3+2])*BAKE_SPRING*dt) * damp
+      pos[c3] += vel[c3]*dt; pos[c3+1] += vel[c3+1]*dt; pos[c3+2] += vel[c3+2]*dt
+      const gx = goal[c3]-pos[c3], gy = goal[c3+1]-pos[c3+1], gz = goal[c3+2]-pos[c3+2]
+      if (Math.hypot(gx, gy, gz) < reach) {
+        // Nearest of a few random vertices → a short, smooth step along the surface.
+        let bi = Math.floor(Math.random()*count)*3, bd = Infinity
+        for (let k = 0; k < 6; k++) {
+          const b = Math.floor(Math.random()*count)*3
+          const ddx = base[b]-pos[c3], ddy = base[b+1]-pos[c3+1], ddz = base[b+2]-pos[c3+2]
+          const dd = ddx*ddx + ddy*ddy + ddz*ddz
+          if (dd > minD*minD && dd < bd) { bd = dd; bi = b }
+        }
+        const vx = base[bi]-cx, vy = base[bi+1]-cy, vz = base[bi+2]-cz
+        const vl = Math.hypot(vx, vy, vz) || 1
+        goal[c3] = base[bi] + vx/vl*standoff; goal[c3+1] = base[bi+1] + vy/vl*standoff; goal[c3+2] = base[bi+2] + vz/vl*standoff
+      }
+    }
+    const cp = (clustGeo.attributes.position as THREE.BufferAttribute).array as Float32Array
+    const cAlpha = (clustGeo.attributes.aAlpha as THREE.BufferAttribute).array as Float32Array
+    for (let i = 0; i < clusters.M; i++) {
+      const c3 = Math.floor(i / BAKE_CLUST_SZ) * 3, i3 = i * 3
+      const breathe = 1 + 0.15 * Math.sin(t * 1.2 + clusters.jph[i])
+      cp[i3]   = pos[c3]   + clusters.off[i3]   * breathe
+      cp[i3+1] = pos[c3+1] + clusters.off[i3+1] * breathe
+      cp[i3+2] = pos[c3+2] + clusters.off[i3+2] * breathe
+      cAlpha[i] = 0.6 + 0.4 * Math.sin(t * 2.0 + clusters.jph[i] * 4.0)
+    }
+    ;(clustGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true
+    ;(clustGeo.attributes.aAlpha   as THREE.BufferAttribute).needsUpdate = true
+  })
+
+  return (
+    <Bounds clip margin={1.3}>
+      <FitCamera />
+      {/* Invisible sphere so the effect frames consistently if it's the first thing shown. */}
+      <mesh position={[cx, cy, cz]} visible={false}><sphereGeometry args={[radius * 1.4, 8, 8]} /></mesh>
+      <points geometry={ptGeo} material={ptMat} />
+      <points geometry={clustGeo} material={clustMat} />
     </Bounds>
   )
 }
 
 // ── Per-view canvas ───────────────────────────────────────────────────────────
 
-function ViewCanvas({ viewType, resultUrl, animSpeed, data, bindingRange, deformMode, axis, fx, playData }: {
-  viewType: ViewType; resultUrl: string | null; animSpeed: number
+function ViewCanvas({ viewType, resultUrl, modelUrl, baking, fitKey, animSpeed, data, bindingRange, deformMode, axis, fx, playData, showLabels = true }: {
+  viewType: ViewType; resultUrl: string | null; modelUrl: string | null; baking: boolean; fitKey: string; animSpeed: number
   data: DataRow[]; bindingRange: BindingRange; deformMode: DeformMode; axis: Axis
-  fx?: StressFx | null; playData?: boolean
+  fx?: StressFx | null; playData?: boolean; showLabels?: boolean
 }) {
+  const fittedRef = useRef('')
+  const fitCtx = useMemo(() => ({ key: fitKey, ref: fittedRef }), [fitKey])
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
       <Canvas camera={{ fov: 35 }} gl={{ antialias: true }} style={{ background: '#000000' }}>
@@ -695,25 +950,32 @@ function ViewCanvas({ viewType, resultUrl, animSpeed, data, bindingRange, deform
         <directionalLight position={[5, 10, 5]} intensity={1.4} />
         <Environment preset="city" />
         <OrbitControls makeDefault />
-        {resultUrl && (
+        <FitContext.Provider value={fitCtx}>
+        {resultUrl ? (
           <Suspense fallback={null}>
             {deformMode === 'SLICE'
               ? viewType === 'dynamic'
-                ? <DynamicSliceView key={resultUrl} url={resultUrl!} data={data} axis={axis} />
+                ? <DynamicSliceView key={resultUrl} url={resultUrl!} data={data} axis={axis} speed={animSpeed} showLabels={showLabels} />
                 : <SliceView key={resultUrl} url={resultUrl!} data={data} axis={axis} showLabels={viewType === 'static'} />
               : viewType === 'static'
                 ? <StaticView key={resultUrl} url={resultUrl!} data={data} range={bindingRange} fx={fx} />
                 : viewType === 'dynamic'
-                  ? <DynamicDeformView key={resultUrl} url={resultUrl!} data={data} fx={fx} />
-                  : <EffectView key={resultUrl} url={resultUrl!} speed={animSpeed} fx={fx} data={data} playData={playData} />}
+                  ? <DynamicDeformView key={resultUrl} url={resultUrl!} data={data} fx={fx} speed={animSpeed} showLabels={showLabels} />
+                  : <EffectView key={resultUrl} url={resultUrl!} speed={animSpeed} fx={fx} data={data} playData={showLabels} />}
           </Suspense>
-        )}
+        ) : baking && modelUrl ? (
+          // Bake in progress — construction animation on the loaded model.
+          <Suspense fallback={null}>
+            <BakingScene key={modelUrl} url={modelUrl} />
+          </Suspense>
+        ) : modelUrl ? (
+          // No bake yet — show the raw model so it's visible before Run.
+          <Suspense fallback={null}>
+            <ModelPreview key={modelUrl} url={modelUrl} />
+          </Suspense>
+        ) : null}
+        </FitContext.Provider>
       </Canvas>
-      {!resultUrl && viewType !== 'dynamic' && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5a5a60', fontSize: 13, pointerEvents: 'none' }}>
-          Bake a shape to begin
-        </div>
-      )}
     </div>
   )
 }
@@ -759,37 +1021,6 @@ function FxToggle({ label, on, onToggle, children }: {
   )
 }
 
-// Side panel showing a preset's reference (dataset title, image, source link).
-function ReferencePanel({ reference, onClose }: { reference: PresetReference; onClose: () => void }) {
-  return (
-    <div style={{
-      position: 'absolute', right: 12, bottom: 12, width: 300, maxHeight: '52%', zIndex: 20,
-      background: 'rgba(255,255,255,0.97)', border: '1px solid var(--lab-border)', borderRadius: 12,
-      boxShadow: '0 12px 40px rgba(0,0,0,0.22)', backdropFilter: 'blur(6px)',
-      display: 'flex', flexDirection: 'column', overflow: 'hidden',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, padding: '14px 14px 10px' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--lab-text)', lineHeight: 1.3 }}>{reference.title}</div>
-        <button onClick={onClose} title="Hide reference"
-          style={{ background: 'none', border: 'none', color: 'var(--lab-text-3)', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>✕</button>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {reference.image && (
-          <img src={refImageSrc(reference.image)} alt={reference.title}
-            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-            style={{ width: '100%', borderRadius: 8, display: 'block', background: 'var(--lab-fill)' }} />
-        )}
-        {reference.link && (
-          <a href={reference.link} target="_blank" rel="noreferrer"
-            style={{ fontSize: 11, color: 'var(--lab-accent)', textDecoration: 'none', wordBreak: 'break-all', lineHeight: 1.5 }}>
-            {reference.link} ↗
-          </a>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function DeformLab({ embedded, initialPresetId, presetHandleRef, presetSlot }: {
@@ -801,6 +1032,7 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
   const [status,    setStatus]    = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [message,   setMessage]   = useState('')
   const [resultUrl, setResultUrl] = useState<string | null>(null)
+  const [modelUrl,  setModelUrl]  = useState<string | null>(null)  // raw selected model, for preview before bake
   const [fileName,  setFileName]  = useState('')
 
   const [deformMode, setDeformMode] = useState<DeformMode>('STRETCH')
@@ -812,6 +1044,7 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
   const [subdivs,    setSubdivs]    = useState(0)
 
   const [data,          setData]        = useState<DataRow[]>(DEFAULT_DATA)
+  const [dataColumns,   setDataColumns] = useState<ColumnMeta[] | undefined>(undefined)  // preset dataset's variables
   const [bindings,     setBindings]     = useState<BindingMap>({})
   const [bindingRange, setBindingRange] = useState<BindingRange>({ outMin: 0, outMax: 1 })
 
@@ -834,15 +1067,21 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
   const [lastShape,      setLastShape]      = useState<Shape | null>(null)
   const [pendingAutoRun, setPendingAutoRun] = useState<Shape | null>(null)
   const [fx,             setFx]             = useState<StressFx>(FX_OFF)  // deformation stress effects
-  const [reference,      setReference]      = useState<PresetReference | null>(null)  // optional preset reference
+  // Reference is derived from the current dataset (not the preset): choosing a
+  // dataset with a reference shows its card, auto-opening when it changes.
+  const reference = useMemo(() => referenceForData(data), [data])
   const [showReference,  setShowReference]  = useState(false)
+  useEffect(() => { setShowReference(!!reference) }, [reference])
   const [effectData,     setEffectData]     = useState(false)  // effect view steps through data labels (preset-only)
 
   const [draggingField,   setDraggingField]   = useState<DataField | null>(null)
   const [dragOverProp,    setDragOverProp]    = useState<string | null>(null)
   const [showAdvanced,    setShowAdvanced]    = useState(false)
 
-  const [view1, setView1] = useState<ViewType>('effect')
+  // Dynamic/Compare view + the Dynamic playback options.
+  const [view,       setView]       = useState<LabView>('dynamic')
+  const [dynMode,    setDynMode]    = useState<DynMode>('smooth')
+  const [showLabels, setShowLabels] = useState(true)
   // const [view2, setView2] = useState<ViewType | null>(null)
 
   const fileRef   = useRef<File | null>(null)
@@ -850,6 +1089,18 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
   const isAngle   = deformMode === 'TWIST'
   const isSlice   = deformMode === 'SLICE'
   const isLoading = status === 'loading'
+  // Map the Dynamic/Compare bar onto the internal view types. Compare = the old
+  // static comparison. Dynamic plays the effect: smooth = continuous morph
+  // (old effect view), transition = stepping through the data categories (old
+  // dynamic view). SLICE has a single animation, so the mode toggle is hidden
+  // and Dynamic always plays it.
+  const view1: ViewType = view === 'compare'
+    ? 'static'
+    : isSlice ? 'dynamic' : (dynMode === 'smooth' ? 'effect' : 'dynamic')
+  // Identity of what's shown — changes on a new model/shape or a view switch (they
+  // have different layouts), but stays constant across re-simulations, so the
+  // camera only re-frames on a real load, not on every Run.
+  const fitKey    = `${modelUrl ?? lastShape ?? ''}|${view1}`
   const dataMin   = Math.min(...data.map(r => r.value))
   const dataMax   = Math.max(...data.map(r => r.value))
 
@@ -868,13 +1119,13 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
       createdAt: new Date().toISOString(),
       // Store the shape identifier so loading can re-run automatically.
       // No blob data — the shape is always re-generatable.
-      data: { shape: lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor, fx, dataRows: data, reference, effectData },
+      data: { shape: lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor, fx, dataRows: data, effectData },
     }
     const next = [save, ...presets]
     setPresets(next); persistDeformPresets(next)
     setSelPresetId(save.id); setSaveName(null)
     return save
-  }, [lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor, fx, data, reference, effectData, presets])
+  }, [lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor, fx, data, effectData, presets])
 
   const loadPreset = useCallback((id: string) => {
     const save = presets.find(p => p.id === id)
@@ -882,16 +1133,23 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
     const d = save.data as Record<string, unknown>
     // Legacy "Stretch - earth" preset (saved before fx / dataset / reference existed)
     // gets seeded with the earth defaults; newer presets restore their saved values.
-    const isEarth = save.name.trim().toLowerCase() === STRESS_PRESET_NAME
-    const savedFx = d.fx as StressFx | undefined
-    setFx(savedFx ?? (isEarth ? FX_EARTH : FX_OFF))
+    const presetName = save.name.trim().toLowerCase()
+    const isEarth = presetName === STRESS_PRESET_NAME
+    const isWhale = presetName.includes(WHALE_PRESET_MATCH)
+    // Merge over FX_OFF so presets saved before newer fx fields still get defaults.
+    const savedFx = d.fx as Partial<StressFx> | undefined
+    const baseFx  = savedFx ? { ...FX_OFF, ...savedFx } : (isEarth ? FX_EARTH : FX_OFF)
+    // The earth preset always shows its cracks, even if it was saved before them.
+    setFx(isEarth ? { ...baseFx, ...FX_EARTH_CRACKS } : baseFx)
     const savedRows = d.dataRows as DataRow[] | undefined
-    if (savedRows)     setData(savedRows)
-    else if (isEarth)  setData(EARTH_DATA)
-    const savedRef = d.reference as PresetReference | undefined
-    const ref = savedRef ?? (isEarth ? EARTH_REFERENCE : null)
-    setReference(ref)
-    setShowReference(!!ref)   // open by default when the preset has a reference
+    // Each preset auto-loads its dataset (pinned, so it updates even if the preset
+    // was saved with older rows). Every dataset carries its own variable labels
+    // shown in the data panel; anything else is the generic dataset.
+    // Setting the dataset drives the reference automatically (derived from data).
+    if (isWhale)        { setData(WHALE_DATA); setDataColumns(WHALE_COLUMNS) }
+    else if (isEarth)   { setData(EARTH_DATA); setDataColumns(EARTH_COLUMNS) }
+    else if (savedRows) { setData(savedRows);  setDataColumns(DATASET_GENERIC.columns) }
+    else                  setDataColumns(DATASET_GENERIC.columns)
     setEffectData((d.effectData as boolean | undefined) ?? isEarth)
     if (d.deformMode)        setDeformMode(d.deformMode as DeformMode)
     if (d.factor != null)    setFactor(d.factor as number)
@@ -900,7 +1158,9 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
     if (d.limitMax != null)  setLimitMax(d.limitMax as number)
     if (d.animSpeed != null) setAnimSpeed(d.animSpeed as number)
     if (d.subdivs != null)   setSubdivs(d.subdivs as number)
-    if (d.bindings)          setBindings(d.bindings as BindingMap)
+    // Whale preset slices proportionally to each country's share, so pin the binding.
+    if (isWhale)             setBindings({ factor: 'percentage' })
+    else if (d.bindings)     setBindings(d.bindings as BindingMap)
     if (d.bindingRange)      setBindingRange(d.bindingRange as BindingRange)
     if (d.cutColor)          setCutColor(d.cutColor as string)
     // Clear old result, then re-run automatically.
@@ -908,6 +1168,7 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
     const shape     = d.shape    as Shape  | null
     const savedFile = d.fileName as string | null | undefined
     if (shape === 'sphere' || shape === 'cube') {
+      setModelUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null })
       setPendingAutoRun(shape)
     } else if (savedFile) {
       // Try to fetch any saved filename from the server's /models static route.
@@ -919,6 +1180,7 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
           const file = new File([blob], savedFile, { type: 'model/gltf-binary' })
           fileRef.current = file
           setFileName(savedFile)
+          setModelUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
           setStatus('idle'); setMessage('')
           setPendingAutoRun('model')
         })
@@ -951,11 +1213,15 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
     if (!file.name.endsWith('.glb') && !file.name.endsWith('.gltf')) return
     fileRef.current = file
     setFileName(file.name)
+    // Blob URL so the raw model can be previewed in the viewport before baking.
+    setModelUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file) })
     setResultUrl(null); setStatus('idle'); setMessage('')
   }, [])
 
   const run = useCallback(async (shape: Shape) => {
     if (shape === 'model' && !fileRef.current) { setMessage('Drop a GLB first'); return }
+    // Built-in shapes have no client-side model to preview/animate.
+    if (shape !== 'model') setModelUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null })
     setStatus('loading'); setMessage('Blender is running…')
     if (resultUrl) URL.revokeObjectURL(resultUrl)
     setResultUrl(null)
@@ -963,17 +1229,17 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
       let res: Response
       if (isSlice) {
         // Build N+1 boundary values; Blender isolates each segment [b[i], b[i+1]]
+        // The data binding drives the cut sizes in every view — the bake happens
+        // once, so gating this on the active view would freeze equal segments in.
         let cutBoundaries: number[]
-        // Effect view always uses equal segments regardless of binding.
-        const applyBinding = view1 !== 'effect'
-        if (applyBinding && bindings.factor === 'percentage') {
+        if (bindings.factor === 'percentage') {
           // Cumulative sum of percentages → each segment width ∝ percentage value.
           // e.g. [35,25,20,15,5] → [0, 0.35, 0.60, 0.80, 0.95, 1.0]
           let cum = 0
           const bds = [0]
           for (const row of data) { cum += row.percentage; bds.push(cum / 100) }
           cutBoundaries = bds
-        } else if (applyBinding && bindings.factor === 'value') {
+        } else if (bindings.factor === 'value') {
           // Each value mapped to a cumulative boundary via outMin/outMax range.
           const perRow = data.map(row => {
             const norm = (row.value - dataMin) / Math.max(dataMax - dataMin, 0.001)
@@ -1018,9 +1284,10 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
       setStatus('error'); setMessage(e instanceof Error ? e.message : 'Unknown error')
     }
   }, [isSlice, deformMode, factor, isAngle, axis, limitMin, limitMax, subdivs, resultUrl,
-      bindings, bindingRange, data, dataMin, dataMax, cutColor, cutFaceMode, cutTextureName, cutTextureTiling, view1])
+      bindings, bindingRange, data, dataMin, dataMax, cutColor, cutFaceMode, cutTextureName, cutTextureTiling])
 
   useEffect(() => () => { if (resultUrl) URL.revokeObjectURL(resultUrl) }, [resultUrl])
+  useEffect(() => () => { if (modelUrl) URL.revokeObjectURL(modelUrl) }, [modelUrl])
 
   // Always keep a ref to the latest `run` so the auto-run effect can call it
   // after state has already been updated by loadPreset (avoids stale closure).
@@ -1085,68 +1352,19 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
                 <ModeBtn key={m} active={deformMode===m} onClick={() => handleModeChange(m)}>{MODE_INFO[m].label}</ModeBtn>
               ))}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>{info.hint}</div>
-
-            {/* Factor — drop target */}
-            <div
-              onDragOver={e => { e.preventDefault(); setDragOverProp('factor') }}
-              onDragLeave={() => setDragOverProp(null)}
-              onDrop={e => handleDrop(e, 'factor')}
-              style={{
-                borderRadius: 8, padding: '10px',
-                border: factorDropping
-                  ? '1px solid var(--lab-accent)'
-                  : factorHighlight ? '1px dashed var(--lab-accent-border)' : '1px solid var(--lab-divider)',
-                background: factorDropping
-                  ? 'var(--lab-accent-soft)'
-                  : factorHighlight ? 'var(--lab-accent-soft)' : 'var(--lab-fill)',
-                transition: 'border-color 0.12s, background 0.12s',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <RowLabel>
-                  {isSlice ? info.factorLabel : `${info.factorLabel}: ${isAngle ? Math.round(factor) + '°' : factor.toFixed(2)}`}
-                </RowLabel>
-                {bindings.factor ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px 2px 10px', borderRadius: 12, fontSize: 10, background: 'var(--lab-accent-soft)', border: '1px solid var(--lab-accent-border)', color: 'var(--lab-accent)' }}>
-                    ⬡ {bindings.factor}
-                    <button onClick={() => removeBinding('factor')} style={{ background: 'none', border: 'none', color: 'var(--lab-text-3)', cursor: 'pointer', padding: '0 0 0 2px', fontSize: 12, lineHeight: 1 }}>×</button>
-                  </span>
-                ) : factorHighlight ? (
-                  <span style={{ fontSize: 9, color: 'var(--lab-text-4)', letterSpacing: 0.5 }}>drop here</span>
-                ) : null}
-              </div>
-              {!isSlice && (
+            {/* Factor. Data binding is handled automatically, so no drop target /
+                binding chip is shown even when a dataset drives the cuts. */}
+            {!isSlice && (
+              <div style={{ borderRadius: 8, padding: '10px', border: '1px solid var(--lab-divider)', background: 'var(--lab-fill)' }}>
+                <div style={{ marginBottom: 8 }}>
+                  <RowLabel>{`${info.factorLabel}: ${isAngle ? Math.round(factor) + '°' : factor.toFixed(2)}`}</RowLabel>
+                </div>
                 <input type="range" min={info.factorMin} max={info.factorMax} step={info.factorStep}
                   value={factor} onChange={e => setFactor(Number(e.target.value))}
                   disabled={!!bindings.factor}
                   style={{ ...sl, opacity: bindings.factor ? 0.28 : 1 }} />
-              )}
-
-              {/* Mapping range fields hidden for now
-              {bindings.factor && bindings.factor !== 'percentage' && (
-                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ fontSize: 9, color: 'var(--lab-text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Mapping</div>
-                  {(['outMin','outMax'] as const).map((key, ki) => (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ color: '#6a6a7a', width: 28, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10 }}>{ki === 0 ? dataMin : dataMax}</span>
-                      <span style={{ color: '#303042', fontSize: 12 }}>→</span>
-                      <input type="number" step={0.01} min={0} max={1}
-                        value={bindingRange[key]}
-                        onChange={e => setBindingRange(prev => ({ ...prev, [key]: Number(e.target.value) }))}
-                        style={numInp} />
-                      <span style={{ fontSize: 10, color: '#3c3c50' }}>{ki === 0 ? 'min' : 'max'}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              */}
-              {bindings.factor === 'percentage' && (
-                <div style={{ marginTop: 8, fontSize: 9, color: '#505068', lineHeight: 1.6 }}>
-                  Slice widths proportional to percentage values
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <RowLabel>Axis</RowLabel>
@@ -1210,11 +1428,7 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
                       style={{ ...sl, flex: 1 }} />
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <RowLabel>Anim speed: {animSpeed.toFixed(1)}×</RowLabel>
-                  <input type="range" min={0.1} max={3} step={0.1} value={animSpeed}
-                    onChange={e => setAnimSpeed(Number(e.target.value))} style={sl} />
-                </div>
+                {/* Animation speed moved to the Dynamic view's playback options. */}
               </>
             )}
           </Sec>
@@ -1222,6 +1436,7 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
           <LabModelSection
             fileName={fileName} onFile={handleFile} onRun={() => run('model')}
             isLoading={isLoading} message={message} status={status} inputId="glb-deform-input"
+            models={MODEL_PRESETS}
           />
 
         </div>
@@ -1233,19 +1448,12 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
           </div>
         )}
 
-        <LabDataPanel
-          data={data} draggingField={draggingField}
-          onDragStart={setDraggingField} onDragEnd={() => setDraggingField(null)}
-          onDataChange={setData}
-        />
+        <LabDataPanel data={data} columnsOverride={dataColumns} onDataChange={setData} />
       </div>
 
       <LabAdvancedPanel open={showAdvanced}>
         <Sec>
           <SLabel>Stress Effects</SLabel>
-          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5, marginBottom: 2 }}>
-            Grow with the deformation amount. Work on any geometry.
-          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <FxToggle label="Tint" on={fx.tint} onToggle={() => setFx(f => ({ ...f, tint: !f.tint }))}>
               <input type="color" value={fx.tintColor}
@@ -1256,6 +1464,22 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
             <FxToggle label="Distortion"    on={fx.distort}    onToggle={() => setFx(f => ({ ...f, distort: !f.distort }))} />
             <FxToggle label="Emissive glow" on={fx.glow}       onToggle={() => setFx(f => ({ ...f, glow: !f.glow }))} />
             <FxToggle label="Cracks"        on={fx.cracks}     onToggle={() => setFx(f => ({ ...f, cracks: !f.cracks }))} />
+            {fx.cracks && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 6, marginTop: -2 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <RowLabel>Density: {fx.crackDensity.toFixed(1)}</RowLabel>
+                  <input type="range" min={1} max={16} step={0.5} value={fx.crackDensity}
+                    onChange={e => setFx(f => ({ ...f, crackDensity: Number(e.target.value) }))}
+                    style={{ width: '100%', accentColor: 'var(--lab-accent)' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <RowLabel>Thickness: {fx.crackWidth.toFixed(2)}</RowLabel>
+                  <input type="range" min={0.02} max={0.35} step={0.01} value={fx.crackWidth}
+                    onChange={e => setFx(f => ({ ...f, crackWidth: Number(e.target.value) }))}
+                    style={{ width: '100%', accentColor: 'var(--lab-accent)' }} />
+                </div>
+              </div>
+            )}
             <FxToggle label="Desaturate"    on={fx.desaturate} onToggle={() => setFx(f => ({ ...f, desaturate: !f.desaturate }))} />
           </div>
         </Sec>
@@ -1266,9 +1490,6 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
             <input type="range" min={0} max={4} step={1} value={subdivs}
               onChange={e => setSubdivs(Number(e.target.value))}
               style={{ width: '100%', accentColor: 'var(--lab-accent)' }} />
-            <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
-              Adds edge loops before deforming. Try 2–3 for smoother curves.
-            </div>
           </div>
         </Sec>
         <Sec>
@@ -1277,9 +1498,6 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
             <button onClick={() => run('sphere')} disabled={isLoading} style={secBtnSt(isLoading)}>Sphere</button>
             <button onClick={() => run('cube')}   disabled={isLoading} style={secBtnSt(isLoading)}>Cube</button>
           </div>
-          <div style={{ fontSize: 9, color: 'var(--lab-text-3)', lineHeight: 1.5 }}>
-            Run the simulation on a built-in shape without uploading a model.
-          </div>
         </Sec>
       </LabAdvancedPanel>
 
@@ -1287,7 +1505,7 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
 
         <div style={{ flex: 1, position: 'relative' }}>
-          <ViewCanvas viewType={view1} resultUrl={resultUrl} animSpeed={animSpeed}
+          <ViewCanvas viewType={view1} resultUrl={resultUrl} modelUrl={modelUrl} baking={isLoading} fitKey={fitKey} animSpeed={animSpeed} showLabels={showLabels}
             data={data} bindingRange={bindingRange} deformMode={deformMode} axis={axis} fx={fx} playData={effectData} />
         </div>
 
@@ -1306,20 +1524,15 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
         />
         */}
 
-        <LabViewToggle view={view1} onChange={setView1} />
+        <LabViewBar view={view} onChange={setView} options={{
+          showLabels, onShowLabels: setShowLabels,
+          speed: animSpeed, onSpeed: setAnimSpeed,
+          // SLICE has one animation → always smooth, no mode toggle.
+          ...(isSlice ? {} : { mode: dynMode, onMode: setDynMode }),
+        }} />
 
         {/* Reference — only offered when the loaded preset carries one. */}
-        {reference && !showReference && (
-          <button onClick={() => setShowReference(true)} title="Show reference"
-            style={{
-              position: 'absolute', top: 12, right: 12, zIndex: 20,
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: 'rgba(255,255,255,0.95)', border: '1px solid var(--lab-border)', borderRadius: 8,
-              color: 'var(--lab-accent)', fontSize: 11, fontFamily: 'inherit', padding: '6px 10px', cursor: 'pointer',
-            }}>
-            ⓘ Reference
-          </button>
-        )}
+        {reference && !showReference && <ReferenceButton onClick={() => setShowReference(true)} />}
         {reference && showReference && (
           <ReferencePanel reference={reference} onClose={() => setShowReference(false)} />
         )}

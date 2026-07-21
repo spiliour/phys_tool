@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import {
   ActiveElement, CompositionLevel,
-  MarkConfig, CollectionConfig, SceneConfig,
+  MarkConfig, CollectionConfig, SceneConfig, BackgroundMode,
   MarkShape, MarkMaterial, HdriPreset, Vec3,
   StructuralDeformation, CollectionArrangement,
   DataBindings, DataVariable, LabelConfig, LabelPosition,
@@ -455,10 +455,11 @@ const MATERIAL_HINTS: Record<MarkMaterial, string> = {
 const MATERIAL_OPTIONS: MarkMaterial[] = ['plastic', 'fluid', 'metal', 'emissive']
 
 const ARRANGEMENT_OPTIONS: { value: CollectionArrangement; label: string }[] = [
-  { value: 'alignment',  label: 'Alignment'  },
-  { value: 'scattering', label: 'Scattering' },
-  { value: 'stacking',   label: 'Stacking'   },
-  { value: 'piling',     label: 'Piling'     },
+  { value: 'alignment',  label: 'Alignment'         },
+  { value: 'scattering', label: 'Scattering'        },
+  { value: 'stacking',   label: 'Stacking'          },
+  { value: 'piling',     label: 'Piling'            },
+  { value: 'surface',    label: 'Surface Placement' },
 ]
 
 const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
@@ -623,7 +624,7 @@ function ShapeDropdown({ config, onChange }: {
 
 function MarkProperties({
   config, onChange, bindings, onBind, labelConfig, onLabelChange,
-  colorMode, colorGradient, onColorGradientChange, openSection,
+  colorMode, colorGradient, onColorGradientChange, colorTint, onColorTintChange, openSection,
   layers, compositionLevel,
 }: {
   config:         MarkConfig
@@ -635,6 +636,8 @@ function MarkProperties({
   colorMode?:              'distinct' | 'continuous'
   colorGradient?:          { from: string; to: string }
   onColorGradientChange?:  (g: { from: string; to: string }) => void
+  colorTint?:              boolean
+  onColorTintChange?:      (b: boolean) => void
   openSection?:            string
   layers:          LayerData[]
   compositionLevel: CompositionLevel
@@ -652,15 +655,25 @@ function MarkProperties({
       <AttributeCategory icon={ICONS.spatial} title="Spatial" open={acc.isOpen('Spatial')} onToggle={() => acc.toggle('Spatial')}>
         <Vec3Input label="Position"    value={config.position}    onChange={(v) => onChange({ ...config, position: v })}    min={-10} max={10}  step={0.1} />
         <Row label="Scale">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input type="range" min={0.1} max={10} step={0.1}
-              value={config.scale ?? 1}
-              onChange={(e) => onChange({ ...config, scale: Number(e.target.value) })}
-              style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
-            <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>
-              {(config.scale ?? 1).toFixed(1)}×
-            </span>
-          </div>
+          {bindings.markScale !== null ? (
+            <BoundChip
+              label={VAR_META[bindings.markScale].label}
+              type="numerical"
+              onClear={() => onBind('markScale', null)}
+            />
+          ) : (
+            <DropZone accepts="numerical" onDrop={(v) => onBind('markScale', v as DataVariable)}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input type="range" min={0.1} max={10} step={0.1}
+                  value={config.scale ?? 1}
+                  onChange={(e) => onChange({ ...config, scale: Number(e.target.value) })}
+                  style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+                <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>
+                  {(config.scale ?? 1).toFixed(1)}×
+                </span>
+              </div>
+            </DropZone>
+          )}
         </Row>
         <Vec3Input
           label="Size"
@@ -755,6 +768,17 @@ function MarkProperties({
                   />
                   <span style={{ fontSize: '11px', color: '#8E8E93' }}>Gradient</span>
                 </div>
+              )}
+              {config.shape === 'custom' && onColorTintChange && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: '12px', color: '#1D1D1F', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={colorTint ?? false}
+                    onChange={(e) => onColorTintChange(e.target.checked)}
+                    style={{ accentColor: '#5E5CE6', width: '14px', height: '14px', cursor: 'pointer' }}
+                  />
+                  <span>Tint model (keep its material)</span>
+                </label>
               )}
             </>
           ) : (
@@ -971,9 +995,35 @@ function CollectionProperties({
 
             {/* Dimensions — drop target for size encoding */}
             {bindings.scatterSize !== null ? (
-              <Row label="Dimensions">
-                <BoundChip label="Number of Instruments" type="numerical" onClear={() => onBind('scatterSize', null)} />
-              </Row>
+              <>
+                <Row label="Dimensions">
+                  <BoundChip label="Number of Instruments" type="numerical" onClear={() => onBind('scatterSize', null)} />
+                </Row>
+                <Row label="Size axes">
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {(['x', 'y', 'z'] as const).map((ax) => {
+                      const axes = config.scatterSizeAxes ?? { x: false, y: true, z: false }
+                      const on = axes[ax]
+                      return (
+                        <button
+                          key={ax}
+                          onClick={() => onChange({ ...config, scatterSizeAxes: { ...axes, [ax]: !on } })}
+                          style={{
+                            flex: 1, padding: '6px 0', borderRadius: '7px',
+                            border: `1px solid ${on ? '#A8CAFF' : '#E5E5EA'}`,
+                            background: on ? '#EBF3FF' : '#F2F2F7',
+                            color: on ? '#007AFF' : '#6C6C70',
+                            fontWeight: on ? '700' : '500', fontSize: '12px',
+                            cursor: 'pointer', fontFamily: 'inherit', textTransform: 'uppercase',
+                          }}
+                        >
+                          {ax}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </Row>
+              </>
             ) : (
               <DropZone accepts="numerical" onDrop={() => onBind('scatterSize', 'numerical')} >
                 <Vec3Input
@@ -1080,6 +1130,58 @@ function CollectionProperties({
           </Row>
         )}
 
+        {/* ── Surface placement controls ── */}
+        {config.arrangement === 'surface' && (
+          <>
+            <Row label="Surface">
+              {decorations && decorations.length > 0 ? (
+                <select
+                  value={config.surfaceTargetId ?? ''}
+                  onChange={e => onChange({ ...config, surfaceTargetId: e.target.value || null })}
+                  style={{ width: '100%', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', color: '#1D1D1F', fontSize: '13px', padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', appearance: 'auto' }}
+                >
+                  <option value="">Select a decoration…</option>
+                  {decorations.map((dec, idx) => (
+                    <option key={dec.id} value={dec.id}>
+                      {dec.name ?? `Decoration ${idx + 1}`} ({dec.shape})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span style={{ fontSize: '11px', color: '#AEAEB2' }}>Add a decoration to use as the surface.</span>
+              )}
+            </Row>
+            <Row label="Mark Count">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input type="range" min={1} max={200} step={1} value={config.surfaceCount ?? 24}
+                  onChange={(e) => onChange({ ...config, surfaceCount: Number(e.target.value) })}
+                  style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+                <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{config.surfaceCount ?? 24}</span>
+              </div>
+            </Row>
+            <Row label="Mark Size">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input type="range" min={0.1} max={4} step={0.1} value={config.surfaceScale ?? 1}
+                  onChange={(e) => onChange({ ...config, surfaceScale: Number(e.target.value) })}
+                  style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+                <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{(config.surfaceScale ?? 1).toFixed(1)}×</span>
+              </div>
+            </Row>
+            {onReseed && (
+              <Row label="Placement">
+                <button
+                  onClick={onReseed}
+                  style={{ padding: '6px 12px', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#1D1D1F', fontFamily: 'inherit' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+                >
+                  Randomise
+                </button>
+              </Row>
+            )}
+          </>
+        )}
+
       </AttributeCategory>
 
       {/* ── Labels (level 1 only) ── */}
@@ -1164,24 +1266,104 @@ function DecorationProperties({
   )
 }
 
+// ── Small scene control helpers ───────────────────────────────────────────────
+
+function LabeledSlider({ label, value, min, max, step, decimals = 0, suffix = '', onChange }: {
+  label: string; value: number; min: number; max: number; step: number
+  decimals?: number; suffix?: string; onChange: (v: number) => void
+}) {
+  return (
+    <Row label={label}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <input type="range" min={min} max={max} step={step} value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
+        <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '38px', textAlign: 'right' }}>
+          {value.toFixed(decimals)}{suffix}
+        </span>
+      </div>
+    </Row>
+  )
+}
+
+function ColorField({ label, value, onChange }: {
+  label: string; value: string; onChange: (v: string) => void
+}) {
+  return (
+    <Row label={label}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <input type="color" value={value} onChange={(e) => onChange(e.target.value)}
+          style={{ width: '36px', height: '30px', border: '1px solid #D1D1D6', borderRadius: '6px', background: 'none', cursor: 'pointer', padding: '2px' }} />
+        <span style={{ fontSize: '12px', color: '#8E8E93', fontFamily: 'monospace' }}>{value}</span>
+      </div>
+    </Row>
+  )
+}
+
+function CheckRow({ label, checked, onChange }: {
+  label: string; checked: boolean; onChange: (v: boolean) => void
+}) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#1D1D1F', cursor: 'pointer', padding: '2px 0' }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
+        style={{ accentColor: '#5E5CE6', width: '14px', height: '14px', cursor: 'pointer' }} />
+      <span>{label}</span>
+    </label>
+  )
+}
+
 // ── Scene properties ──────────────────────────────────────────────────────────
 
 function SceneProperties({
   config, onChange,
 }: { config: SceneConfig; onChange: (c: SceneConfig) => void }) {
   const [framingOpen, setFramingOpen] = useState(true)
+  const [labelOpen,   setLabelOpen]   = useState(false)
+  const titleShow   = config.sceneTitleShow   ?? true
+  const titleOffset = config.sceneTitleOffset ?? 2.5
+  const titleBelow  = config.sceneTitleBelow  ?? false
   return (
     <>
       <PanelHeader title="Scene" />
 
       <AttributeCategory icon={ICONS.framing} title="Framing" open={framingOpen} onToggle={() => setFramingOpen(o => !o)}>
         <Row label="Background">
-          <SegmentedControl
-            options={[{ value: 'dark' as const, label: '■ Dark' }, { value: 'ocean' as const, label: '~ Ocean' }]}
+          <select
             value={config.background}
-            onChange={(v) => onChange({ ...config, background: v })}
-          />
+            onChange={(e) => onChange({ ...config, background: e.target.value as BackgroundMode })}
+            style={{ width: '100%', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', color: '#1D1D1F', fontSize: '13px', padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', appearance: 'auto' }}
+          >
+            <option value="dark">Dark</option>
+            <option value="color">Solid colour</option>
+            <option value="gradient">Gradient</option>
+            <option value="hdri">HDRI</option>
+            <option value="sky">Sky</option>
+            <option value="ocean">Ocean</option>
+          </select>
         </Row>
+
+        {config.background === 'color' && (
+          <ColorField label="Colour" value={config.bgColor ?? '#202024'} onChange={(v) => onChange({ ...config, bgColor: v })} />
+        )}
+        {config.background === 'gradient' && (
+          <>
+            <ColorField label="Top"    value={config.bgGradientTop    ?? '#3a5f8a'} onChange={(v) => onChange({ ...config, bgGradientTop: v })} />
+            <ColorField label="Bottom" value={config.bgGradientBottom ?? '#0a0a12'} onChange={(v) => onChange({ ...config, bgGradientBottom: v })} />
+          </>
+        )}
+        {config.background === 'hdri' && (
+          <>
+            <LabeledSlider label="Blur"       value={config.hdriBlur ?? 0}      min={0} max={1} step={0.02} decimals={2} onChange={(v) => onChange({ ...config, hdriBlur: v })} />
+            <LabeledSlider label="Brightness" value={config.hdriIntensity ?? 1} min={0} max={2} step={0.05} decimals={2} onChange={(v) => onChange({ ...config, hdriIntensity: v })} />
+          </>
+        )}
+        {config.background === 'sky' && (
+          <>
+            <LabeledSlider label="Sun elevation" value={config.skyElevation ?? 20}  min={-5} max={90}  step={1} suffix="°" onChange={(v) => onChange({ ...config, skyElevation: v })} />
+            <LabeledSlider label="Sun azimuth"   value={config.skyAzimuth ?? 140}   min={0}  max={360} step={1} suffix="°" onChange={(v) => onChange({ ...config, skyAzimuth: v })} />
+          </>
+        )}
+
         <Row label="Lighting (HDRI)">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
             {HDRI_OPTIONS.map((opt) => {
@@ -1201,6 +1383,31 @@ function SceneProperties({
             })}
           </div>
         </Row>
+
+        <LabeledSlider
+          label="Exposure"
+          value={config.exposure ?? (config.background === 'ocean' ? 0.95 : config.background === 'dark' ? 1.35 : 1.2)}
+          min={0.2} max={3} step={0.05} decimals={2}
+          onChange={(v) => onChange({ ...config, exposure: v })}
+        />
+        <LabeledSlider label="Env. rotation" value={config.envRotation ?? 0} min={0} max={360} step={1} suffix="°"
+          onChange={(v) => onChange({ ...config, envRotation: v })} />
+
+        <Row label="Atmosphere">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <CheckRow label="Stars" checked={config.stars ?? false} onChange={(v) => onChange({ ...config, stars: v })} />
+            <CheckRow label="Grid"  checked={config.grid ?? false}  onChange={(v) => onChange({ ...config, grid: v })} />
+            <CheckRow label="Fog"   checked={config.fog ?? false}   onChange={(v) => onChange({ ...config, fog: v })} />
+          </div>
+        </Row>
+        {config.fog && (
+          <>
+            <ColorField label="Fog colour" value={config.fogColor ?? '#8090a0'} onChange={(v) => onChange({ ...config, fogColor: v })} />
+            <LabeledSlider label="Fog near" value={config.fogNear ?? 20}  min={0}  max={100} step={1} onChange={(v) => onChange({ ...config, fogNear: v })} />
+            <LabeledSlider label="Fog far"  value={config.fogFar ?? 150}  min={10} max={400} step={5} onChange={(v) => onChange({ ...config, fogFar: v })} />
+          </>
+        )}
+
         <Row label="Camera">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '2px' }}>
             <span style={{ fontSize: '11px', color: '#6C6C70', fontWeight: '500' }}>{config.focalLength}mm</span>
@@ -1212,6 +1419,52 @@ function SceneProperties({
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#AEAEB2', marginTop: '2px' }}>
             <span>14mm wide</span><span>180mm tele</span>
           </div>
+        </Row>
+      </AttributeCategory>
+
+      <AttributeCategory icon={ICONS.labels} title="Label" open={labelOpen} onToggle={() => setLabelOpen(o => !o)}>
+        <Row label="Show title">
+          <SegmentedControl
+            options={[{ value: 'on' as const, label: 'On' }, { value: 'off' as const, label: 'Off' }]}
+            value={titleShow ? 'on' : 'off'}
+            onChange={(v) => onChange({ ...config, sceneTitleShow: v === 'on' })}
+          />
+        </Row>
+        {titleShow && (
+          <>
+            <Row label="Side">
+              <SegmentedControl
+                options={[{ value: 'above' as const, label: '↑ Above' }, { value: 'below' as const, label: '↓ Below' }]}
+                value={titleBelow ? 'below' : 'above'}
+                onChange={(v) => onChange({ ...config, sceneTitleBelow: v === 'below' })}
+              />
+            </Row>
+            <Row label="Distance">
+              <input
+                type="number" min={0} max={15} step={0.1} value={titleOffset}
+                onChange={(e) => onChange({ ...config, sceneTitleOffset: Math.max(0, Number(e.target.value) || 0) })}
+                style={{
+                  width: '100%', background: '#F2F2F7', border: '1px solid #D1D1D6',
+                  borderRadius: '6px', padding: '6px 8px', fontSize: '12px', color: '#1D1D1F',
+                  fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+            </Row>
+          </>
+        )}
+        <Row label="Hide behind objects">
+          <SegmentedControl
+            options={[
+              { value: 'off' as const,       label: 'Off'       },
+              { value: 'full' as const,      label: 'Full'      },
+              { value: 'optimized' as const, label: 'Optimized' },
+            ]}
+            value={config.sceneLabelOcclude ?? 'off'}
+            onChange={(v) => onChange({ ...config, sceneLabelOcclude: v })}
+          />
+          <span style={{ fontSize: '10px', color: '#AEAEB2', marginTop: '4px', display: 'block' }}>
+            Optimized checks only decorations.
+          </span>
         </Row>
       </AttributeCategory>
     </>
@@ -1244,6 +1497,8 @@ interface PropertiesPanelProps {
   colorMode:             'distinct' | 'continuous'
   colorGradient:         { from: string; to: string }
   onColorGradientChange: (g: { from: string; to: string }) => void
+  colorTint:             boolean
+  onColorTintChange:     (b: boolean) => void
   markOpenSection?:      string
   onReseed?:             () => void
 }
@@ -1258,7 +1513,7 @@ export function PropertiesPanel({
   markLabelConfig, onMarkLabelChange,
   colLabelConfig,  onColLabelChange,
   activeDecorationId, decorations, onDecorationChange,
-  colorMode, colorGradient, onColorGradientChange, markOpenSection, onReseed,
+  colorMode, colorGradient, onColorGradientChange, colorTint, onColorTintChange, markOpenSection, onReseed,
 }: PropertiesPanelProps) {
   const activeDec = activeDecorationId !== null
     ? decorations.find((d) => d.id === activeDecorationId) ?? null
@@ -1268,7 +1523,7 @@ export function PropertiesPanel({
     <div style={{
       padding: '18px 14px', color: '#1D1D1F', fontSize: '13px',
       display: 'flex', flexDirection: 'column', gap: '10px',
-      height: '100%', boxSizing: 'border-box', overflowY: 'auto',
+      boxSizing: 'border-box',
     }}>
       {activeDec !== null ? (
         <DecorationProperties config={activeDec} onChange={onDecorationChange} />
@@ -1280,6 +1535,8 @@ export function PropertiesPanel({
           colorMode={colorMode}
           colorGradient={colorGradient}
           onColorGradientChange={onColorGradientChange}
+          colorTint={colorTint}
+          onColorTintChange={onColorTintChange}
           openSection={markOpenSection}
           layers={layers}
           compositionLevel={compositionLevel}
