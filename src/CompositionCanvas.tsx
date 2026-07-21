@@ -406,7 +406,7 @@ function AlignedMarks({
 function CollectionInstance({
   markConfig, collection1Config, color, position,
   layers, bindings, heightOverride,
-  markLabelConfig, colLabelConfig, layerIndex, scatterSeed,
+  markLabelConfig, colLabelConfig, layerIndex, scatterSeed, decorations,
 }: {
   markConfig:        MarkConfig
   collection1Config: CollectionConfig
@@ -419,9 +419,25 @@ function CollectionInstance({
   colLabelConfig:    LabelConfig
   layerIndex:        number
   scatterSeed:       number
+  decorations?:      DecorationConfig[]
 }) {
   const msc = markConfig.scale ?? 1
   const scaledMarkSize = { x: markConfig.size.x * msc, y: markConfig.size.y * msc, z: markConfig.size.z * msc }
+
+  const exclusionZone = useMemo(() => {
+    const decId = collection1Config.scatterExclusionId
+    if (!decId) return undefined
+    const dec = decorations?.find(d => d.id === decId)
+    if (!dec) return undefined
+    return {
+      center: [
+        dec.position.x - position[0],
+        dec.position.y - position[1],
+        dec.position.z - position[2],
+      ] as [number, number, number],
+      radius: Math.sqrt((dec.size.x ** 2 + dec.size.y ** 2 + dec.size.z ** 2) / 4),
+    }
+  }, [collection1Config.scatterExclusionId, decorations, position[0], position[1], position[2]])
 
   if (collection1Config.arrangement === 'alignment') {
     return (
@@ -483,6 +499,7 @@ function CollectionInstance({
       boundingVolume={collection1Config.scatterBoundingVolume ?? 'box'}
       showBounds={collection1Config.scatterShowBounds ?? true}
       orientation={collection1Config.scatterOrientation ?? 'random'}
+      exclusionZone={exclusionZone}
     />
   )
 }
@@ -493,7 +510,7 @@ const WEIGHT_MAX_H = 8
 // ── Level 2: one collection ───────────────────────────────────────────────────
 
 function Level2Content({
-  markConfig, collection1Config, layers, bindings, markLabelConfig, colLabelConfig, scatterSeed,
+  markConfig, collection1Config, layers, bindings, markLabelConfig, colLabelConfig, scatterSeed, decorations,
 }: {
   markConfig:        MarkConfig
   collection1Config: CollectionConfig
@@ -502,6 +519,7 @@ function Level2Content({
   markLabelConfig:   LabelConfig
   colLabelConfig:    LabelConfig
   scatterSeed:       number
+  decorations?:      DecorationConfig[]
 }) {
   const color  = layers[0]?.color ?? collection1Config.color
   const maxPct = Math.max(...layers.map(l => l.percentage), 1)
@@ -522,6 +540,7 @@ function Level2Content({
       colLabelConfig={colLabelConfig}
       layerIndex={0}
       scatterSeed={scatterSeed}
+      decorations={decorations}
     />
   )
 }
@@ -530,7 +549,7 @@ function Level2Content({
 
 function Level3Content({
   markConfig, collection1Config, collection2Config, layers, bindings,
-  markLabelConfig, colLabelConfig, scatterSeed,
+  markLabelConfig, colLabelConfig, scatterSeed, decorations,
 }: {
   markConfig:        MarkConfig
   collection1Config: CollectionConfig
@@ -540,6 +559,7 @@ function Level3Content({
   markLabelConfig:   LabelConfig
   colLabelConfig:    LabelConfig
   scatterSeed:       number
+  decorations?:      DecorationConfig[]
 }) {
   const {
     arrangement, alignCount, alignAxis, alignSpacing, alignAnchor,
@@ -677,6 +697,7 @@ function Level3Content({
             colLabelConfig={colLabelConfig}
             layerIndex={i % Math.max(1, layers.length)}
             scatterSeed={scatterSeed}
+            decorations={decorations}
           />
         )
       })}
@@ -979,6 +1000,7 @@ export function CompositionCanvas({
           markLabelConfig={markLabelConfig}
           colLabelConfig={colLabelConfig}
           scatterSeed={scatterSeed}
+          decorations={decorations}
         />
       )}
       {level === 3 && (
@@ -991,6 +1013,7 @@ export function CompositionCanvas({
           markLabelConfig={markLabelConfig}
           colLabelConfig={colLabelConfig}
           scatterSeed={scatterSeed}
+          decorations={decorations}
         />
       )}
 

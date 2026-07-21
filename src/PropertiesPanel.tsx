@@ -793,6 +793,7 @@ function MarkProperties({
 
 function CollectionProperties({
   config, onChange, collectionLevel, bindings, onBind, labelConfig, onLabelChange, onReseed,
+  decorations,
 }: {
   config:          CollectionConfig
   onChange:        (c: CollectionConfig) => void
@@ -802,6 +803,7 @@ function CollectionProperties({
   labelConfig?:    LabelConfig
   onLabelChange?:  (c: LabelConfig) => void
   onReseed?:       () => void
+  decorations?:    DecorationConfig[]
 }) {
   const isL2 = collectionLevel === 2
   const acc = useAccordion('Groups & Populations')
@@ -1014,6 +1016,24 @@ function CollectionProperties({
                 <span style={{ fontSize: '11px', color: '#6C6C70' }}>Visible</span>
               </label>
             </Row>
+
+            {/* Exclusion zone */}
+            {decorations && decorations.length > 0 && (
+              <Row label="Exclusion Zone">
+                <select
+                  value={config.scatterExclusionId ?? ''}
+                  onChange={e => onChange({ ...config, scatterExclusionId: e.target.value || null })}
+                  style={{ width: '100%', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', color: '#1D1D1F', fontSize: '13px', padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', appearance: 'auto' }}
+                >
+                  <option value="">None</option>
+                  {decorations.map((dec, idx) => (
+                    <option key={dec.id} value={dec.id}>
+                      Decoration {idx + 1} ({dec.shape})
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            )}
 
             {/* Reseed */}
             {onReseed && (
@@ -1259,12 +1279,14 @@ export function PropertiesPanel({
           collectionLevel={1} bindings={bindings} onBind={onBind}
           labelConfig={colLabelConfig} onLabelChange={onColLabelChange}
           onReseed={onReseed}
+          decorations={decorations}
         />
       ) : activeElement === 'collection2' ? (
         <CollectionProperties
           config={collection2Config} onChange={onCollection2Change}
           collectionLevel={2} bindings={bindings} onBind={onBind}
           onReseed={onReseed}
+          decorations={decorations}
         />
       ) : activeElement === 'scene' ? (
         <SceneProperties config={sceneConfig} onChange={onSceneChange} />

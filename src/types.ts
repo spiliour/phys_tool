@@ -70,6 +70,7 @@ export interface CollectionConfig {
   scatterBoundingVolume?: 'box' | 'sphere'
   scatterShowBounds?:    boolean
   scatterOrientation?:   'random' | 'static'
+  scatterExclusionId?:   string | null
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
 }

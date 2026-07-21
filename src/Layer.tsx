@@ -31,6 +31,7 @@ interface LayerProps {
   boundingVolume?:      'box' | 'sphere'
   showBounds?:          boolean
   orientation?:         'random' | 'static'
+  exclusionZone?:       { center: [number, number, number]; radius: number }
 }
 
 const DEFAULT_SIZE: Vec3 = { x: 1, y: 1, z: 1 }
@@ -71,6 +72,23 @@ function sampleScatterPos(hw: number, hh: number, hd: number, vol: 'box' | 'sphe
   return [(Math.random() - 0.5) * 2 * hw, (Math.random() - 0.5) * 2 * hh, (Math.random() - 0.5) * 2 * hd]
 }
 
+function sampleWithExclusion(
+  hw: number, hh: number, hd: number,
+  vol: 'box' | 'sphere',
+  exclusionZone?: { center: [number, number, number]; radius: number },
+): [number, number, number] {
+  let pos = sampleScatterPos(hw, hh, hd, vol)
+  if (!exclusionZone) return pos
+  const { center, radius } = exclusionZone
+  const r2 = radius * radius
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const dx = pos[0] - center[0], dy = pos[1] - center[1], dz = pos[2] - center[2]
+    if (dx * dx + dy * dy + dz * dz >= r2) break
+    pos = sampleScatterPos(hw, hh, hd, vol)
+  }
+  return pos
+}
+
 function fillInstanceMatrices(
   mesh: THREE.InstancedMesh,
   count: number,
@@ -78,13 +96,14 @@ function fillInstanceMatrices(
   size: Vec3,
   vol: 'box' | 'sphere' = 'box',
   orient: 'random' | 'static' = 'random',
+  exclusionZone?: { center: [number, number, number]; radius: number },
 ) {
   const dummy = new THREE.Object3D()
   const hw = width  * 0.40
   const hh = height * 0.40
   const hd = depth  * 0.40
   for (let i = 0; i < count; i++) {
-    dummy.position.set(...sampleScatterPos(hw, hh, hd, vol))
+    dummy.position.set(...sampleWithExclusion(hw, hh, hd, vol, exclusionZone))
     if (orient === 'random') {
       dummy.rotation.set(
         Math.random() * Math.PI * 2,
@@ -107,6 +126,7 @@ function fillInstanceMatrices(
 
 function ScatteredGLBInstances({
   url, count, width, height, depth, markSize, markMaterial, color, seed, boundingVolume, orientation,
+  exclusionZone,
 }: {
   url:             string
   count:           number
@@ -119,6 +139,7 @@ function ScatteredGLBInstances({
   seed:            number
   boundingVolume:  'box' | 'sphere'
   orientation:     'random' | 'static'
+  exclusionZone?:  { center: [number, number, number]; radius: number }
 }) {
   const { scene: gltfScene } = useGLTF(url)
 
@@ -145,12 +166,12 @@ function ScatteredGLBInstances({
     const hh = height * 0.40
     const hd = depth * 0.40
     return Array.from({ length: count }, () => ({
-      position: sampleScatterPos(hw, hh, hd, boundingVolume),
+      position: sampleWithExclusion(hw, hh, hd, boundingVolume, exclusionZone),
       rotation: orientation === 'random'
         ? [Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2] as [number, number, number]
         : [0, 0, 0] as [number, number, number],
     }))
-  }, [count, width, height, depth, seed, boundingVolume, orientation])
+  }, [count, width, height, depth, seed, boundingVolume, orientation, exclusionZone])
 
   // Clone scene once per instance
   const clones = useMemo(
@@ -219,7 +240,7 @@ export function Layer({
   markSize = DEFAULT_SIZE, structural = DEFAULT_STRUCTURAL,
   customModelUrl,
   labelShow, labelData, seed = 0, boundingVolume = 'box',
-  showBounds = true, orientation = 'random',
+  showBounds = true, orientation = 'random', exclusionZone,
 }: LayerProps) {
   const instanceRef = useRef<THREE.InstancedMesh>(null)
 
@@ -242,8 +263,8 @@ export function Layer({
   useEffect(() => {
     const mesh = instanceRef.current
     if (!mesh) return
-    fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize, boundingVolume, orientation)
-  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed, boundingVolume, orientation])
+    fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize, boundingVolume, orientation, exclusionZone)
+  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed, boundingVolume, orientation, exclusionZone])
 
   useEffect(() => () => { geo.dispose() },      [geo])
   useEffect(() => () => { edgesGeo.dispose() }, [edgesGeo])
@@ -268,6 +289,7 @@ export function Layer({
             seed={seed}
             boundingVolume={boundingVolume}
             orientation={orientation}
+            exclusionZone={exclusionZone}
           />
         </Suspense>
       ) : (
