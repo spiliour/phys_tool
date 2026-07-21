@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { type SceneSave } from './SaveLoadModal'
+import BUNDLED_LAB_PRESETS from './lab-presets.json'
 
 // ── Server fetch (adds ngrok bypass header) ───────────────────────────────────
 
@@ -64,8 +65,22 @@ export const LAB_LABELS: Record<LabId, string> = {
 
 export interface GlobalPreset { lab: LabId; id: string; name: string; createdAt: string }
 
+const LAB_DEFAULTS = BUNDLED_LAB_PRESETS as unknown as Record<LabId, SceneSave[]>
+
+/** Bundled default presets that ship with the app for a given lab. */
+export function bundledLabPresets(lab: LabId): SceneSave[] {
+  return LAB_DEFAULTS[lab] ?? []
+}
+
+// Presets = the user's own (localStorage) plus bundled defaults that ship with
+// the app. A localStorage preset with the same id overrides its bundled twin,
+// so exported defaults don't duplicate on the browser they came from.
 export function readLabPresets(lab: LabId): SceneSave[] {
-  try { return JSON.parse(localStorage.getItem(LAB_PRESET_KEYS[lab]) ?? '[]') } catch { return [] }
+  let stored: SceneSave[] = []
+  try { stored = JSON.parse(localStorage.getItem(LAB_PRESET_KEYS[lab]) ?? '[]') } catch { stored = [] }
+  const bundled = LAB_DEFAULTS[lab] ?? []
+  const ids = new Set(stored.map(p => p.id))
+  return [...stored, ...bundled.filter(p => !ids.has(p.id))]
 }
 
 /** Every preset across every lab, tagged with which lab it belongs to. */
@@ -75,6 +90,26 @@ export function readAllPresets(): GlobalPreset[] {
     readLabPresets(lab).forEach(p => out.push({ lab, id: p.id, name: p.name, createdAt: p.createdAt }))
   })
   return out
+}
+
+/** Download every lab's saved presets as one JSON ({ deform: [...], fluid: [...], … }).
+ * Used to capture localStorage presets so they can be bundled with the app. */
+export function exportAllLabPresets(): number {
+  const bundle: Record<string, SceneSave[]> = {}
+  let total = 0
+  ;(Object.keys(LAB_PRESET_KEYS) as LabId[]).forEach(lab => {
+    const items = readLabPresets(lab)
+    bundle[lab] = items
+    total += items.length
+  })
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url
+  a.download = 'lab-presets.json'
+  a.click()
+  URL.revokeObjectURL(url)
+  return total
 }
 
 /**

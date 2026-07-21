@@ -14,7 +14,7 @@ import {
   LabNavTitle, LabPresetRow, LabModelSection, LabDataPanel,
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewBar,
   type LabView, type DynMode,
-  serverFetch,
+  serverFetch, bundledLabPresets,
 } from './LabShared'
 import { MODEL_PRESETS } from './models'
 
@@ -1128,7 +1128,7 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
   }, [lastShape, fileName, deformMode, factor, axis, limitMin, limitMax, animSpeed, subdivs, bindings, bindingRange, cutColor, fx, data, effectData, presets])
 
   const loadPreset = useCallback((id: string) => {
-    const save = presets.find(p => p.id === id)
+    const save = presets.find(p => p.id === id) ?? bundledLabPresets('deform').find(p => p.id === id)
     if (!save) return
     const d = save.data as Record<string, unknown>
     // Legacy "Stretch - earth" preset (saved before fx / dataset / reference existed)

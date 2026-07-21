@@ -9,7 +9,7 @@ import {
   LabNavTitle, LabPresetRow, LabDataPanel,
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewBar,
   type LabView,
-  serverFetch,
+  serverFetch, bundledLabPresets,
 } from './LabShared'
 import { MODEL_PRESETS } from './models'
 
@@ -369,7 +369,7 @@ export default function FluidLab({ embedded, initialPresetId, presetHandleRef, p
   }, [viscosity, resolution, frameEnd, speed, presets])
 
   const loadPreset = useCallback((id: string) => {
-    const p = presets.find(x => x.id === id); if (!p) return
+    const p = presets.find(x => x.id === id) ?? bundledLabPresets('fluid').find(x => x.id === id); if (!p) return
     const d = p.data as Record<string, unknown>
     if (d.viscosity)     setViscosity(d.viscosity as Viscosity)
     if (d.resolution != null) setResolution(d.resolution as number)

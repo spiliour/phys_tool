@@ -5,7 +5,7 @@ import ParticleLab  from './ParticleLab'
 import FluidLab     from './FluidLab'
 import {
   type LabId, type GlobalPreset, type LabPresetHandle,
-  LAB_LABELS, readAllPresets,
+  LAB_LABELS, readAllPresets, exportAllLabPresets,
 } from './LabShared'
 
 type Probe = LabId
@@ -128,6 +128,10 @@ function GlobalPresetRow({
         <button onClick={onDelete} title="Delete preset"
           style={{ background: 'none', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-danger)', fontSize: 12, padding: '4px 7px', fontFamily: 'inherit' }}>×</button>
       )}
+      <button
+        onClick={() => { const n = exportAllLabPresets(); if (n === 0) alert('No lab presets saved in this browser yet.') }}
+        title="Export all saved lab presets as JSON"
+        style={{ background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-text-3)', fontSize: 12, padding: '4px 7px', fontFamily: 'inherit' }}>⭳</button>
       <button onClick={() => setSaveName(defaultSaveName)}
         style={{ background: 'var(--lab-surface)', border: '1px solid var(--lab-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--lab-accent)', fontSize: 10, padding: '5px 9px', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Save</button>
     </div>

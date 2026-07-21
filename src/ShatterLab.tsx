@@ -15,7 +15,7 @@ import {
   ReferencePanel, ReferenceButton, referenceForData,
   type LabView,
   DATASET_BANK, DATASET_GENERIC, DATASETS,
-  serverFetch,
+  serverFetch, bundledLabPresets,
 } from './LabShared'
 import { MODEL_PRESETS } from './models'
 
@@ -528,7 +528,7 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
   }, [fileName, cutSpread, fractureMethod, cutStrategy, voxelDiv, adaptivity, impulse, anim, data, compareUrls, bakedRows, bakedUnit, presets])
 
   const loadPreset = useCallback((id: string) => {
-    const p = presets.find(x => x.id === id); if (!p) return
+    const p = presets.find(x => x.id === id) ?? bundledLabPresets('shatter').find(x => x.id === id); if (!p) return
     const d = p.data as Record<string, unknown>
     const isBank    = BANK_PRESET_MATCH.test(p.name.toLowerCase())
     const savedRows = d.dataRows as DataRow[] | undefined

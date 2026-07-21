@@ -16,7 +16,7 @@ import {
   DEFAULT_DATA, Sec, SLabel, RowLabel, secBtnSt,
   LabNavTitle, LabPresetRow, LabDataPanel,
   LabAdvancedToggle, LabAdvancedPanel, LabViewSelector, LabViewBar,
-  type LabView,
+  type LabView, bundledLabPresets,
 } from './LabShared'
 import { MODEL_PRESETS } from './models'
 
@@ -1128,7 +1128,7 @@ export default function ParticleLab({ embedded, initialPresetId, presetHandleRef
   }, [shape, fileName, count, size, forces, render, data, cloudModelUrl, cloudModelName, cloudSize, cloudSpread, cloudLow, cloudHigh, cloudCycle, presets])
 
   const loadPreset = useCallback((id: string) => {
-    const p = presets.find(x => x.id === id); if (!p) return
+    const p = presets.find(x => x.id === id) ?? bundledLabPresets('particles').find(x => x.id === id); if (!p) return
     const d = p.data as Record<string, unknown>
     if (d.shape) setShape(d.shape as ParticleShape)
     if (d.count  != null) setCount(d.count as number)
