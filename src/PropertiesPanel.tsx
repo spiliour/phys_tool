@@ -948,15 +948,34 @@ function CollectionProperties({
               </Row>
             )}
 
-            {/* Box Dimensions — drop target for Weight */}
-            {bindings.scatterSize === 'weight' ? (
-              <Row label="Box Dimensions">
-                <BoundChip label="Weight" type="numerical" onClear={() => onBind('scatterSize', null)} />
+            {/* Volume Shape */}
+            <Row label="Volume">
+              <div style={{ display: 'flex', width: '100%' }}>
+                {(['box', 'sphere'] as const).map((v, idx) => (
+                  <button key={v} onClick={() => onChange({ ...config, scatterBoundingVolume: v })}
+                    style={{
+                      flex: 1, padding: '5px 0',
+                      background: (config.scatterBoundingVolume ?? 'box') === v ? '#5E5CE6' : '#F2F2F7',
+                      color:      (config.scatterBoundingVolume ?? 'box') === v ? '#fff'    : '#6C6C70',
+                      border: '1px solid', borderColor: (config.scatterBoundingVolume ?? 'box') === v ? '#5E5CE6' : '#E5E5EA',
+                      borderRadius: idx === 0 ? '6px 0 0 6px' : '0 6px 6px 0',
+                      cursor: 'pointer', fontFamily: 'inherit', fontSize: '11px', fontWeight: '600',
+                    }}>
+                    {v === 'box' ? '□ Box' : '○ Sphere'}
+                  </button>
+                ))}
+              </div>
+            </Row>
+
+            {/* Dimensions — drop target for size encoding */}
+            {bindings.scatterSize !== null ? (
+              <Row label="Dimensions">
+                <BoundChip label="Number of Instruments" type="numerical" onClear={() => onBind('scatterSize', null)} />
               </Row>
             ) : (
-              <DropZone accepts="numerical" onDrop={() => onBind('scatterSize', 'weight')} >
+              <DropZone accepts="numerical" onDrop={() => onBind('scatterSize', 'numerical')} >
                 <Vec3Input
-                  label="Box Dimensions"
+                  label="Dimensions"
                   value={config.scatterDimensions}
                   onChange={(v) => onChange({ ...config, scatterDimensions: v })}
                   min={0.5} max={20} step={0.5}

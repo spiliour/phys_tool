@@ -14,20 +14,21 @@ export interface LayerLabelData {
 }
 
 interface LayerProps {
-  width:           number
-  depth:           number
-  height:          number
-  color:           string
-  position:        [number, number, number]
-  particleCount:   number
-  markShape:       MarkShape
-  markMaterial:    MarkMaterial
-  markSize?:       Vec3
-  structural?:     StructuralConfig
-  customModelUrl?: string
-  labelShow:       boolean
-  labelData:       LayerLabelData
-  seed?:           number
+  width:                number
+  depth:                number
+  height:               number
+  color:                string
+  position:             [number, number, number]
+  particleCount:        number
+  markShape:            MarkShape
+  markMaterial:         MarkMaterial
+  markSize?:            Vec3
+  structural?:          StructuralConfig
+  customModelUrl?:      string
+  labelShow:            boolean
+  labelData:            LayerLabelData
+  seed?:                number
+  boundingVolume?:      'box' | 'sphere'
 }
 
 const DEFAULT_SIZE: Vec3 = { x: 1, y: 1, z: 1 }
@@ -57,22 +58,30 @@ function buildMaterial(material: MarkMaterial, color: string): THREE.Material {
 
 const SCATTER_SCALE = 5  // scatter particles are 5× larger than the base mark size
 
+function sampleScatterPos(hw: number, hh: number, hd: number, vol: 'box' | 'sphere'): [number, number, number] {
+  if (vol === 'sphere') {
+    const r     = (hw + hh + hd) / 3
+    const phi   = Math.acos(2 * Math.random() - 1)
+    const theta = 2 * Math.PI * Math.random()
+    const rs    = r * Math.cbrt(Math.random())
+    return [rs * Math.sin(phi) * Math.cos(theta), rs * Math.sin(phi) * Math.sin(theta), rs * Math.cos(phi)]
+  }
+  return [(Math.random() - 0.5) * 2 * hw, (Math.random() - 0.5) * 2 * hh, (Math.random() - 0.5) * 2 * hd]
+}
+
 function fillInstanceMatrices(
   mesh: THREE.InstancedMesh,
   count: number,
   width: number, height: number, depth: number,
   size: Vec3,
+  vol: 'box' | 'sphere' = 'box',
 ) {
   const dummy = new THREE.Object3D()
   const hw = width  * 0.40
   const hh = height * 0.40
   const hd = depth  * 0.40
   for (let i = 0; i < count; i++) {
-    dummy.position.set(
-      (Math.random() - 0.5) * 2 * hw,
-      (Math.random() - 0.5) * 2 * hh,
-      (Math.random() - 0.5) * 2 * hd,
-    )
+    dummy.position.set(...sampleScatterPos(hw, hh, hd, vol))
     dummy.rotation.set(
       Math.random() * Math.PI * 2,
       Math.random() * Math.PI * 2,
@@ -90,17 +99,18 @@ function fillInstanceMatrices(
 // instance and override materials imperatively.
 
 function ScatteredGLBInstances({
-  url, count, width, height, depth, markSize, markMaterial, color, seed,
+  url, count, width, height, depth, markSize, markMaterial, color, seed, boundingVolume,
 }: {
-  url:          string
-  count:        number
-  width:        number
-  height:       number
-  depth:        number
-  markSize:     Vec3
-  markMaterial: MarkMaterial
-  color:        string
-  seed:         number
+  url:             string
+  count:           number
+  width:           number
+  height:          number
+  depth:           number
+  markSize:        Vec3
+  markMaterial:    MarkMaterial
+  color:           string
+  seed:            number
+  boundingVolume:  'box' | 'sphere'
 }) {
   const { scene: gltfScene } = useGLTF(url)
 
@@ -127,18 +137,14 @@ function ScatteredGLBInstances({
     const hh = height * 0.40
     const hd = depth * 0.40
     return Array.from({ length: count }, () => ({
-      position: [
-        (Math.random() - 0.5) * 2 * hw,
-        (Math.random() - 0.5) * 2 * hh,
-        (Math.random() - 0.5) * 2 * hd,
-      ] as [number, number, number],
+      position: sampleScatterPos(hw, hh, hd, boundingVolume),
       rotation: [
         Math.random() * Math.PI * 2,
         Math.random() * Math.PI * 2,
         Math.random() * Math.PI * 2,
       ] as [number, number, number],
     }))
-  }, [count, width, height, depth, seed])
+  }, [count, width, height, depth, seed, boundingVolume])
 
   // Clone scene once per instance
   const clones = useMemo(
@@ -206,24 +212,31 @@ export function Layer({
   particleCount, markShape, markMaterial,
   markSize = DEFAULT_SIZE, structural = DEFAULT_STRUCTURAL,
   customModelUrl,
-  labelShow, labelData, seed = 0,
+  labelShow, labelData, seed = 0, boundingVolume = 'box',
 }: LayerProps) {
   const instanceRef = useRef<THREE.InstancedMesh>(null)
 
   const geo = useMemo(() => makeMarkGeometry(markShape), [markShape])
 
   const edgesGeo = useMemo(() => {
+    if (boundingVolume === 'sphere') {
+      const r      = (width * 0.40 + height * 0.40 + depth * 0.40) / 3
+      const sphere = new THREE.SphereGeometry(r, 12, 8)
+      const wire   = new THREE.EdgesGeometry(sphere)
+      sphere.dispose()
+      return wire
+    }
     const box   = new THREE.BoxGeometry(width, height, depth)
     const edges = new THREE.EdgesGeometry(box)
     box.dispose()
     return edges
-  }, [width, height, depth])
+  }, [width, height, depth, boundingVolume])
 
   useEffect(() => {
     const mesh = instanceRef.current
     if (!mesh) return
-    fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize)
-  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed])
+    fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize, boundingVolume)
+  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed, boundingVolume])
 
   useEffect(() => () => { geo.dispose() },      [geo])
   useEffect(() => () => { edgesGeo.dispose() }, [edgesGeo])
@@ -246,6 +259,7 @@ export function Layer({
             markMaterial={markMaterial}
             color={color}
             seed={seed}
+            boundingVolume={boundingVolume}
           />
         </Suspense>
       ) : (

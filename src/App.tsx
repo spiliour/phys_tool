@@ -21,9 +21,9 @@ const BINDING_LABELS: Record<keyof DataBindings, string> = {
   scatterCount: 'Scatter - Count',
   c1AlignCount: 'Count',
   c2AlignCount: 'Count',
-  markSizeX:    'Size X',
-  markSizeY:    'Size Y',
-  markSizeZ:    'Size Z',
+  markSizeX:    'Width',
+  markSizeY:    'Height',
+  markSizeZ:    'Depth',
 }
 
 const BINDING_LEVEL: Record<keyof DataBindings, string> = {
@@ -40,7 +40,7 @@ const BINDING_LEVEL: Record<keyof DataBindings, string> = {
 
 const DATASET_VAR_LABELS: Record<string, { numerical: string; categorical: string }> = {
   garbageInOcean: { numerical: 'Weight',  categorical: 'Garbage Type' },
-  mahler:         { numerical: 'Count',   categorical: 'Section'      },
+  mahler:         { numerical: 'Number of Instruments', categorical: 'Orchestra Section' },
 }
 
 const DATASET_TITLES: Record<string, string> = {

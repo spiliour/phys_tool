@@ -29,8 +29,8 @@ const DATASETS: Record<string, {
   },
   mahler: {
     label:          "Mahler's Symphony No. 8 Orchestra",
-    categoricalCol: 'Section',
-    numericalCol:   'Count',
+    categoricalCol: 'Orchestra Section',
+    numericalCol:   'Number of Instruments',
     layers: [
       { id: '1', name: 'Strings',      percentage: 80, color: '#C8A882' },
       { id: '2', name: 'Brass',        percentage: 28, color: '#D4A017' },

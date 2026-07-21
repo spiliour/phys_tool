@@ -131,9 +131,9 @@ export function RadialBindMenu({
     // ── Mark ──
     { action: 'bind',  bindKey: 'markColor',    label: 'Color',    icon: '●',  section: 'mark',       varTypes: ['numerical', 'categorical'] },
     { action: 'bind',  bindKey: 'markGeometry', label: 'Geometry', icon: '◆',  section: 'mark',       varTypes: ['categorical'] },
-    { action: 'bind',  bindKey: 'markSizeX',    label: 'X',        icon: '↔',  section: 'mark',       varTypes: ['numerical'] },
-    { action: 'bind',  bindKey: 'markSizeY',    label: 'Y',        icon: '↕',  section: 'mark',       varTypes: ['numerical'] },
-    { action: 'bind',  bindKey: 'markSizeZ',    label: 'Z',        icon: '⊙',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'bind',  bindKey: 'markSizeX',    label: 'Width',    icon: '↔',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'bind',  bindKey: 'markSizeY',    label: 'Height',   icon: '↕',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'bind',  bindKey: 'markSizeZ',    label: 'Depth',    icon: '⊙',  section: 'mark',       varTypes: ['numerical'] },
     { action: 'label',                           label: 'Label',    icon: 'Aa', section: 'mark',       varTypes: ['numerical', 'categorical'], excludeArrangements: ['scattering'] },
     // ── Collection ──
     { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter - Size',  icon: '⊞', section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },

@@ -62,11 +62,12 @@ export interface CollectionConfig {
   alignAxis:         'X' | 'Y'
   alignSpacing:      number    // center-to-center gap (world units)
   alignAnchor:       'start' | 'center' | 'end'  // edge alignment: start=top/left, end=bottom/right
-  // Scattering — marks randomly distributed in a box
-  scatterMode:       'count' | 'density'  // count: fixed number; density: particles per unit³
-  scatterCount:      number    // mark count (used when scatterMode === 'count')
-  scatterDimensions: Vec3      // bounding box
-  scatterDensity:    number    // particles per unit³ (used when scatterMode === 'density')
+  // Scattering — marks randomly distributed in a volume
+  scatterMode:           'count' | 'density'  // count: fixed number; density: particles per unit³
+  scatterCount:          number    // mark count (used when scatterMode === 'count')
+  scatterDimensions:     Vec3      // bounding box / sphere dimensions
+  scatterDensity:        number    // particles per unit³ (used when scatterMode === 'density')
+  scatterBoundingVolume?: 'box' | 'sphere'
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
 }

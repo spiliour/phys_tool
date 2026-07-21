@@ -480,6 +480,7 @@ function CollectionInstance({
       labelShow={colLabelConfig.show}
       labelData={labelData}
       seed={scatterSeed}
+      boundingVolume={collection1Config.scatterBoundingVolume ?? 'box'}
     />
   )
 }
