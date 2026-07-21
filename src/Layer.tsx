@@ -32,6 +32,7 @@ interface LayerProps {
   showBounds?:          boolean
   orientation?:         'random' | 'static'
   exclusionZone?:       { center: [number, number, number]; radius: number }
+  evenDistribution?:    boolean
 }
 
 const DEFAULT_SIZE: Vec3 = { x: 1, y: 1, z: 1 }
@@ -89,6 +90,66 @@ function sampleWithExclusion(
   return pos
 }
 
+// ── Jittered-grid: evenly spread count points with random offset per cell ─────
+
+function jitteredPositions(
+  count: number,
+  hw: number, hh: number, hd: number,
+  vol: 'box' | 'sphere',
+): [number, number, number][] {
+  const cbrtGeom = Math.cbrt(hw * hh * hd)
+  const N        = Math.ceil(Math.cbrt(count * 2))
+  const nx = Math.max(1, Math.round(N * hw / cbrtGeom))
+  const ny = Math.max(1, Math.round(N * hh / cbrtGeom))
+  const nz = Math.max(1, Math.round(N * hd / cbrtGeom))
+  const cellW = (2 * hw) / nx
+  const cellH = (2 * hh) / ny
+  const cellD = (2 * hd) / nz
+  const r = (hw + hh + hd) / 3
+  const r2 = r * r
+
+  const valid: number[] = []
+  for (let iz = 0; iz < nz; iz++) {
+    for (let iy = 0; iy < ny; iy++) {
+      for (let ix = 0; ix < nx; ix++) {
+        if (vol === 'sphere') {
+          const cx = -hw + (ix + 0.5) * cellW
+          const cy = -hh + (iy + 0.5) * cellH
+          const cz = -hd + (iz + 0.5) * cellD
+          if (cx * cx + cy * cy + cz * cz > r2) continue
+        }
+        valid.push(ix + iy * nx + iz * nx * ny)
+      }
+    }
+  }
+
+  // Fisher-Yates shuffle
+  for (let i = valid.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[valid[i], valid[j]] = [valid[j], valid[i]]
+  }
+
+  const out: [number, number, number][] = []
+  for (let i = 0; i < count; i++) {
+    const cell = valid[i % Math.max(1, valid.length)]
+    const ix = cell % nx
+    const iy = Math.floor(cell / nx) % ny
+    const iz = Math.floor(cell / (nx * ny))
+    const cx = -hw + (ix + 0.5) * cellW
+    const cy = -hh + (iy + 0.5) * cellH
+    const cz = -hd + (iz + 0.5) * cellD
+    let px = Math.max(-hw, Math.min(hw, cx + (Math.random() - 0.5) * cellW * 0.7))
+    let py = Math.max(-hh, Math.min(hh, cy + (Math.random() - 0.5) * cellH * 0.7))
+    let pz = Math.max(-hd, Math.min(hd, cz + (Math.random() - 0.5) * cellD * 0.7))
+    if (vol === 'sphere') {
+      const d = Math.sqrt(px * px + py * py + pz * pz)
+      if (d > r) { px = px * r / d * 0.97; py = py * r / d * 0.97; pz = pz * r / d * 0.97 }
+    }
+    out.push([px, py, pz])
+  }
+  return out
+}
+
 function fillInstanceMatrices(
   mesh: THREE.InstancedMesh,
   count: number,
@@ -97,13 +158,27 @@ function fillInstanceMatrices(
   vol: 'box' | 'sphere' = 'box',
   orient: 'random' | 'static' = 'random',
   exclusionZone?: { center: [number, number, number]; radius: number },
+  even = false,
 ) {
   const dummy = new THREE.Object3D()
   const hw = width  * 0.40
   const hh = height * 0.40
   const hd = depth  * 0.40
+  const evenPos = even ? jitteredPositions(count, hw, hh, hd, vol) : null
   for (let i = 0; i < count; i++) {
-    dummy.position.set(...sampleWithExclusion(hw, hh, hd, vol, exclusionZone))
+    let pos: [number, number, number]
+    if (evenPos) {
+      pos = evenPos[i]
+      if (exclusionZone) {
+        const { center, radius } = exclusionZone
+        const r2 = radius * radius
+        const dx = pos[0] - center[0], dy = pos[1] - center[1], dz = pos[2] - center[2]
+        if (dx * dx + dy * dy + dz * dz < r2) pos = sampleWithExclusion(hw, hh, hd, vol, exclusionZone)
+      }
+    } else {
+      pos = sampleWithExclusion(hw, hh, hd, vol, exclusionZone)
+    }
+    dummy.position.set(...pos)
     if (orient === 'random') {
       dummy.rotation.set(
         Math.random() * Math.PI * 2,
@@ -126,20 +201,21 @@ function fillInstanceMatrices(
 
 function ScatteredGLBInstances({
   url, count, width, height, depth, markSize, markMaterial, color, seed, boundingVolume, orientation,
-  exclusionZone,
+  exclusionZone, evenDistribution,
 }: {
-  url:             string
-  count:           number
-  width:           number
-  height:          number
-  depth:           number
-  markSize:        Vec3
-  markMaterial:    MarkMaterial
-  color:           string
-  seed:            number
-  boundingVolume:  'box' | 'sphere'
-  orientation:     'random' | 'static'
-  exclusionZone?:  { center: [number, number, number]; radius: number }
+  url:               string
+  count:             number
+  width:             number
+  height:            number
+  depth:             number
+  markSize:          Vec3
+  markMaterial:      MarkMaterial
+  color:             string
+  seed:              number
+  boundingVolume:    'box' | 'sphere'
+  orientation:       'random' | 'static'
+  exclusionZone?:    { center: [number, number, number]; radius: number }
+  evenDistribution?: boolean
 }) {
   const { scene: gltfScene } = useGLTF(url)
 
@@ -165,13 +241,28 @@ function ScatteredGLBInstances({
     const hw = width * 0.40
     const hh = height * 0.40
     const hd = depth * 0.40
-    return Array.from({ length: count }, () => ({
-      position: sampleWithExclusion(hw, hh, hd, boundingVolume, exclusionZone),
-      rotation: orientation === 'random'
-        ? [Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2] as [number, number, number]
-        : [0, 0, 0] as [number, number, number],
-    }))
-  }, [count, width, height, depth, seed, boundingVolume, orientation, exclusionZone])
+    const evenPos = evenDistribution ? jitteredPositions(count, hw, hh, hd, boundingVolume) : null
+    return Array.from({ length: count }, (_, i) => {
+      let position: [number, number, number]
+      if (evenPos) {
+        position = evenPos[i]
+        if (exclusionZone) {
+          const { center, radius } = exclusionZone
+          const r2 = radius * radius
+          const dx = position[0] - center[0], dy = position[1] - center[1], dz = position[2] - center[2]
+          if (dx * dx + dy * dy + dz * dz < r2) position = sampleWithExclusion(hw, hh, hd, boundingVolume, exclusionZone)
+        }
+      } else {
+        position = sampleWithExclusion(hw, hh, hd, boundingVolume, exclusionZone)
+      }
+      return {
+        position,
+        rotation: orientation === 'random'
+          ? [Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2] as [number, number, number]
+          : [0, 0, 0] as [number, number, number],
+      }
+    })
+  }, [count, width, height, depth, seed, boundingVolume, orientation, exclusionZone, evenDistribution])
 
   // Clone scene once per instance
   const clones = useMemo(
@@ -240,7 +331,7 @@ export function Layer({
   markSize = DEFAULT_SIZE, structural = DEFAULT_STRUCTURAL,
   customModelUrl,
   labelShow, labelData, seed = 0, boundingVolume = 'box',
-  showBounds = true, orientation = 'random', exclusionZone,
+  showBounds = true, orientation = 'random', exclusionZone, evenDistribution = false,
 }: LayerProps) {
   const instanceRef = useRef<THREE.InstancedMesh>(null)
 
@@ -263,8 +354,8 @@ export function Layer({
   useEffect(() => {
     const mesh = instanceRef.current
     if (!mesh) return
-    fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize, boundingVolume, orientation, exclusionZone)
-  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed, boundingVolume, orientation, exclusionZone])
+    fillInstanceMatrices(mesh, particleCount, width, height, depth, markSize, boundingVolume, orientation, exclusionZone, evenDistribution)
+  }, [particleCount, width, depth, height, markShape, markSize.x, markSize.y, markSize.z, seed, boundingVolume, orientation, exclusionZone, evenDistribution])
 
   useEffect(() => () => { geo.dispose() },      [geo])
   useEffect(() => () => { edgesGeo.dispose() }, [edgesGeo])
@@ -290,6 +381,7 @@ export function Layer({
             boundingVolume={boundingVolume}
             orientation={orientation}
             exclusionZone={exclusionZone}
+            evenDistribution={evenDistribution}
           />
         </Suspense>
       ) : (

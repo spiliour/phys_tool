@@ -71,6 +71,7 @@ export interface CollectionConfig {
   scatterShowBounds?:    boolean
   scatterOrientation?:   'random' | 'static'
   scatterExclusionId?:   string | null
+  scatterEven?:          boolean
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
 }
@@ -121,6 +122,7 @@ export interface LabelConfig {
 // ── Decoration ────────────────────────────────────────────────────────────────
 export interface DecorationConfig {
   id:           string
+  name?:        string
   shape:        MarkShape
   material:     MarkMaterial
   color:        string

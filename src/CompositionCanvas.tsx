@@ -430,9 +430,10 @@ function CollectionInstance({
     const dec = decorations?.find(d => d.id === decId)
     if (!dec) return undefined
     const ws = L1_MARK_SCALE * MARK_BASE
-    const radius = dec.shape === 'sphere'
+    const baseRadius = dec.shape === 'sphere'
       ? ws * 0.52 * Math.max(dec.size.x, dec.size.y, dec.size.z)
       : (ws / 2) * Math.sqrt(dec.size.x ** 2 + dec.size.y ** 2 + dec.size.z ** 2)
+    const radius = baseRadius * 1.05
     return {
       center: [
         dec.position.x - position[0],
@@ -504,6 +505,7 @@ function CollectionInstance({
       showBounds={collection1Config.scatterShowBounds ?? true}
       orientation={collection1Config.scatterOrientation ?? 'random'}
       exclusionZone={exclusionZone}
+      evenDistribution={collection1Config.scatterEven ?? false}
     />
   )
 }

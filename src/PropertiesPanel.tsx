@@ -1028,12 +1028,25 @@ function CollectionProperties({
                   <option value="">None</option>
                   {decorations.map((dec, idx) => (
                     <option key={dec.id} value={dec.id}>
-                      Decoration {idx + 1} ({dec.shape})
+                      {dec.name ?? `Decoration ${idx + 1}`} ({dec.shape})
                     </option>
                   ))}
                 </select>
               </Row>
             )}
+
+            {/* Even distribution */}
+            <Row label="Distribution">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={config.scatterEven ?? false}
+                  onChange={e => onChange({ ...config, scatterEven: e.target.checked })}
+                  style={{ accentColor: '#5E5CE6', width: '14px', height: '14px', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '11px', color: '#6C6C70' }}>Even spread</span>
+              </label>
+            </Row>
 
             {/* Reseed */}
             {onReseed && (

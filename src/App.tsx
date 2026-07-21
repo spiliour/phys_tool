@@ -231,6 +231,10 @@ export default function App() {
     setDecorations((prev) => prev.map((d) => d.id === dec.id ? dec : d))
   }
 
+  function handleRenameDecoration(id: string, name: string) {
+    setDecorations((prev) => prev.map((d) => d.id === id ? { ...d, name } : d))
+  }
+
   function captureState(): Record<string, unknown> {
     return {
       level, activeElement,
@@ -418,6 +422,7 @@ export default function App() {
             onSelectDecoration={setActiveDecorationId}
             onAddDecoration={handleAddDecoration}
             onRemoveDecoration={handleRemoveDecoration}
+            onRenameDecoration={handleRenameDecoration}
           />
         </div>
 

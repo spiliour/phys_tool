@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react'
 import { CompositionLevel, ActiveElement, DecorationConfig } from './types'
 
 // ── Static metadata per element type ─────────────────────────────────────────
@@ -45,6 +46,7 @@ interface HierarchyPanelProps {
   onSelectDecoration: (id: string) => void
   onAddDecoration: () => void
   onRemoveDecoration: (id: string) => void
+  onRenameDecoration: (id: string, name: string) => void
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -53,9 +55,27 @@ export function HierarchyPanel({
   level, activeElement,
   onSelectElement, onAdvanceLevel, onDowngradeLevel,
   decorations, activeDecorationId,
-  onSelectDecoration, onAddDecoration, onRemoveDecoration,
+  onSelectDecoration, onAddDecoration, onRemoveDecoration, onRenameDecoration,
 }: HierarchyPanelProps) {
   const elements = LEVEL_ELEMENTS[level]
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function startEdit(dec: DecorationConfig, idx: number) {
+    setEditingId(dec.id)
+    setEditingName(dec.name ?? `Decoration ${idx + 1}`)
+    setTimeout(() => inputRef.current?.select(), 0)
+  }
+
+  function commitEdit() {
+    if (editingId) onRenameDecoration(editingId, editingName.trim() || editingId)
+    setEditingId(null)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+  }
 
   return (
     <div style={{
@@ -158,34 +178,58 @@ export function HierarchyPanel({
         </div>
 
         {decorations.map((dec, idx) => {
-          const isActive = dec.id === activeDecorationId
+          const isActive  = dec.id === activeDecorationId
+          const isEditing = dec.id === editingId
+          const label     = dec.name ?? `Decoration ${idx + 1}`
           return (
             <div key={dec.id} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <button
-                onClick={() => onSelectDecoration(dec.id)}
+              <div
+                onClick={() => { if (!isEditing) onSelectDecoration(dec.id) }}
+                onDoubleClick={() => startEdit(dec, idx)}
                 style={{
                   flex: 1, display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '7px 10px', textAlign: 'left',
+                  padding: '7px 10px',
                   background: isActive ? '#F2F2F7' : '#FAFAFA',
                   border: `1.5px solid ${isActive ? '#1D1D1F' : '#E5E5EA'}`,
-                  borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit',
+                  borderRadius: '8px', cursor: isEditing ? 'default' : 'pointer',
                   transition: 'border-color 0.15s, background 0.15s',
+                  minWidth: 0,
                 }}
               >
-                <span style={{
-                  fontSize: '12px', color: '#1D1D1F',
-                  fontWeight: isActive ? '600' : '400', flex: 1,
-                }}>
-                  Decoration {idx + 1}
-                </span>
-                <span style={{
-                  fontSize: '9px', color: isActive ? '#1D1D1F' : '#8E8E93',
-                  border: `1px solid ${isActive ? '#1D1D1F' : '#D1D1D6'}`,
-                  borderRadius: '4px', padding: '1px 5px',
-                }}>
-                  Dec
-                </span>
-              </button>
+                {isEditing ? (
+                  <input
+                    ref={inputRef}
+                    value={editingName}
+                    onChange={e => setEditingName(e.target.value)}
+                    onBlur={commitEdit}
+                    onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit() }}
+                    style={{
+                      flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                      fontSize: '12px', color: '#1D1D1F', fontFamily: 'inherit', fontWeight: '600',
+                      minWidth: 0,
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    autoFocus
+                  />
+                ) : (
+                  <span style={{
+                    fontSize: '12px', color: '#1D1D1F',
+                    fontWeight: isActive ? '600' : '400', flex: 1,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {label}
+                  </span>
+                )}
+                {!isEditing && (
+                  <span style={{
+                    fontSize: '9px', color: isActive ? '#1D1D1F' : '#8E8E93',
+                    border: `1px solid ${isActive ? '#1D1D1F' : '#D1D1D6'}`,
+                    borderRadius: '4px', padding: '1px 5px', flexShrink: 0,
+                  }}>
+                    Dec
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => onRemoveDecoration(dec.id)}
                 title="Remove decoration"
