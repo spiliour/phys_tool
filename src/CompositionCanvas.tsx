@@ -429,13 +429,17 @@ function CollectionInstance({
     if (!decId) return undefined
     const dec = decorations?.find(d => d.id === decId)
     if (!dec) return undefined
+    const ws = L1_MARK_SCALE * MARK_BASE
+    const radius = dec.shape === 'sphere'
+      ? ws * 0.52 * Math.max(dec.size.x, dec.size.y, dec.size.z)
+      : (ws / 2) * Math.sqrt(dec.size.x ** 2 + dec.size.y ** 2 + dec.size.z ** 2)
     return {
       center: [
         dec.position.x - position[0],
         dec.position.y - position[1],
         dec.position.z - position[2],
       ] as [number, number, number],
-      radius: Math.sqrt((dec.size.x ** 2 + dec.size.y ** 2 + dec.size.z ** 2) / 4),
+      radius,
     }
   }, [collection1Config.scatterExclusionId, decorations, position[0], position[1], position[2]])
 
