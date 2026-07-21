@@ -544,6 +544,18 @@ export default function ShatterLab({ embedded, initialPresetId, presetHandleRef,
     if (d.adaptivity    != null) setAdaptivity(d.adaptivity as number)
     if (d.impulse       != null) setImpulse(d.impulse as number)
 
+    // Restore the source model from the bundled models so a re-bake is ready even
+    // when the baked fragments aren't in this browser's IndexedDB.
+    const savedFile = d.fileName as string | undefined
+    if (savedFile) {
+      const bundled = MODEL_PRESETS.find(m => m.name === savedFile.replace(/\.(glb|gltf)$/i, ''))
+      if (bundled) {
+        fetch(bundled.url).then(r => (r.ok ? r.blob() : Promise.reject(new Error('not found'))))
+          .then(blob => { fileRef.current = new File([blob], savedFile, { type: GLB_MIME }); setFileName(savedFile) })
+          .catch(() => {})
+      }
+    }
+
     // Restore baked geometry from IndexedDB if this preset carries it — no re-sim.
     if (d.hasModels) {
       setStatus('loading'); setMessage('Restoring saved objects…')

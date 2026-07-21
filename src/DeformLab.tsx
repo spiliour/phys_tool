@@ -1171,19 +1171,25 @@ export default function DeformLab({ embedded, initialPresetId, presetHandleRef, 
       setModelUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null })
       setPendingAutoRun(shape)
     } else if (savedFile) {
-      // Try to fetch any saved filename from the server's /models static route.
-      // Falls back to "re-upload" only if the server returns a non-OK response.
+      // Load the model: prefer the bundled model that ships with the app (works
+      // on the static site); fall back to the server's /models route; only then
+      // ask for a re-upload.
+      const applyBlob = (blob: Blob) => {
+        const file = new File([blob], savedFile, { type: 'model/gltf-binary' })
+        fileRef.current = file
+        setFileName(savedFile)
+        setModelUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
+        setStatus('idle'); setMessage('')
+        setPendingAutoRun('model')
+      }
+      const baseName = savedFile.replace(/\.(glb|gltf)$/i, '')
+      const bundled  = MODEL_PRESETS.find(m => m.name === baseName)
       setStatus('loading'); setMessage(`Loading ${savedFile}…`)
-      serverFetch(`${SERVER}/models/${encodeURIComponent(savedFile)}`)
-        .then(r => { if (!r.ok) throw new Error('not found'); return r.blob() })
-        .then(blob => {
-          const file = new File([blob], savedFile, { type: 'model/gltf-binary' })
-          fileRef.current = file
-          setFileName(savedFile)
-          setModelUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
-          setStatus('idle'); setMessage('')
-          setPendingAutoRun('model')
-        })
+      const source = bundled
+        ? fetch(bundled.url).then(r => { if (!r.ok) throw new Error('not found'); return r.blob() })
+        : serverFetch(`${SERVER}/models/${encodeURIComponent(savedFile)}`).then(r => { if (!r.ok) throw new Error('not found'); return r.blob() })
+      source
+        .then(applyBlob)
         .catch(() => { setStatus('idle'); setMessage(`Re-upload ${savedFile} to run`) })
     } else {
       setStatus('idle'); setMessage('')
