@@ -1035,36 +1035,34 @@ function CollectionProperties({
               </Row>
             )}
 
-            {/* Even distribution */}
-            <Row label="Distribution">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={config.scatterEven ?? false}
-                  onChange={e => onChange({ ...config, scatterEven: e.target.checked })}
-                  style={{ accentColor: '#5E5CE6', width: '14px', height: '14px', cursor: 'pointer' }}
-                />
-                <span style={{ fontSize: '11px', color: '#6C6C70' }}>Even spread</span>
-              </label>
-            </Row>
-
-            {/* Reseed */}
+            {/* Placement: even spread toggle + randomise button */}
             {onReseed && (
               <Row label="Placement">
-                <button
-                  onClick={onReseed}
-                  style={{
-                    width: '100%', padding: '6px 0',
-                    background: '#F2F2F7', border: '1px solid #D1D1D6',
-                    borderRadius: '8px', cursor: 'pointer',
-                    fontSize: '12px', fontWeight: '600', color: '#1D1D1F',
-                    fontFamily: 'inherit',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
-                >
-                  Randomise
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', flex: 1 }}>
+                    <input
+                      type="checkbox"
+                      checked={config.scatterEven ?? false}
+                      onChange={e => onChange({ ...config, scatterEven: e.target.checked })}
+                      style={{ accentColor: '#5E5CE6', width: '14px', height: '14px', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '11px', color: '#6C6C70' }}>Even spread</span>
+                  </label>
+                  <button
+                    onClick={onReseed}
+                    style={{
+                      padding: '6px 12px',
+                      background: '#F2F2F7', border: '1px solid #D1D1D6',
+                      borderRadius: '8px', cursor: 'pointer',
+                      fontSize: '12px', fontWeight: '600', color: '#1D1D1F',
+                      fontFamily: 'inherit', flexShrink: 0,
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+                  >
+                    Randomise
+                  </button>
+                </div>
               </Row>
             )}
           </>
