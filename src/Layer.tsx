@@ -1,26 +1,23 @@
-import { useRef, useMemo, useEffect, useContext, createContext, Suspense, CSSProperties } from 'react'
+/**
+ * Layer.tsx — volume arrangements (scattering / stacking / adjacent grid).
+ *
+ * Owns the LAYOUT: where marks go inside a bounding volume (random scatter with
+ * exclusion + overlap avoidance, jittered even spread, or a relaxed 2D grid).
+ * Rendering + encodings are delegated to the shared <MarkInstances> renderer.
+ */
+import { useMemo, useEffect, useContext } from 'react'
 import * as THREE from 'three'
-import { Html, useGLTF } from '@react-three/drei'
-import { MarkShape, MarkMaterial, StructuralConfig, Vec3, LabelOccludeMode } from './types'
-import { makeMarkGeometry, MARK_BASE } from './markGeometry'
-import { MODEL_SCALE_OVERRIDES } from './models'
-import { MarkMaterialElement } from './MarkMaterial'
+import { Html } from '@react-three/drei'
+import { MarkShape, MarkMaterial, StructuralConfig, Vec3 } from './types'
+import { MARK_BASE } from './markGeometry'
+import {
+  MarkInstances, MarkPlacement, MarkLabelPair,
+  LabelOccludeContext, occludeProp, SCATTER_SCALE,
+} from './MarkInstances'
 
-// Label occlusion config shared with every label. 'optimized' raycasts only the
-// registered occluders (decorations) instead of the whole scene.
-export type OccluderRef = { current: THREE.Object3D | null }
-export interface LabelOccludeValue {
-  mode:      LabelOccludeMode
-  occluders: OccluderRef[]
-}
-export const LabelOccludeContext = createContext<LabelOccludeValue>({ mode: 'off', occluders: [] })
-
-// Translate the occlusion config into drei's <Html occlude> prop.
-export function occludeProp(v: LabelOccludeValue): true | OccluderRef[] | undefined {
-  if (v.mode === 'off')  return undefined
-  if (v.mode === 'full') return true
-  return v.occluders.length ? v.occluders : undefined   // optimized: decorations only
-}
+// Re-export shared names so existing importers (CompositionCanvas, …) keep working.
+export { SCATTER_SCALE, LabelOccludeContext, occludeProp, tintMaterial } from './MarkInstances'
+export type { OccluderRef, LabelOccludeValue, MarkLabelPair, MarkPlacement } from './MarkInstances'
 
 export interface LayerLabelData {
   top?:    string
@@ -54,94 +51,15 @@ interface LayerProps {
   instanceSizes?:       Vec3[]   // per-instance size override (data-driven scale encoding)
   instanceColors?:      string[] // per-instance colour override (data-driven colour encoding)
   colorTint?:           boolean  // tint GLB material instead of replacing it
-  markLabels?:          MarkLabelPair[]  // per-instance labels shown above / below each scattered mark
-}
-
-// Text to float above and/or below a scattered mark (each may hold two joined values).
-export interface MarkLabelPair {
-  above: string | null
-  below: string | null
+  markLabels?:          MarkLabelPair[]  // per-instance labels shown above / below each mark
 }
 
 const DEFAULT_SIZE: Vec3 = { x: 1, y: 1, z: 1 }
 const DEFAULT_STRUCTURAL: StructuralConfig = { deformation: 'none', fluidDistort: 0.35, fluidSpeed: 1.5 }
 const shadow = '0 0 6px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,1)'
 
-const markLabelSpan: CSSProperties = {
-  display: 'block', fontSize: '11px', color: '#e8e8e8',
-  fontFamily: 'Courier New, monospace', textShadow: shadow,
-  whiteSpace: 'nowrap', userSelect: 'none',
-}
+// ── Layout: scatter sampling ──────────────────────────────────────────────────
 
-// Half-height of a primitive mark's base geometry (before scatter scale / size).
-function primitiveHalfY(shape: MarkShape): number {
-  if (shape === 'sphere') return MARK_BASE * 0.52
-  if (shape === 'star')   return MARK_BASE * 0.64
-  return MARK_BASE * 0.5   // box / custom fallback
-}
-
-// Floating text tags hugging the top and/or bottom of a single scattered mark.
-// halfY is the mark's rendered half-height in world units, so the tags sit right
-// at its surface regardless of per-instance scale.
-function MarkLabelTags({ pos, halfY, above, below }: {
-  pos:   [number, number, number]
-  halfY: number
-  above: string | null
-  below: string | null
-}) {
-  const occ = occludeProp(useContext(LabelOccludeContext))
-  return (
-    <group position={pos}>
-      {above && (
-        <>
-          <group position={[0, halfY, 0]} userData={{ isLabel: true, labelText: above, labelPos: 'top' }} />
-          <Html position={[0, halfY, 0]} center occlude={occ} style={{ pointerEvents: 'none' }}>
-            <span data-phys-label="" style={{ ...markLabelSpan, transform: 'translateY(-100%)' }}>{above}</span>
-          </Html>
-        </>
-      )}
-      {below && (
-        <>
-          <group position={[0, -halfY, 0]} userData={{ isLabel: true, labelText: below, labelPos: 'bottom' }} />
-          <Html position={[0, -halfY, 0]} center occlude={occ} style={{ pointerEvents: 'none' }}>
-            <span data-phys-label="" style={{ ...markLabelSpan, transform: 'translateY(0)' }}>{below}</span>
-          </Html>
-        </>
-      )}
-    </group>
-  )
-}
-
-// ── Imperative material helper (used only for GLB clones) ─────────────────────
-
-function buildMaterial(material: MarkMaterial, color: string): THREE.Material {
-  const col = new THREE.Color(color)
-  switch (material) {
-    case 'fluid':
-      return new THREE.MeshPhysicalMaterial({
-        color: col, transmission: 0.92, roughness: 0.04,
-        metalness: 0, ior: 1.5, thickness: 0.5, envMapIntensity: 1.0,
-      })
-    case 'metal':
-      return new THREE.MeshStandardMaterial({ color: col, roughness: 0.06, metalness: 0.95, envMapIntensity: 2.0 })
-    case 'emissive':
-      return new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 2.2, roughness: 0.55 })
-    default:
-      return new THREE.MeshStandardMaterial({ color: col, roughness: 0.65, metalness: 0.05 })
-  }
-}
-
-// Clone a GLB's own material and tint it (multiplies its texture), keeping maps
-// and surface properties — used for the "tint" colour-encoding option.
-export function tintMaterial(src: THREE.Material, color: string): THREE.Material {
-  const m = src.clone() as THREE.MeshStandardMaterial
-  if (m.color) m.color = new THREE.Color(color)
-  return m
-}
-
-// ── Fill instance matrices ────────────────────────────────────────────────────
-
-export const SCATTER_SCALE = 5  // scatter particles are 5× larger than the base mark size
 const SCATTER_FILL = 0.47       // marks fill ~94% of the bounding box (half-extent factor)
 
 function sampleScatterPos(hw: number, hh: number, hd: number, vol: 'box' | 'sphere'): [number, number, number] {
@@ -184,7 +102,7 @@ function sampleWithExclusion(
   return pos
 }
 
-// ── Jittered-grid: evenly spread count points with random offset per cell ─────
+// ── Layout: jittered even spread ──────────────────────────────────────────────
 
 function jitteredPositions(
   count: number,
@@ -244,12 +162,7 @@ function jitteredPositions(
   return out
 }
 
-// A single scattered instance's placement (shared by the instanced mesh, the
-// GLB clones, and the per-mark label layer so all three line up exactly).
-export interface ScatterInstance {
-  pos: [number, number, number]
-  rot: [number, number, number]
-}
+// ── Layout: assembled scatter (with exclusion + orientation) ──────────────────
 
 function computeScatterLayout(
   count: number,
@@ -258,12 +171,12 @@ function computeScatterLayout(
   orient: 'random' | 'static',
   exclusionZone?: ExclusionZone,
   even = false,
-): ScatterInstance[] {
+): MarkPlacement[] {
   const hw = width  * SCATTER_FILL
   const hh = height * SCATTER_FILL
   const hd = depth  * SCATTER_FILL
   const evenPos = even ? jitteredPositions(count, hw, hh, hd, vol) : null
-  const out: ScatterInstance[] = []
+  const out: MarkPlacement[] = []
   for (let i = 0; i < count; i++) {
     let pos: [number, number, number]
     if (evenPos) {
@@ -283,7 +196,7 @@ function computeScatterLayout(
 }
 
 // Count how many pairs of marks overlap, treating each as a sphere of radii[i].
-function countOverlaps(layout: ScatterInstance[], radii: number[]): number {
+function countOverlaps(layout: MarkPlacement[], radii: number[]): number {
   let count = 0
   for (let i = 0; i < layout.length; i++) {
     const a = layout[i].pos
@@ -307,31 +220,6 @@ function overlapAttempts(count: number): number {
   return Math.max(8, Math.min(OVERLAP_ATTEMPTS_MAX, Math.floor(2_000_000 / perAttempt)))
 }
 
-// Adjacent placement: a relaxed 2D grid on the X-Z plane (marks sit next to each
-// other). `relax` (0–1) jitters each mark within its cell for an organic look.
-function gridLayout(count: number, width: number, depth: number, relax: number): ScatterInstance[] {
-  const n  = Math.max(1, count)
-  const hw = width * SCATTER_FILL
-  const hd = depth * SCATTER_FILL
-  // Columns/rows chosen so cells stay roughly square for the given footprint.
-  const aspect = hw / Math.max(0.001, hd)
-  const cols = Math.max(1, Math.round(Math.sqrt(n * aspect)))
-  const rows = Math.max(1, Math.ceil(n / cols))
-  const cellW = (2 * hw) / cols
-  const cellD = (2 * hd) / rows
-  const jw = cellW * 0.5 * relax
-  const jd = cellD * 0.5 * relax
-  const out: ScatterInstance[] = []
-  for (let i = 0; i < n; i++) {
-    const col = i % cols
-    const row = Math.floor(i / cols)
-    const x = -hw + (col + 0.5) * cellW + (Math.random() - 0.5) * jw
-    const z = -hd + (row + 0.5) * cellD + (Math.random() - 0.5) * jd
-    out.push({ pos: [x, 0, z], rot: [0, 0, 0] })
-  }
-  return out
-}
-
 // Generate several candidate arrangements and keep the one with the fewest
 // overlapping pairs — so sizeable marks don't visibly collide.
 function bestScatterLayout(
@@ -342,7 +230,7 @@ function bestScatterLayout(
   radii: number[],
   exclusionZone?: ExclusionZone,
   even = false,
-): ScatterInstance[] {
+): MarkPlacement[] {
   const attempts = overlapAttempts(count)
   let best = computeScatterLayout(count, width, height, depth, vol, orient, exclusionZone, even)
   let bestOverlaps = countOverlaps(best, radii)
@@ -354,163 +242,31 @@ function bestScatterLayout(
   return best
 }
 
-function fillInstanceMatrices(
-  mesh: THREE.InstancedMesh,
-  layout: ScatterInstance[],
-  size: Vec3,
-  instanceSizes?: Vec3[],
-  instanceColors?: string[],
-) {
-  const dummy = new THREE.Object3D()
-  const col = new THREE.Color()
-  for (let i = 0; i < layout.length; i++) {
-    dummy.position.set(...layout[i].pos)
-    dummy.rotation.set(...layout[i].rot)
-    const msz = instanceSizes ? instanceSizes[i % instanceSizes.length] : size
-    dummy.scale.set(msz.x * SCATTER_SCALE, msz.y * SCATTER_SCALE, msz.z * SCATTER_SCALE)
-    dummy.updateMatrix()
-    mesh.setMatrixAt(i, dummy.matrix)
-    if (instanceColors) mesh.setColorAt(i, col.set(instanceColors[i % instanceColors.length]))
+// ── Layout: adjacent placement (relaxed 2D grid) ──────────────────────────────
+
+// Marks sit next to each other on the X-Z plane. `relax` (0–1) jitters each
+// mark within its cell for an organic look.
+function gridLayout(count: number, width: number, depth: number, relax: number): MarkPlacement[] {
+  const n  = Math.max(1, count)
+  const hw = width * SCATTER_FILL
+  const hd = depth * SCATTER_FILL
+  // Columns/rows chosen so cells stay roughly square for the given footprint.
+  const aspect = hw / Math.max(0.001, hd)
+  const cols = Math.max(1, Math.round(Math.sqrt(n * aspect)))
+  const rows = Math.max(1, Math.ceil(n / cols))
+  const cellW = (2 * hw) / cols
+  const cellD = (2 * hd) / rows
+  const jw = cellW * 0.5 * relax
+  const jd = cellD * 0.5 * relax
+  const out: MarkPlacement[] = []
+  for (let i = 0; i < n; i++) {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const x = -hw + (col + 0.5) * cellW + (Math.random() - 0.5) * jw
+    const z = -hd + (row + 0.5) * cellD + (Math.random() - 0.5) * jd
+    out.push({ pos: [x, 0, z], rot: [0, 0, 0] })
   }
-  if (instanceColors && mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-  mesh.instanceMatrix.needsUpdate = true
-}
-
-// ── GLB scatter: individual primitives per instance ───────────────────────────
-// instancedMesh can't handle multi-material GLBs. We clone the scene per
-// instance and override materials imperatively.
-
-function ScatteredGLBInstances({
-  url, layout, markSize, markMaterial, color, instanceSizes, instanceColors, colorTint, markLabels,
-}: {
-  url:               string
-  layout:            ScatterInstance[]
-  markSize:          Vec3
-  markMaterial:      MarkMaterial
-  color:             string
-  instanceSizes?:    Vec3[]
-  instanceColors?:   string[]
-  colorTint?:        boolean
-  markLabels?:       MarkLabelPair[]
-}) {
-  const { scene: gltfScene } = useGLTF(url)
-
-  // Normalise scale AND compute center so every model is centered at its
-  // instance position regardless of where the GLB's origin sits.
-  const { normScale, center, halfYUnit } = useMemo(() => {
-    gltfScene.updateMatrixWorld(true)
-    const box = new THREE.Box3().setFromObject(gltfScene)
-    const size   = new THREE.Vector3()
-    const center = new THREE.Vector3()
-    box.getSize(size)
-    box.getCenter(center)
-    const maxDim = Math.max(size.x, size.y, size.z, 0.001)
-    const scaleOverride = url.includes('drum') ? 0.63
-      : url.includes('clarinet') ? 1.2
-      : url.includes('harp') ? 0.825
-      : 1
-    const normScale = (MARK_BASE / maxDim) * scaleOverride
-    // actual half-height of the (normalised) model — lets labels hug the model
-    // top/bottom instead of a generic MARK_BASE cube.
-    return { normScale, center, halfYUnit: (size.y * normScale) / 2 }
-  }, [gltfScene, url])
-
-  // Clone scene once per instance
-  const clones = useMemo(
-    () => layout.map(() => gltfScene.clone(true)),
-    [gltfScene, layout],
-  )
-
-  useEffect(
-    () => () => {
-      clones.forEach(clone =>
-        clone.traverse(child => {
-          if (child instanceof THREE.Mesh) child.geometry.dispose()
-        }),
-      )
-    },
-    [clones],
-  )
-
-  // Shared material for non-original mode; rebuild when selection changes
-  const mat = useMemo(
-    () => (markMaterial !== 'original' ? buildMaterial(markMaterial, color) : null),
-    [markMaterial, color],
-  )
-  useEffect(() => () => { mat?.dispose() }, [mat])
-
-  // Replace-mode per-instance materials — one per data-driven colour. 'original'
-  // models have no base colour, so treat them as plastic. (Not used when tinting.)
-  const colorMats = useMemo(
-    () => (instanceColors && !colorTint
-      ? instanceColors.map(c => buildMaterial(markMaterial === 'original' ? 'plastic' : markMaterial, c))
-      : null),
-    [instanceColors, colorTint, markMaterial],
-  )
-  useEffect(() => () => { colorMats?.forEach(m => m.dispose()) }, [colorMats])
-
-  // Apply materials to every clone. Tint mode clones each mesh's own material and
-  // recolours it (keeps textures); otherwise replace with the encoded/shared material.
-  const tintMats = useRef<THREE.Material[]>([])
-  useEffect(() => {
-    clones.forEach((clone, i) => {
-      clone.traverse(child => {
-        if (!(child instanceof THREE.Mesh)) return
-        if (!child.userData.__origMat) child.userData.__origMat = child.material
-        const orig = child.userData.__origMat as THREE.Material | THREE.Material[]
-        if (instanceColors && colorTint) {
-          const c = instanceColors[i % instanceColors.length]
-          const make = (m: THREE.Material) => { const t = tintMaterial(m, c); tintMats.current.push(t); return t }
-          child.material = Array.isArray(orig) ? orig.map(make) : make(orig)
-        } else if (colorMats) {
-          child.material = colorMats[i % colorMats.length]
-        } else if (mat) {
-          child.material = mat
-        } else {
-          child.material = orig
-        }
-      })
-    })
-    return () => { tintMats.current.forEach(m => m.dispose()); tintMats.current = [] }
-  }, [mat, colorMats, clones, instanceColors, colorTint])
-
-  return (
-    <>
-      {clones.map((clone, i) => {
-        // Per-axis scale including user markSize (or the per-instance
-        // data-driven size) and the scatter size boost
-        const msz = instanceSizes ? instanceSizes[i % instanceSizes.length] : markSize
-        const sx = normScale * msz.x * SCATTER_SCALE
-        const sy = normScale * msz.y * SCATTER_SCALE
-        const sz = normScale * msz.z * SCATTER_SCALE
-        // Centering offset in the primitive's pre-scale space.
-        // After scale is applied, scale ⊙ center cancels this, leaving geometry
-        // centred at the group origin regardless of the GLB's own origin.
-        const ox = -center.x * sx
-        const oy = -center.y * sy
-        const oz = -center.z * sz
-        const lbl = markLabels?.[i]
-        return (
-          <group key={i}>
-            {/* Outer group carries the scatter position + random rotation.
-                Inner primitive carries only the centering offset + scale so that
-                the model's geometric centre aligns with the group origin. */}
-            <group position={layout[i].pos} rotation={layout[i].rot}>
-              <primitive object={clone} position={[ox, oy, oz]} scale={[sx, sy, sz]} />
-            </group>
-            {lbl && (lbl.above || lbl.below) && (
-              <MarkLabelTags
-                pos={layout[i].pos}
-                halfY={halfYUnit * SCATTER_SCALE * msz.y}
-                above={lbl.above}
-                below={lbl.below}
-              />
-            )}
-          </group>
-        )
-      })}
-    </>
-  )
+  return out
 }
 
 // ── Layer ─────────────────────────────────────────────────────────────────────
@@ -525,7 +281,6 @@ export function Layer({
   gridLayout: useGrid = false, gridRelax = 0.3,
   instanceSizes, instanceColors, colorTint, markLabels,
 }: LayerProps) {
-  const instanceRef = useRef<THREE.InstancedMesh>(null)
   const occ = occludeProp(useContext(LabelOccludeContext))
 
   const useCustom = markShape === 'custom' && !!customModelUrl
@@ -533,12 +288,10 @@ export function Layer({
   const perRow = !!instanceSizes || !!instanceColors
   const renderCount = useCustom && !perRow ? Math.max(5, particleCount) : particleCount
 
-  // Positions + rotations for every scattered instance, shared by the instanced
-  // mesh, the GLB clones, and the per-mark labels so all three line up exactly.
-  // Tries several seeds and keeps the arrangement with the fewest overlapping
-  // marks (each mark approximated as a sphere sized from its scale).
+  // Placements for every instance. Scatter tries several seeds and keeps the
+  // arrangement with the fewest overlapping marks (each approximated as a
+  // sphere sized from its scale); the adjacent grid needs no search.
   const layout = useMemo(() => {
-    // Adjacent placement: a relaxed 2D grid (no overlap search needed).
     if (useGrid) return gridLayout(renderCount, width, depth, gridRelax)
     const radii = Array.from({ length: renderCount }, (_, i) => {
       const msz = instanceSizes ? instanceSizes[i % instanceSizes.length] : markSize
@@ -551,8 +304,6 @@ export function Layer({
     exclusionZone, evenDistribution, instanceSizes,
     markSize.x, markSize.y, markSize.z,
   ])
-
-  const geo = useMemo(() => makeMarkGeometry(markShape), [markShape])
 
   const edgesGeo = useMemo(() => {
     if (boundingVolume === 'sphere') {
@@ -568,13 +319,6 @@ export function Layer({
     return edges
   }, [width, height, depth, boundingVolume])
 
-  useEffect(() => {
-    const mesh = instanceRef.current
-    if (!mesh) return
-    fillInstanceMatrices(mesh, layout, markSize, instanceSizes, instanceColors)
-  }, [layout, markShape, markSize.x, markSize.y, markSize.z, instanceSizes, instanceColors])
-
-  useEffect(() => () => { geo.dispose() },      [geo])
   useEffect(() => () => { edgesGeo.dispose() }, [edgesGeo])
 
   return (
@@ -583,44 +327,20 @@ export function Layer({
         <lineBasicMaterial color="#666666" transparent opacity={0.7} />
       </lineSegments>}
 
-      {useCustom ? (
-        <Suspense fallback={null}>
-          <ScatteredGLBInstances
-            url={customModelUrl!}
-            layout={layout}
-            markSize={markSize}
-            markMaterial={markMaterial}
-            color={color}
-            instanceSizes={instanceSizes}
-            instanceColors={instanceColors}
-            colorTint={colorTint}
-            markLabels={markLabels}
-          />
-        </Suspense>
-      ) : (
-        /* Basic shapes: original JSX-child material pattern — tested and working.
-           With a colour encoding the base colour is white so the per-instance
-           instanceColor shows through exactly (three multiplies the two). */
-        <instancedMesh
-          key={`${particleCount}-${markShape}-${instanceColors ? 'col' : 'plain'}`}
-          ref={instanceRef}
-          args={[geo, undefined, particleCount]}
-        >
-          <MarkMaterialElement material={markMaterial} structural={structural} color={instanceColors ? '#ffffff' : color} />
-        </instancedMesh>
-      )}
-
-      {/* Per-mark labels for primitive marks (GLB marks render their own, measured). */}
-      {!useCustom && markLabels && layout.map((inst, i) => {
-        const lbl = markLabels[i]
-        if (!lbl || (!lbl.above && !lbl.below)) return null
-        const msz = instanceSizes ? instanceSizes[i % instanceSizes.length] : markSize
-        // Sit right at the scaled mark's surface (msz already carries the per-instance scale).
-        const halfY = primitiveHalfY(markShape) * SCATTER_SCALE * msz.y
-        return (
-          <MarkLabelTags key={`lbl-${i}`} pos={inst.pos} halfY={halfY} above={lbl.above} below={lbl.below} />
-        )
-      })}
+      {/* All rendering + per-instance encodings live in the shared renderer. */}
+      <MarkInstances
+        placements={layout}
+        markShape={markShape}
+        markMaterial={markMaterial}
+        markSize={markSize}
+        color={color}
+        structural={structural}
+        customModelUrl={useCustom ? customModelUrl : undefined}
+        instanceSizes={instanceSizes}
+        instanceColors={instanceColors}
+        colorTint={colorTint}
+        markLabels={markLabels}
+      />
 
       {labelShow && (
         <>

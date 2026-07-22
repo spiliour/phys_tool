@@ -231,11 +231,11 @@ function markLabelStrings(slots: LabelSlots, layers: LayerData[], count: number)
 
 // Surface-placement labels: every bound variable joined into one tag placed
 // above the mark along its normal (no side split).
-function surfaceLabelStrings(slots: LabelSlots, layers: LayerData[], count: number): (string | null)[] {
+function surfaceLabelStrings(slots: LabelSlots, layers: LayerData[], count: number): MarkLabelPair[] {
   return Array.from({ length: count }, (_, i) => {
     const ld = computeLabelValues(slots, layers, i)
     const parts = [ld.top, ld.left, ld.right, ld.bottom].filter(Boolean)
-    return parts.length ? parts.join('  ·  ') : null
+    return { above: parts.length ? parts.join('  ·  ') : null, below: null }
   })
 }
 
