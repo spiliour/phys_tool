@@ -48,6 +48,7 @@ interface LayerProps {
   evenDistribution?:    boolean
   adjacent?:            boolean  // adjacent placement: scatter on a flat surface, bottom-aligned
   showGrid?:            boolean  // adjacent: show a reference grid on the surface
+  stacking?:            boolean  // stacking: marks piled in a vertical column, base on base
   instanceSizes?:       Vec3[]   // per-instance size override (data-driven scale encoding)
   instanceColors?:      string[] // per-instance colour override (data-driven colour encoding)
   colorTint?:           boolean  // tint GLB material instead of replacing it
@@ -265,6 +266,15 @@ function surfaceScatterLayout(count: number, width: number, depth: number, radii
   return best
 }
 
+// ── Layout: stacking (vertical column, base at origin) ────────────────────────
+
+// Every mark shares the X-Z origin; the shared renderer (stack mode) piles them
+// vertically using each mark's post-encoding height, so the column grows upward
+// from the surface regardless of a size/scale encoding.
+function stackLayout(count: number): MarkPlacement[] {
+  return Array.from({ length: count }, () => ({ pos: [0, 0, 0] as [number, number, number] }))
+}
+
 // ── Layer ─────────────────────────────────────────────────────────────────────
 
 export function Layer({
@@ -274,7 +284,7 @@ export function Layer({
   customModelUrl,
   labelShow, labelData, seed = 0, boundingVolume = 'box',
   showBounds = true, orientation = 'random', exclusionZone, evenDistribution = false,
-  adjacent = false, showGrid = false,
+  adjacent = false, showGrid = false, stacking = false,
   instanceSizes, instanceColors, colorTint, markLabels,
 }: LayerProps) {
   const occ = occludeProp(useContext(LabelOccludeContext))
@@ -288,6 +298,7 @@ export function Layer({
   // arrangement with the fewest overlapping marks (each approximated as a
   // sphere sized from its scale); the adjacent grid needs no search.
   const layout = useMemo(() => {
+    if (stacking) return stackLayout(renderCount)
     const radii = Array.from({ length: renderCount }, (_, i) => {
       const msz = instanceSizes ? instanceSizes[i % instanceSizes.length] : markSize
       // Adjacent packs on a plane, so spread by footprint (x-z); scatter uses the full radius.
@@ -297,7 +308,7 @@ export function Layer({
     if (adjacent) return surfaceScatterLayout(renderCount, width, depth, radii)
     return bestScatterLayout(renderCount, width, height, depth, boundingVolume, orientation, radii, exclusionZone, evenDistribution)
   }, [
-    adjacent,
+    adjacent, stacking,
     renderCount, width, height, depth, seed, boundingVolume, orientation,
     exclusionZone, evenDistribution, instanceSizes,
     markSize.x, markSize.y, markSize.z,
@@ -322,8 +333,9 @@ export function Layer({
   return (
     <group position={position}>
       {/* Adjacent shows an optional reference grid on the surface (marks sit on it);
-          volume arrangements show the bounding box / sphere wireframe. */}
-      {adjacent
+          volume arrangements show the bounding box / sphere wireframe; stacking
+          shows neither (the column speaks for itself). */}
+      {stacking ? null : adjacent
         ? (showGrid && (
             <gridHelper args={[2, 12, '#777777', '#4a4a4a']} scale={[width * SCATTER_FILL, 1, depth * SCATTER_FILL]} />
           ))
@@ -335,7 +347,7 @@ export function Layer({
       }
 
       {/* All rendering + per-instance encodings live in the shared renderer.
-          Adjacent stands each mark on the surface (base at the sample point). */}
+          Adjacent stands each mark on the surface; stacking piles them vertically. */}
       <MarkInstances
         placements={layout}
         markShape={markShape}
@@ -345,6 +357,7 @@ export function Layer({
         structural={structural}
         customModelUrl={useCustom ? customModelUrl : undefined}
         standOnAnchor={adjacent}
+        stack={stacking}
         instanceSizes={instanceSizes}
         instanceColors={instanceColors}
         colorTint={colorTint}

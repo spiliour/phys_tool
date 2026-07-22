@@ -158,6 +158,7 @@ export interface MarkInstancesProps {
   customModelUrl?: string          // renders GLB clones when markShape === 'custom'
   scaleBoost?:     number          // world scale multiplier (default SCATTER_SCALE)
   standOnAnchor?:  boolean         // pos = anchor point; offset mark by halfY along normal
+  stack?:          boolean         // stack marks vertically at pos: base of i on top of i-1
   labelGapFactor?: number          // extra label clearance × halfY (default 0)
   // Per-instance encodings (index i ← data row i, cycling):
   instanceSizes?:  Vec3[]
@@ -175,19 +176,35 @@ function markCenter(p: MarkPlacement, halfY: number, standOnAnchor: boolean): [n
   return [p.pos[0] + p.normal[0] * halfY, p.pos[1] + p.normal[1] * halfY, p.pos[2] + p.normal[2] * halfY]
 }
 
+// Vertical stack: given each mark's rendered (post-encoding) half-height, return
+// each mark's CENTRE-Y offset so mark i's base rests exactly on mark i-1's top.
+function stackedCenterYs(halfYs: number[]): number[] {
+  const out: number[] = []
+  let base = 0
+  for (const h of halfYs) { out.push(base + h); base += 2 * h }
+  return out
+}
+
 // ── Primitive marks: one InstancedMesh ────────────────────────────────────────
 
 function PrimitiveInstances({
   placements, markShape, markMaterial, markSize, color, structural,
-  scaleBoost, standOnAnchor, labelGapFactor,
+  scaleBoost, standOnAnchor, stack, labelGapFactor,
   instanceSizes, instanceColors, markLabels,
-}: MarkInstancesProps & { scaleBoost: number; standOnAnchor: boolean; labelGapFactor: number }) {
+}: MarkInstancesProps & { scaleBoost: number; standOnAnchor: boolean; stack: boolean; labelGapFactor: number }) {
   const ref = useRef<THREE.InstancedMesh>(null)
   const geo = useMemo(() => makeMarkGeometry(markShape), [markShape])
   useEffect(() => () => { geo.dispose() }, [geo])
 
   const halfBase = primitiveHalfY(markShape) * scaleBoost
-  const halfYOf  = (i: number) => halfBase * instSize(instanceSizes, markSize, i).y
+  const halfYs   = useMemo(
+    () => placements.map((_, i) => halfBase * instSize(instanceSizes, markSize, i).y),
+    [placements, halfBase, instanceSizes, markSize.y],
+  )
+  const stackYs  = useMemo(() => (stack ? stackedCenterYs(halfYs) : null), [stack, halfYs])
+  // Centre of mark i: stacked column, surface anchor, or plain position.
+  const centerOf = (p: MarkPlacement, i: number): [number, number, number] =>
+    stackYs ? [p.pos[0], p.pos[1] + stackYs[i], p.pos[2]] : markCenter(p, halfYs[i], standOnAnchor)
 
   useEffect(() => {
     const mesh = ref.current
@@ -198,12 +215,12 @@ function PrimitiveInstances({
     const col = new THREE.Color()
     placements.forEach((p, i) => {
       const msz = instSize(instanceSizes, markSize, i)
-      dummy.position.set(...markCenter(p, halfBase * msz.y, standOnAnchor))
-      if (p.normal) {
+      dummy.position.set(...centerOf(p, i))
+      if (p.normal && !stack) {
         q.setFromUnitVectors(UP, n.set(...p.normal))
         dummy.quaternion.copy(q)
       } else {
-        dummy.rotation.set(...(p.rot ?? [0, 0, 0]))
+        dummy.rotation.set(...(p.rot ?? [0, 0, 0]))   // stacks stay upright
       }
       dummy.scale.set(msz.x * scaleBoost, msz.y * scaleBoost, msz.z * scaleBoost)
       dummy.updateMatrix()
@@ -212,7 +229,7 @@ function PrimitiveInstances({
     })
     mesh.instanceMatrix.needsUpdate = true
     if (instanceColors && mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-  }, [placements, markShape, markSize.x, markSize.y, markSize.z, scaleBoost, standOnAnchor, instanceSizes, instanceColors])
+  }, [placements, markShape, markSize.x, markSize.y, markSize.z, scaleBoost, standOnAnchor, stack, instanceSizes, instanceColors])
 
   return (
     <>
@@ -229,11 +246,11 @@ function PrimitiveInstances({
       {markLabels && placements.map((p, i) => {
         const lbl = markLabels[i]
         if (!lbl || (!lbl.above && !lbl.below)) return null
-        const halfY = halfYOf(i)
+        const halfY = halfYs[i]
         return (
           <MarkLabelTags key={`lbl-${i}`}
-            center={markCenter(p, halfY, standOnAnchor)}
-            dir={p.normal ?? [0, 1, 0]}
+            center={centerOf(p, i)}
+            dir={stack ? [0, 1, 0] : (p.normal ?? [0, 1, 0])}
             halfY={halfY} gapFactor={labelGapFactor}
             above={lbl.above} below={lbl.below}
           />
@@ -249,10 +266,10 @@ function PrimitiveInstances({
 
 function GLBInstances({
   placements, markMaterial, markSize, color,
-  scaleBoost, standOnAnchor, labelGapFactor,
+  scaleBoost, standOnAnchor, stack, labelGapFactor,
   instanceSizes, instanceColors, colorTint, markLabels,
   url,
-}: MarkInstancesProps & { url: string; scaleBoost: number; standOnAnchor: boolean; labelGapFactor: number }) {
+}: MarkInstancesProps & { url: string; scaleBoost: number; standOnAnchor: boolean; stack: boolean; labelGapFactor: number }) {
   const { scene: gltfScene } = useGLTF(url)
 
   // Normalise scale AND compute centre so every model is centred at its
@@ -319,6 +336,12 @@ function GLBInstances({
     return () => { tintMats.current.forEach(m => m.dispose()); tintMats.current = [] }
   }, [mat, colorMats, clones, instanceColors, colorTint])
 
+  const halfYs = useMemo(
+    () => placements.map((_, i) => halfYUnit * scaleBoost * instSize(instanceSizes, markSize, i).y),
+    [placements, halfYUnit, scaleBoost, instanceSizes, markSize.y],
+  )
+  const stackYs = useMemo(() => (stack ? stackedCenterYs(halfYs) : null), [stack, halfYs])
+
   const q = new THREE.Quaternion()
   const n = new THREE.Vector3()
   return (
@@ -329,13 +352,15 @@ function GLBInstances({
         const sx = normScale * msz.x * scaleBoost
         const sy = normScale * msz.y * scaleBoost
         const sz = normScale * msz.z * scaleBoost
-        const halfY = halfYUnit * scaleBoost * msz.y
-        const c = markCenter(p, halfY, standOnAnchor)
+        const halfY = halfYs[i]
+        const c: [number, number, number] = stackYs
+          ? [p.pos[0], p.pos[1] + stackYs[i], p.pos[2]]
+          : markCenter(p, halfY, standOnAnchor)
         // Centering offset in the primitive's pre-scale space: after scale is
         // applied it cancels the GLB's own origin, centring geometry at the group.
         const ox = -center.x * sx, oy = -center.y * sy, oz = -center.z * sz
         let quat: [number, number, number, number] | undefined
-        if (p.normal) {
+        if (p.normal && !stack) {   // stacks stay upright
           q.setFromUnitVectors(UP, n.set(...p.normal))
           quat = [q.x, q.y, q.z, q.w]
         }
@@ -366,9 +391,9 @@ function GLBInstances({
 export function MarkInstances(props: MarkInstancesProps) {
   const {
     markShape, customModelUrl,
-    scaleBoost = SCATTER_SCALE, standOnAnchor = false, labelGapFactor = 0,
+    scaleBoost = SCATTER_SCALE, standOnAnchor = false, stack = false, labelGapFactor = 0,
   } = props
-  const resolved = { ...props, scaleBoost, standOnAnchor, labelGapFactor }
+  const resolved = { ...props, scaleBoost, standOnAnchor, stack, labelGapFactor }
   if (markShape === 'custom' && customModelUrl) {
     return (
       <Suspense fallback={null}>

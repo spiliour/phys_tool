@@ -481,7 +481,7 @@ function CollectionInstance({
 
   // Per-row encodings (one mark per data row) apply to scattering and to
   // surface placement — both distribute one mark per row over a region/surface.
-  const perRowArrangement = collection1Config.arrangement === 'scattering' || collection1Config.arrangement === 'surface' || collection1Config.arrangement === 'adjacent'
+  const perRowArrangement = collection1Config.arrangement === 'scattering' || collection1Config.arrangement === 'surface' || collection1Config.arrangement === 'adjacent' || collection1Config.arrangement === 'stacking'
   // Per-instance sizes when a size/scale encoding is active: scaled by that row's value.
   const sizeEncActive = perRowArrangement && (
     bindings.markScale !== null || bindings.markSizeX !== null ||
@@ -612,8 +612,10 @@ function CollectionInstance({
     )
   }
 
-  // Scattering / stacking / adjacent (relaxed grid)
+  // Scattering / stacking / adjacent (surface scatter)
   const isAdjacent = collection1Config.arrangement === 'adjacent'
+  const isStacking = collection1Config.arrangement === 'stacking'
+  const noVolume   = isAdjacent || isStacking   // flat/columnar: no random volume, no exclusion
   const { scatterDimensions: dim, scatterCount, scatterDensity, scatterMode } = collection1Config
   // The Scatter-Size encoding value (heightOverride) grows only the chosen axes
   // (defaults to Y). Unselected axes keep their configured dimension.
@@ -628,7 +630,7 @@ function CollectionInstance({
     ? dataLayerCount
     : perRowActive
       ? layers.length   // size / colour encoding: one mark per data row
-      : (scatterMode ?? 'count') === 'density' && !isAdjacent
+      : (scatterMode ?? 'count') === 'density' && !noVolume
         ? Math.max(5, Math.round(scatterDensity * dimX * dimY * dimZ))
         : scatterCount
   const labelData = computeLabelValues(colLabelConfig.slots, layers, layerIndex)
@@ -651,11 +653,12 @@ function CollectionInstance({
       seed={scatterSeed}
       boundingVolume={collection1Config.scatterBoundingVolume ?? 'box'}
       showBounds={collection1Config.scatterShowBounds ?? true}
-      orientation={isAdjacent ? 'static' : (collection1Config.scatterOrientation ?? 'random')}
-      exclusionZone={isAdjacent ? undefined : exclusionZone}
+      orientation={noVolume ? 'static' : (collection1Config.scatterOrientation ?? 'random')}
+      exclusionZone={noVolume ? undefined : exclusionZone}
       evenDistribution={collection1Config.scatterEven ?? false}
       adjacent={isAdjacent}
       showGrid={collection1Config.adjacentShowGrid ?? false}
+      stacking={isStacking}
       instanceSizes={instanceSizes}
       instanceColors={instanceColors}
       colorTint={colorTint}

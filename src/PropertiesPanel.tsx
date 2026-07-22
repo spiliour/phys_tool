@@ -846,8 +846,8 @@ function CollectionProperties({
             style={{ width: '100%', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', color: '#1D1D1F', fontSize: '13px', padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', appearance: 'auto' }}
           >
             {ARRANGEMENT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value} disabled={opt.value === 'stacking'}>
-                {opt.label}{opt.value === 'stacking' ? ' (coming soon)' : ''}
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
               </option>
             ))}
           </select>
@@ -1204,6 +1204,14 @@ function CollectionProperties({
                 </button>
               </Row>
             )}
+          </>
+        )}
+
+        {/* ── Stacking controls (vertical column, no physics) ── */}
+        {config.arrangement === 'stacking' && (
+          <>
+            <LabeledSlider label="Mark Count" value={config.scatterCount} min={1} max={100} step={1}
+              onChange={(v) => onChange({ ...config, scatterCount: v })} />
           </>
         )}
 
