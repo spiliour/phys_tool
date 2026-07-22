@@ -460,6 +460,7 @@ const ARRANGEMENT_OPTIONS: { value: CollectionArrangement; label: string }[] = [
   { value: 'stacking',   label: 'Stacking'          },
   { value: 'piling',     label: 'Piling'            },
   { value: 'surface',    label: 'Surface Placement' },
+  { value: 'adjacent',   label: 'Adjacent (grid)'   },
 ]
 
 const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
@@ -1167,6 +1168,30 @@ function CollectionProperties({
                 <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{(config.surfaceScale ?? 1).toFixed(1)}×</span>
               </div>
             </Row>
+            {onReseed && (
+              <Row label="Placement">
+                <button
+                  onClick={onReseed}
+                  style={{ padding: '6px 12px', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#1D1D1F', fontFamily: 'inherit' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#E5E5EA')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+                >
+                  Randomise
+                </button>
+              </Row>
+            )}
+          </>
+        )}
+
+        {/* ── Adjacent (grid) controls ── */}
+        {config.arrangement === 'adjacent' && (
+          <>
+            <LabeledSlider label="Mark Count" value={config.scatterCount} min={1} max={200} step={1}
+              onChange={(v) => onChange({ ...config, scatterCount: v })} />
+            <Vec3Input label="Footprint" value={config.scatterDimensions}
+              onChange={(v) => onChange({ ...config, scatterDimensions: v })} min={0.5} max={20} step={0.5} />
+            <LabeledSlider label="Relaxation" value={config.adjacentRelax ?? 0.3} min={0} max={1} step={0.05} decimals={2}
+              onChange={(v) => onChange({ ...config, adjacentRelax: v })} />
             {onReseed && (
               <Row label="Placement">
                 <button

@@ -481,7 +481,7 @@ function CollectionInstance({
 
   // Per-row encodings (one mark per data row) apply to scattering and to
   // surface placement — both distribute one mark per row over a region/surface.
-  const perRowArrangement = collection1Config.arrangement === 'scattering' || collection1Config.arrangement === 'surface'
+  const perRowArrangement = collection1Config.arrangement === 'scattering' || collection1Config.arrangement === 'surface' || collection1Config.arrangement === 'adjacent'
   // Per-instance sizes when a size/scale encoding is active: scaled by that row's value.
   const sizeEncActive = perRowArrangement && (
     bindings.markScale !== null || bindings.markSizeX !== null ||
@@ -612,7 +612,8 @@ function CollectionInstance({
     )
   }
 
-  // Scattering / stacking
+  // Scattering / stacking / adjacent (relaxed grid)
+  const isAdjacent = collection1Config.arrangement === 'adjacent'
   const { scatterDimensions: dim, scatterCount, scatterDensity, scatterMode } = collection1Config
   // The Scatter-Size encoding value (heightOverride) grows only the chosen axes
   // (defaults to Y). Unselected axes keep their configured dimension.
@@ -626,8 +627,8 @@ function CollectionInstance({
   const effectiveCount = dataLayerCount !== null
     ? dataLayerCount
     : perRowActive
-      ? layers.length   // size / colour encoding: one scattered mark per data row
-      : (scatterMode ?? 'count') === 'density'
+      ? layers.length   // size / colour encoding: one mark per data row
+      : (scatterMode ?? 'count') === 'density' && !isAdjacent
         ? Math.max(5, Math.round(scatterDensity * dimX * dimY * dimZ))
         : scatterCount
   const labelData = computeLabelValues(colLabelConfig.slots, layers, layerIndex)
@@ -650,9 +651,11 @@ function CollectionInstance({
       seed={scatterSeed}
       boundingVolume={collection1Config.scatterBoundingVolume ?? 'box'}
       showBounds={collection1Config.scatterShowBounds ?? true}
-      orientation={collection1Config.scatterOrientation ?? 'random'}
-      exclusionZone={exclusionZone}
+      orientation={isAdjacent ? 'static' : (collection1Config.scatterOrientation ?? 'random')}
+      exclusionZone={isAdjacent ? undefined : exclusionZone}
       evenDistribution={collection1Config.scatterEven ?? false}
+      gridLayout={isAdjacent}
+      gridRelax={collection1Config.adjacentRelax ?? 0.3}
       instanceSizes={instanceSizes}
       instanceColors={instanceColors}
       colorTint={colorTint}

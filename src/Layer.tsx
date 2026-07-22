@@ -49,6 +49,8 @@ interface LayerProps {
   orientation?:         'random' | 'static'
   exclusionZone?:       ExclusionZone
   evenDistribution?:    boolean
+  gridLayout?:          boolean  // adjacent placement: lay marks in a relaxed 2D grid
+  gridRelax?:           number   // 0 = clean grid, 1 = loose (jitter within cell)
   instanceSizes?:       Vec3[]   // per-instance size override (data-driven scale encoding)
   instanceColors?:      string[] // per-instance colour override (data-driven colour encoding)
   colorTint?:           boolean  // tint GLB material instead of replacing it
@@ -305,6 +307,31 @@ function overlapAttempts(count: number): number {
   return Math.max(8, Math.min(OVERLAP_ATTEMPTS_MAX, Math.floor(2_000_000 / perAttempt)))
 }
 
+// Adjacent placement: a relaxed 2D grid on the X-Z plane (marks sit next to each
+// other). `relax` (0–1) jitters each mark within its cell for an organic look.
+function gridLayout(count: number, width: number, depth: number, relax: number): ScatterInstance[] {
+  const n  = Math.max(1, count)
+  const hw = width * SCATTER_FILL
+  const hd = depth * SCATTER_FILL
+  // Columns/rows chosen so cells stay roughly square for the given footprint.
+  const aspect = hw / Math.max(0.001, hd)
+  const cols = Math.max(1, Math.round(Math.sqrt(n * aspect)))
+  const rows = Math.max(1, Math.ceil(n / cols))
+  const cellW = (2 * hw) / cols
+  const cellD = (2 * hd) / rows
+  const jw = cellW * 0.5 * relax
+  const jd = cellD * 0.5 * relax
+  const out: ScatterInstance[] = []
+  for (let i = 0; i < n; i++) {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const x = -hw + (col + 0.5) * cellW + (Math.random() - 0.5) * jw
+    const z = -hd + (row + 0.5) * cellD + (Math.random() - 0.5) * jd
+    out.push({ pos: [x, 0, z], rot: [0, 0, 0] })
+  }
+  return out
+}
+
 // Generate several candidate arrangements and keep the one with the fewest
 // overlapping pairs — so sizeable marks don't visibly collide.
 function bestScatterLayout(
@@ -495,6 +522,7 @@ export function Layer({
   customModelUrl,
   labelShow, labelData, seed = 0, boundingVolume = 'box',
   showBounds = true, orientation = 'random', exclusionZone, evenDistribution = false,
+  gridLayout: useGrid = false, gridRelax = 0.3,
   instanceSizes, instanceColors, colorTint, markLabels,
 }: LayerProps) {
   const instanceRef = useRef<THREE.InstancedMesh>(null)
@@ -510,12 +538,15 @@ export function Layer({
   // Tries several seeds and keeps the arrangement with the fewest overlapping
   // marks (each mark approximated as a sphere sized from its scale).
   const layout = useMemo(() => {
+    // Adjacent placement: a relaxed 2D grid (no overlap search needed).
+    if (useGrid) return gridLayout(renderCount, width, depth, gridRelax)
     const radii = Array.from({ length: renderCount }, (_, i) => {
       const msz = instanceSizes ? instanceSizes[i % instanceSizes.length] : markSize
       return 0.5 * MARK_BASE * SCATTER_SCALE * Math.max(msz.x, msz.y, msz.z)
     })
     return bestScatterLayout(renderCount, width, height, depth, boundingVolume, orientation, radii, exclusionZone, evenDistribution)
   }, [
+    useGrid, gridRelax,
     renderCount, width, height, depth, seed, boundingVolume, orientation,
     exclusionZone, evenDistribution, instanceSizes,
     markSize.x, markSize.y, markSize.z,
