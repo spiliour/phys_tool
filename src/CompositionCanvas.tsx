@@ -659,6 +659,7 @@ function CollectionInstance({
       adjacent={isAdjacent}
       showGrid={collection1Config.adjacentShowGrid ?? false}
       stacking={isStacking}
+      stackRandomOrient={collection1Config.stackingRandomOrient ?? false}
       instanceSizes={instanceSizes}
       instanceColors={instanceColors}
       colorTint={colorTint}

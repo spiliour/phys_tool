@@ -75,6 +75,8 @@ export interface CollectionConfig {
   scatterSizeAxes?:      { x: boolean; y: boolean; z: boolean }  // axes the Scatter-Size encoding grows (default Y)
   // Adjacent placement — marks scattered on a flat surface, bottom-aligned
   adjacentShowGrid?:     boolean  // show a reference grid on the surface
+  // Stacking — marks piled in a vertical column
+  stackingRandomOrient?: boolean  // give each stacked mark a random tumble
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
   // Surface placement — marks scattered onto a decoration's surface, standing

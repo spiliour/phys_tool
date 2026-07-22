@@ -49,6 +49,7 @@ interface LayerProps {
   adjacent?:            boolean  // adjacent placement: scatter on a flat surface, bottom-aligned
   showGrid?:            boolean  // adjacent: show a reference grid on the surface
   stacking?:            boolean  // stacking: marks piled in a vertical column, base on base
+  stackRandomOrient?:   boolean  // stacking: give each mark a random tumble
   instanceSizes?:       Vec3[]   // per-instance size override (data-driven scale encoding)
   instanceColors?:      string[] // per-instance colour override (data-driven colour encoding)
   colorTint?:           boolean  // tint GLB material instead of replacing it
@@ -270,9 +271,16 @@ function surfaceScatterLayout(count: number, width: number, depth: number, radii
 
 // Every mark shares the X-Z origin; the shared renderer (stack mode) piles them
 // vertically using each mark's post-encoding height, so the column grows upward
-// from the surface regardless of a size/scale encoding.
-function stackLayout(count: number): MarkPlacement[] {
-  return Array.from({ length: count }, () => ({ pos: [0, 0, 0] as [number, number, number] }))
+// from the surface regardless of a size/scale encoding. With randomOrient each
+// mark is spun a random amount about the vertical (Y) axis — this varies the
+// look without changing any mark's height, so the tight stacking is preserved.
+function stackLayout(count: number, randomOrient: boolean): MarkPlacement[] {
+  const TAU = Math.PI * 2
+  return Array.from({ length: count }, () => (
+    randomOrient
+      ? { pos: [0, 0, 0] as [number, number, number], rot: [0, Math.random() * TAU, 0] as [number, number, number] }
+      : { pos: [0, 0, 0] as [number, number, number] }
+  ))
 }
 
 // ── Layer ─────────────────────────────────────────────────────────────────────
@@ -284,7 +292,7 @@ export function Layer({
   customModelUrl,
   labelShow, labelData, seed = 0, boundingVolume = 'box',
   showBounds = true, orientation = 'random', exclusionZone, evenDistribution = false,
-  adjacent = false, showGrid = false, stacking = false,
+  adjacent = false, showGrid = false, stacking = false, stackRandomOrient = false,
   instanceSizes, instanceColors, colorTint, markLabels,
 }: LayerProps) {
   const occ = occludeProp(useContext(LabelOccludeContext))
@@ -298,7 +306,7 @@ export function Layer({
   // arrangement with the fewest overlapping marks (each approximated as a
   // sphere sized from its scale); the adjacent grid needs no search.
   const layout = useMemo(() => {
-    if (stacking) return stackLayout(renderCount)
+    if (stacking) return stackLayout(renderCount, stackRandomOrient)
     const radii = Array.from({ length: renderCount }, (_, i) => {
       const msz = instanceSizes ? instanceSizes[i % instanceSizes.length] : markSize
       // Adjacent packs on a plane, so spread by footprint (x-z); scatter uses the full radius.
@@ -308,7 +316,7 @@ export function Layer({
     if (adjacent) return surfaceScatterLayout(renderCount, width, depth, radii)
     return bestScatterLayout(renderCount, width, height, depth, boundingVolume, orientation, radii, exclusionZone, evenDistribution)
   }, [
-    adjacent, stacking,
+    adjacent, stacking, stackRandomOrient,
     renderCount, width, height, depth, seed, boundingVolume, orientation,
     exclusionZone, evenDistribution, instanceSizes,
     markSize.x, markSize.y, markSize.z,

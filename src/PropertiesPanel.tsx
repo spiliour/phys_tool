@@ -1212,6 +1212,8 @@ function CollectionProperties({
           <>
             <LabeledSlider label="Mark Count" value={config.scatterCount} min={1} max={100} step={1}
               onChange={(v) => onChange({ ...config, scatterCount: v })} />
+            <CheckRow label="Random orientation" checked={config.stackingRandomOrient ?? false}
+              onChange={(v) => onChange({ ...config, stackingRandomOrient: v })} />
           </>
         )}
 

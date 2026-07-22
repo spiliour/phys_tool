@@ -178,6 +178,8 @@ function markCenter(p: MarkPlacement, halfY: number, standOnAnchor: boolean): [n
 
 // Vertical stack: given each mark's rendered (post-encoding) half-height, return
 // each mark's CENTRE-Y offset so mark i's base rests exactly on mark i-1's top.
+// (Random-orientation stacks spin marks about Y only, which leaves the height
+// unchanged, so this tight spacing stays correct.)
 function stackedCenterYs(halfYs: number[]): number[] {
   const out: number[] = []
   let base = 0
