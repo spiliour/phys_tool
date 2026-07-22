@@ -654,8 +654,8 @@ function CollectionInstance({
       orientation={isAdjacent ? 'static' : (collection1Config.scatterOrientation ?? 'random')}
       exclusionZone={isAdjacent ? undefined : exclusionZone}
       evenDistribution={collection1Config.scatterEven ?? false}
-      gridLayout={isAdjacent}
-      gridRelax={collection1Config.adjacentRelax ?? 0.3}
+      adjacent={isAdjacent}
+      showGrid={collection1Config.adjacentShowGrid ?? false}
       instanceSizes={instanceSizes}
       instanceColors={instanceColors}
       colorTint={colorTint}

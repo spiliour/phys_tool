@@ -46,8 +46,8 @@ interface LayerProps {
   orientation?:         'random' | 'static'
   exclusionZone?:       ExclusionZone
   evenDistribution?:    boolean
-  gridLayout?:          boolean  // adjacent placement: lay marks in a relaxed 2D grid
-  gridRelax?:           number   // 0 = clean grid, 1 = loose (jitter within cell)
+  adjacent?:            boolean  // adjacent placement: scatter on a flat surface, bottom-aligned
+  showGrid?:            boolean  // adjacent: show a reference grid on the surface
   instanceSizes?:       Vec3[]   // per-instance size override (data-driven scale encoding)
   instanceColors?:      string[] // per-instance colour override (data-driven colour encoding)
   colorTint?:           boolean  // tint GLB material instead of replacing it
@@ -242,31 +242,27 @@ function bestScatterLayout(
   return best
 }
 
-// ── Layout: adjacent placement (relaxed 2D grid) ──────────────────────────────
+// ── Layout: adjacent placement (random points on a flat surface) ──────────────
 
-// Marks sit next to each other on the X-Z plane. `relax` (0–1) jitters each
-// mark within its cell for an organic look.
-function gridLayout(count: number, width: number, depth: number, relax: number): MarkPlacement[] {
-  const n  = Math.max(1, count)
+// Marks are scattered randomly across the X-Z plane, spread out via the same
+// overlap-avoidance as scattering (so they read as adjacent, not clumped). Each
+// carries an up-normal so the shared renderer stands it upright on the surface.
+function surfaceScatterLayout(count: number, width: number, depth: number, radii: number[]): MarkPlacement[] {
   const hw = width * SCATTER_FILL
   const hd = depth * SCATTER_FILL
-  // Columns/rows chosen so cells stay roughly square for the given footprint.
-  const aspect = hw / Math.max(0.001, hd)
-  const cols = Math.max(1, Math.round(Math.sqrt(n * aspect)))
-  const rows = Math.max(1, Math.ceil(n / cols))
-  const cellW = (2 * hw) / cols
-  const cellD = (2 * hd) / rows
-  const jw = cellW * 0.5 * relax
-  const jd = cellD * 0.5 * relax
-  const out: MarkPlacement[] = []
-  for (let i = 0; i < n; i++) {
-    const col = i % cols
-    const row = Math.floor(i / cols)
-    const x = -hw + (col + 0.5) * cellW + (Math.random() - 0.5) * jw
-    const z = -hd + (row + 0.5) * cellD + (Math.random() - 0.5) * jd
-    out.push({ pos: [x, 0, z], rot: [0, 0, 0] })
+  const sample = (): MarkPlacement[] => Array.from({ length: count }, () => ({
+    pos:    [(Math.random() - 0.5) * 2 * hw, 0, (Math.random() - 0.5) * 2 * hd] as [number, number, number],
+    normal: [0, 1, 0] as [number, number, number],
+  }))
+  const attempts = overlapAttempts(count)
+  let best = sample()
+  let bestOverlaps = countOverlaps(best, radii)
+  for (let a = 1; a < attempts && bestOverlaps > 0; a++) {
+    const cand = sample()
+    const ov   = countOverlaps(cand, radii)
+    if (ov < bestOverlaps) { best = cand; bestOverlaps = ov }
   }
-  return out
+  return best
 }
 
 // ── Layer ─────────────────────────────────────────────────────────────────────
@@ -278,7 +274,7 @@ export function Layer({
   customModelUrl,
   labelShow, labelData, seed = 0, boundingVolume = 'box',
   showBounds = true, orientation = 'random', exclusionZone, evenDistribution = false,
-  gridLayout: useGrid = false, gridRelax = 0.3,
+  adjacent = false, showGrid = false,
   instanceSizes, instanceColors, colorTint, markLabels,
 }: LayerProps) {
   const occ = occludeProp(useContext(LabelOccludeContext))
@@ -292,14 +288,16 @@ export function Layer({
   // arrangement with the fewest overlapping marks (each approximated as a
   // sphere sized from its scale); the adjacent grid needs no search.
   const layout = useMemo(() => {
-    if (useGrid) return gridLayout(renderCount, width, depth, gridRelax)
     const radii = Array.from({ length: renderCount }, (_, i) => {
       const msz = instanceSizes ? instanceSizes[i % instanceSizes.length] : markSize
-      return 0.5 * MARK_BASE * SCATTER_SCALE * Math.max(msz.x, msz.y, msz.z)
+      // Adjacent packs on a plane, so spread by footprint (x-z); scatter uses the full radius.
+      const extent = adjacent ? Math.max(msz.x, msz.z) : Math.max(msz.x, msz.y, msz.z)
+      return 0.5 * MARK_BASE * SCATTER_SCALE * extent
     })
+    if (adjacent) return surfaceScatterLayout(renderCount, width, depth, radii)
     return bestScatterLayout(renderCount, width, height, depth, boundingVolume, orientation, radii, exclusionZone, evenDistribution)
   }, [
-    useGrid, gridRelax,
+    adjacent,
     renderCount, width, height, depth, seed, boundingVolume, orientation,
     exclusionZone, evenDistribution, instanceSizes,
     markSize.x, markSize.y, markSize.z,
@@ -323,11 +321,21 @@ export function Layer({
 
   return (
     <group position={position}>
-      {showBounds && <lineSegments geometry={edgesGeo}>
-        <lineBasicMaterial color="#666666" transparent opacity={0.7} />
-      </lineSegments>}
+      {/* Adjacent shows an optional reference grid on the surface (marks sit on it);
+          volume arrangements show the bounding box / sphere wireframe. */}
+      {adjacent
+        ? (showGrid && (
+            <gridHelper args={[2, 12, '#777777', '#4a4a4a']} scale={[width * SCATTER_FILL, 1, depth * SCATTER_FILL]} />
+          ))
+        : (showBounds && (
+            <lineSegments geometry={edgesGeo}>
+              <lineBasicMaterial color="#666666" transparent opacity={0.7} />
+            </lineSegments>
+          ))
+      }
 
-      {/* All rendering + per-instance encodings live in the shared renderer. */}
+      {/* All rendering + per-instance encodings live in the shared renderer.
+          Adjacent stands each mark on the surface (base at the sample point). */}
       <MarkInstances
         placements={layout}
         markShape={markShape}
@@ -336,6 +344,7 @@ export function Layer({
         color={color}
         structural={structural}
         customModelUrl={useCustom ? customModelUrl : undefined}
+        standOnAnchor={adjacent}
         instanceSizes={instanceSizes}
         instanceColors={instanceColors}
         colorTint={colorTint}

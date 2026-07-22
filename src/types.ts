@@ -73,8 +73,8 @@ export interface CollectionConfig {
   scatterExclusionId?:   string | null
   scatterEven?:          boolean
   scatterSizeAxes?:      { x: boolean; y: boolean; z: boolean }  // axes the Scatter-Size encoding grows (default Y)
-  // Adjacent placement — a relaxed 2D grid on a surface
-  adjacentRelax?:        number   // 0 = clean grid, 1 = loose/jittered
+  // Adjacent placement — marks scattered on a flat surface, bottom-aligned
+  adjacentShowGrid?:     boolean  // show a reference grid on the surface
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
   // Surface placement — marks scattered onto a decoration's surface, standing

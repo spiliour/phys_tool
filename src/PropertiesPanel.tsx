@@ -460,7 +460,7 @@ const ARRANGEMENT_OPTIONS: { value: CollectionArrangement; label: string }[] = [
   { value: 'stacking',   label: 'Stacking'          },
   { value: 'piling',     label: 'Piling'            },
   { value: 'surface',    label: 'Surface Placement' },
-  { value: 'adjacent',   label: 'Adjacent (grid)'   },
+  { value: 'adjacent',   label: 'Adjacent'          },
 ]
 
 const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
@@ -1183,15 +1183,15 @@ function CollectionProperties({
           </>
         )}
 
-        {/* ── Adjacent (grid) controls ── */}
+        {/* ── Adjacent controls (random scatter on a flat surface) ── */}
         {config.arrangement === 'adjacent' && (
           <>
             <LabeledSlider label="Mark Count" value={config.scatterCount} min={1} max={200} step={1}
               onChange={(v) => onChange({ ...config, scatterCount: v })} />
-            <Vec3Input label="Footprint" value={config.scatterDimensions}
-              onChange={(v) => onChange({ ...config, scatterDimensions: v })} min={0.5} max={20} step={0.5} />
-            <LabeledSlider label="Relaxation" value={config.adjacentRelax ?? 0.3} min={0} max={1} step={0.05} decimals={2}
-              onChange={(v) => onChange({ ...config, adjacentRelax: v })} />
+            <Vec3Input label="Surface size" value={config.scatterDimensions}
+              onChange={(v) => onChange({ ...config, scatterDimensions: v })} min={0.5} max={30} step={0.5} />
+            <CheckRow label="Show grid" checked={config.adjacentShowGrid ?? false}
+              onChange={(v) => onChange({ ...config, adjacentShowGrid: v })} />
             {onReseed && (
               <Row label="Placement">
                 <button
