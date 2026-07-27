@@ -159,33 +159,56 @@ function BoundChip({ label, type, onClear }: {
 
 const SLOT_ICONS: Record<LabelPosition, string> = { top: '↑', bottom: '↓', left: '←', right: '→' }
 
-function LabelSlotZone({ position, slot, onBind, onClear }: {
+function LabelSlotZone({ position, slot, onAdd, onRemove }: {
   position: LabelPosition
-  slot:     DataVariable | null
-  onBind:   (v: DataVariable) => void
-  onClear:  () => void
+  slot:     DataVariable[]
+  onAdd:    (v: DataVariable) => void
+  onRemove: (v: DataVariable) => void
 }) {
   const [over, setOver] = useState(false)
-
-  if (slot !== null) {
-    const meta = VAR_META[slot]
-    return <BoundChip label={meta.label} type={meta.type} onClear={onClear} />
+  const dropOk = (e: React.DragEvent) =>
+    e.dataTransfer.types.some(t => t === 'phys-var/numerical' || t === 'phys-var/categorical')
+  const onDragOver  = (e: React.DragEvent) => { if (dropOk(e)) { e.preventDefault(); setOver(true) } }
+  const onDragLeave = () => setOver(false)
+  const onDrop      = (e: React.DragEvent) => {
+    if (!dropOk(e)) return
+    e.preventDefault(); setOver(false)
+    onAdd(e.dataTransfer.getData('phys-var/name') as DataVariable)
   }
 
+  // Filled: one compact chip per variable (each removable); still a drop target
+  // so more variables can be added to the same position.
+  if (slot.length > 0) {
+    return (
+      <div onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+        title={`Drop another variable to add it to the ${position} label`}
+        style={{ display: 'flex', flexDirection: 'column', gap: '3px', borderRadius: '6px',
+          outline: over ? '1px dashed #007AFF' : 'none', outlineOffset: '2px' }}>
+        {slot.map((v) => {
+          const meta = VAR_META[v]
+          return (
+            <span key={v} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '3px',
+              background: meta.type === 'numerical' ? '#EBF3FF' : '#F3EBFF',
+              border: `1px solid ${meta.type === 'numerical' ? '#A8CAFF' : '#C8A8FF'}`,
+              borderRadius: '6px', padding: '2px 3px 2px 6px', fontSize: '10px', fontWeight: '600',
+              color: meta.type === 'numerical' ? '#007AFF' : '#5E5CE6', whiteSpace: 'nowrap',
+            }}>
+              {meta.type === 'numerical' ? '#' : '◈'} {meta.label}
+              <button onClick={() => onRemove(v)} style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: '#AEAEB2',
+                padding: '0 2px', fontSize: '12px', lineHeight: 1, fontFamily: 'inherit',
+              }}>×</button>
+            </span>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // Empty: dashed placeholder drop zone.
   return (
-    <div
-      onDragOver={(e) => {
-        const ok = e.dataTransfer.types.some(t => t === 'phys-var/numerical' || t === 'phys-var/categorical')
-        if (ok) { e.preventDefault(); setOver(true) }
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        const ok = e.dataTransfer.types.some(t => t === 'phys-var/numerical' || t === 'phys-var/categorical')
-        if (!ok) return
-        e.preventDefault()
-        setOver(false)
-        onBind(e.dataTransfer.getData('phys-var/name') as DataVariable)
-      }}
+    <div onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
       title={`Drag a variable to the ${position} label`}
       style={{
         border: `1.5px dashed ${over ? '#007AFF' : '#D1D1D6'}`,
@@ -207,8 +230,13 @@ function LabelSlotsEditor({ config, onChange }: {
   config:   LabelConfig
   onChange: (c: LabelConfig) => void
 }) {
-  function updateSlot(pos: LabelPosition, v: DataVariable | null) {
-    onChange({ ...config, slots: { ...config.slots, [pos]: v } })
+  function addToSlot(pos: LabelPosition, v: DataVariable) {
+    const cur = config.slots[pos]
+    if (cur.includes(v)) return
+    onChange({ ...config, slots: { ...config.slots, [pos]: [...cur, v] } })
+  }
+  function removeFromSlot(pos: LabelPosition, v: DataVariable) {
+    onChange({ ...config, slots: { ...config.slots, [pos]: config.slots[pos].filter(x => x !== v) } })
   }
 
   return (
@@ -236,15 +264,15 @@ function LabelSlotsEditor({ config, onChange }: {
       }}>
         {/* row 0: Top */}
         <div />
-        <LabelSlotZone position="top"    slot={config.slots.top}    onBind={(v) => updateSlot('top', v)}    onClear={() => updateSlot('top', null)} />
+        <LabelSlotZone position="top"    slot={config.slots.top}    onAdd={(v) => addToSlot('top', v)}    onRemove={(v) => removeFromSlot('top', v)} />
         <div />
         {/* row 1: Left · center · Right */}
-        <LabelSlotZone position="left"   slot={config.slots.left}   onBind={(v) => updateSlot('left', v)}   onClear={() => updateSlot('left', null)} />
+        <LabelSlotZone position="left"   slot={config.slots.left}   onAdd={(v) => addToSlot('left', v)}   onRemove={(v) => removeFromSlot('left', v)} />
         <div style={{ width: '18px', height: '18px', background: '#E5E5EA', borderRadius: '4px', flexShrink: 0 }} />
-        <LabelSlotZone position="right"  slot={config.slots.right}  onBind={(v) => updateSlot('right', v)}  onClear={() => updateSlot('right', null)} />
+        <LabelSlotZone position="right"  slot={config.slots.right}  onAdd={(v) => addToSlot('right', v)}  onRemove={(v) => removeFromSlot('right', v)} />
         {/* row 2: Bottom */}
         <div />
-        <LabelSlotZone position="bottom" slot={config.slots.bottom} onBind={(v) => updateSlot('bottom', v)} onClear={() => updateSlot('bottom', null)} />
+        <LabelSlotZone position="bottom" slot={config.slots.bottom} onAdd={(v) => addToSlot('bottom', v)} onRemove={(v) => removeFromSlot('bottom', v)} />
         <div />
       </div>
     </div>
@@ -305,16 +333,17 @@ function useAccordion(initial: string, jumpTo?: string) {
 
 function Vec3Input({
   label, value, onChange, min, max, step = 0.1, lockable = false,
-  axisBindings, onAxisBind,
+  axisBindings, onAxisBind, axes: axesProp,
 }: {
   label: string; value: Vec3; onChange: (v: Vec3) => void
   min?: number; max?: number; step?: number; lockable?: boolean
   axisBindings?: { x: DataVariable | null; y: DataVariable | null; z: DataVariable | null }
   onAxisBind?:   (axis: 'x' | 'y' | 'z', v: DataVariable | null) => void
+  axes?: (keyof Vec3)[]   // which axes to show (default all three)
 }) {
   const [locked,   setLocked]   = useState(false)
   const [overAxis, setOverAxis] = useState<'x' | 'y' | 'z' | null>(null)
-  const axes: (keyof Vec3)[] = ['x', 'y', 'z']
+  const axes: (keyof Vec3)[] = axesProp ?? ['x', 'y', 'z']
 
   function handleChange(axis: keyof Vec3, raw: number) {
     if (locked && value[axis] !== 0) {
@@ -458,9 +487,9 @@ const ARRANGEMENT_OPTIONS: { value: CollectionArrangement; label: string }[] = [
   { value: 'alignment',  label: 'Alignment'         },
   { value: 'scattering', label: 'Scattering'        },
   { value: 'stacking',   label: 'Stacking'          },
-  { value: 'piling',     label: 'Piling'            },
-  { value: 'surface',    label: 'Surface Placement' },
-  { value: 'adjacent',   label: 'Adjacent'          },
+  // { value: 'piling',     label: 'Piling'            },  // physics pile — hidden for now
+  { value: 'surface',    label: 'Surface Placement'  },
+  { value: 'adjacent',   label: 'Adjacent Placement' },
 ]
 
 const HDRI_OPTIONS: { value: HdriPreset; label: string }[] = [
@@ -818,7 +847,6 @@ function MarkProperties({
 
 function CollectionProperties({
   config, onChange, collectionLevel, bindings, onBind, labelConfig, onLabelChange, onReseed,
-  decorations,
 }: {
   config:          CollectionConfig
   onChange:        (c: CollectionConfig) => void
@@ -828,7 +856,6 @@ function CollectionProperties({
   labelConfig?:    LabelConfig
   onLabelChange?:  (c: LabelConfig) => void
   onReseed?:       () => void
-  decorations?:    DecorationConfig[]
 }) {
   const isL2 = collectionLevel === 2
   const acc = useAccordion('Groups & Populations')
@@ -923,7 +950,7 @@ function CollectionProperties({
             </Row>
             <Row label="Spacing">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input type="range" min={0.5} max={isL2 ? 12 : 6} step={0.1} value={config.alignSpacing}
+                <input type="range" min={0} max={isL2 ? 12 : 6} step={0.1} value={config.alignSpacing}
                   onChange={(e) => onChange({ ...config, alignSpacing: Number(e.target.value) })}
                   style={{ flex: 1, accentColor: '#5E5CE6', cursor: 'pointer' }} />
                 <span style={{ fontSize: '11px', color: '#6C6C70', minWidth: '28px', textAlign: 'right' }}>{config.alignSpacing.toFixed(1)}</span>
@@ -1068,21 +1095,18 @@ function CollectionProperties({
               </label>
             </Row>
 
-            {/* Exclusion zone */}
-            {decorations && decorations.length > 0 && (
+            {/* Exclusion zone — the collection's own object (add one below) */}
+            {config.object && (
               <Row label="Exclusion Zone">
-                <select
-                  value={config.scatterExclusionId ?? ''}
-                  onChange={e => onChange({ ...config, scatterExclusionId: e.target.value || null })}
-                  style={{ width: '100%', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', color: '#1D1D1F', fontSize: '13px', padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', appearance: 'auto' }}
-                >
-                  <option value="">None</option>
-                  {decorations.map((dec, idx) => (
-                    <option key={dec.id} value={dec.id}>
-                      {dec.name ?? `Decoration ${idx + 1}`} ({dec.shape})
-                    </option>
-                  ))}
-                </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={config.scatterExcludeObject ?? false}
+                    onChange={e => onChange({ ...config, scatterExcludeObject: e.target.checked })}
+                    style={{ accentColor: '#5E5CE6', width: '14px', height: '14px', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '11px', color: '#6C6C70' }}>Keep marks out of the object</span>
+                </label>
               </Row>
             )}
 
@@ -1135,22 +1159,11 @@ function CollectionProperties({
         {config.arrangement === 'surface' && (
           <>
             <Row label="Surface">
-              {decorations && decorations.length > 0 ? (
-                <select
-                  value={config.surfaceTargetId ?? ''}
-                  onChange={e => onChange({ ...config, surfaceTargetId: e.target.value || null })}
-                  style={{ width: '100%', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', color: '#1D1D1F', fontSize: '13px', padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', appearance: 'auto' }}
-                >
-                  <option value="">Select a decoration…</option>
-                  {decorations.map((dec, idx) => (
-                    <option key={dec.id} value={dec.id}>
-                      {dec.name ?? `Decoration ${idx + 1}`} ({dec.shape})
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span style={{ fontSize: '11px', color: '#AEAEB2' }}>Add a decoration to use as the surface.</span>
-              )}
+              <span style={{ fontSize: '11px', color: '#AEAEB2', lineHeight: 1.4 }}>
+                {config.object
+                  ? 'Marks are placed on the collection object (below).'
+                  : 'Add an object below (Geometry) to use as the surface.'}
+              </span>
             </Row>
             <Row label="Mark Count">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1189,7 +1202,7 @@ function CollectionProperties({
             <LabeledSlider label="Mark Count" value={config.scatterCount} min={1} max={200} step={1}
               onChange={(v) => onChange({ ...config, scatterCount: v })} />
             <Vec3Input label="Surface size" value={config.scatterDimensions}
-              onChange={(v) => onChange({ ...config, scatterDimensions: v })} min={0.5} max={30} step={0.5} />
+              onChange={(v) => onChange({ ...config, scatterDimensions: v })} min={0.1} max={30} step={0.1} axes={['x', 'z']} />
             <CheckRow label="Show grid" checked={config.adjacentShowGrid ?? false}
               onChange={(v) => onChange({ ...config, adjacentShowGrid: v })} />
             {onReseed && (
@@ -1219,6 +1232,36 @@ function CollectionProperties({
 
       </AttributeCategory>
 
+      {/* ── Optional object: a decoration owned by this collection. Its Spatial /
+             Geometry / Material sections appear only once it's added. It doubles
+             as the surface / exclusion target. ── */}
+      {config.object ? (
+        <>
+          <ObjectAttributeSections
+            config={config.object}
+            onChange={(o) => onChange({ ...config, object: o })}
+            acc={acc}
+          />
+          <button
+            onClick={() => onChange({ ...config, object: null, scatterExcludeObject: false })}
+            style={{ width: '100%', padding: '9px', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '9px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#3A3A3C', fontFamily: 'inherit' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#E9E9EE')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+          >
+            Remove object
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={() => onChange({ ...config, object: makeCollectionObject(`col${collectionLevel}-object`) })}
+          style={{ width: '100%', padding: '9px', background: '#F2F2F7', border: '1px dashed #C7C7CC', borderRadius: '9px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#3A3A3C', fontFamily: 'inherit' }}
+          onMouseEnter={e => (e.currentTarget.style.background = '#E9E9EE')}
+          onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+        >
+          + Add object
+        </button>
+      )}
+
       {/* ── Labels (level 1 only) ── */}
       {collectionLevel === 1 && labelConfig && onLabelChange && (
         <AttributeCategory icon={ICONS.labels} title="Labels" open={acc.isOpen('Labels')} onToggle={() => acc.toggle('Labels')}>
@@ -1231,21 +1274,18 @@ function CollectionProperties({
 
 // ── Decoration properties ─────────────────────────────────────────────────────
 
-function DecorationProperties({
-  config, onChange,
-}: {
+// The Spatial / Geometry / Material sections for a decoration-shaped object.
+// Shared by the standalone Decoration panel and the Collection's embedded object.
+function ObjectAttributeSections({ config, onChange, acc }: {
   config:   DecorationConfig
   onChange: (c: DecorationConfig) => void
+  acc:      ReturnType<typeof useAccordion>
 }) {
   const materialOptions: MarkMaterial[] = config.shape === 'custom' && config.customModelHasMat
     ? ['original', 'plastic', 'fluid', 'metal', 'emissive']
     : MATERIAL_OPTIONS
-  const acc = useAccordion('Spatial')
-
   return (
     <>
-      <PanelHeader title="Decoration" />
-
       {/* ── Spatial ── */}
       <AttributeCategory icon={ICONS.spatial} title="Spatial" open={acc.isOpen('Spatial')} onToggle={() => acc.toggle('Spatial')}>
         <Vec3Input label="Position"    value={config.position}    onChange={(v) => onChange({ ...config, position: v })}    min={-20} max={20}  step={0.1} />
@@ -1288,17 +1328,39 @@ function DecorationProperties({
           </div>
         </Row>
       </AttributeCategory>
-
-      {/* ── Structural ── (temporarily hidden)
-      <AttributeCategory icon={ICONS.structural} title="Structural" open={acc.isOpen('Structural')} onToggle={() => acc.toggle('Structural')}>
-        <StructuralSection
-          structural={config.structural}
-          onChange={(s) => onChange({ ...config, structural: s })}
-        />
-      </AttributeCategory>
-      */}
     </>
   )
+}
+
+function DecorationProperties({
+  config, onChange,
+}: {
+  config:   DecorationConfig
+  onChange: (c: DecorationConfig) => void
+}) {
+  const acc = useAccordion('Spatial')
+  return (
+    <>
+      <PanelHeader title="Decoration" />
+      <ObjectAttributeSections config={config} onChange={onChange} acc={acc} />
+    </>
+  )
+}
+
+// A fresh collection object (decoration owned by a collection). `id` must be
+// stable per collection so React keeps its scene mesh across edits.
+function makeCollectionObject(id: string): DecorationConfig {
+  return {
+    id,
+    name:        'Object',
+    shape:       'box',
+    material:    'plastic',
+    color:       '#9AA0A6',
+    position:    { x: 0, y: 0, z: 0 },
+    size:        { x: 1, y: 1, z: 1 },
+    orientation: { x: 0, y: 0, z: 0 },
+    structural:  { deformation: 'none', fluidDistort: 0.35, fluidSpeed: 1.5 },
+  }
 }
 
 // ── Small scene control helpers ───────────────────────────────────────────────
@@ -1582,14 +1644,12 @@ export function PropertiesPanel({
           collectionLevel={1} bindings={bindings} onBind={onBind}
           labelConfig={colLabelConfig} onLabelChange={onColLabelChange}
           onReseed={onReseed}
-          decorations={decorations}
         />
       ) : activeElement === 'collection2' ? (
         <CollectionProperties
           config={collection2Config} onChange={onCollection2Change}
           collectionLevel={2} bindings={bindings} onBind={onBind}
           onReseed={onReseed}
-          decorations={decorations}
         />
       ) : activeElement === 'scene' ? (
         <SceneProperties config={sceneConfig} onChange={onSceneChange} />

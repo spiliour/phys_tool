@@ -6,7 +6,8 @@
  * to the shared <MarkInstances> renderer (standOnAnchor mode: each mark's base
  * sits on the sampled point, oriented along the surface normal).
  */
-import { useMemo, useEffect, Suspense } from 'react'
+import { useMemo, useEffect } from 'react'
+import { SafeModel } from './ModelBoundary'
 import * as THREE from 'three'
 import { useGLTF } from '@react-three/drei'
 import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler.js'
@@ -176,10 +177,11 @@ export interface SurfacePlacementProps {
 
 export function SurfacePlacement({ dec, ...rest }: SurfacePlacementProps) {
   if (dec.shape === 'custom' && dec.customModelUrl) {
+    // Missing surface model → place nothing rather than crashing the scene.
     return (
-      <Suspense fallback={null}>
+      <SafeModel resetKey={dec.customModelUrl} fallback={null}>
         <SurfaceFromGLB dec={dec} url={dec.customModelUrl} {...rest} />
-      </Suspense>
+      </SafeModel>
     )
   }
   return <SurfaceFromPrimitive dec={dec} {...rest} />

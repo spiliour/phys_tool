@@ -8,6 +8,7 @@ import { HierarchyPanel }    from './HierarchyPanel'
 import { PropertiesPanel }   from './PropertiesPanel'
 import { CompositionCanvas } from './CompositionCanvas'
 import { SceneSave, SaveDialog, LoadDialog, loadSaves, persistSaves, captureThumbnail } from './SaveLoadModal'
+import { submitStudySession, getParticipantId, studyConfigured } from './studySave'
 import { LeftDataPanel, VarChip, DatasetReferenceCard } from './LeftDataPanel'
 import { RadialBindMenu } from './RadialBindMenu'
 import { resolveCustomModel } from './models'
@@ -18,7 +19,7 @@ const BINDING_LABELS: Record<keyof DataBindings, string> = {
   markColor:    'Color',
   markGeometry: 'Geometry',
   scatterSize:  'Scatter - Size',
-  scatterCount: 'Scatter - Population',
+  scatterCount: 'Population',
   c1AlignCount: 'Count',
   c2AlignCount: 'Count',
   markSizeX:    'Width',
@@ -111,7 +112,7 @@ const DEFAULT_SCENE: SceneConfig = {
 
 const DEFAULT_LABEL: LabelConfig = {
   show:  false,
-  slots: { top: null, bottom: null, left: null, right: null },
+  slots: { top: [], bottom: [], left: [], right: [] },
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -160,6 +161,9 @@ export default function App() {
   const [currentSaveName, setCurrentSaveName] = useState<string | null>(null)
   const [modalMode,       setModalMode]       = useState<'none' | 'save' | 'load'>('none')
 
+  // Study submission (one-button send of the current scene to the study backend)
+  const [studyStatus, setStudyStatus] = useState<'idle' | 'saving' | 'sent' | 'downloaded' | 'error'>('idle')
+
   // Path tracing
   const [pathTracingActive,  setPathTracingActive]  = useState(false)
   const [pathTracerSamples,  setPathTracerSamples]  = useState(0)
@@ -205,23 +209,12 @@ export default function App() {
   }
 
   function handleBindLabel(section: 'mark' | 'collection', variable: DataVariable, position: keyof LabelSlots) {
-    // Scattered marks expose only Top / Below, but each side holds two values:
-    // Top fills top→left, Below fills bottom→right, so a second label sits beside the first.
-    const scatterMark = section === 'mark' && col1Config.arrangement === 'scattering'
-    // Surface marks always label above; each pick fills the next free slot, all joined.
-    const surfaceMark = section === 'mark' && col1Config.arrangement === 'surface'
-    const firstFree = (s: LabelSlots): keyof LabelSlots =>
-      s.top == null ? 'top' : s.left == null ? 'left' : s.right == null ? 'right' : s.bottom == null ? 'bottom' : 'top'
+    // A slot holds a list of variables (shown joined with " · "), so binding a
+    // second variable to the same position appends it rather than replacing.
     const updater = (prev: LabelConfig) => {
-      let target: keyof LabelSlots = position
-      if (surfaceMark) {
-        target = firstFree(prev.slots)
-      } else if (scatterMark && position === 'top') {
-        target = prev.slots.top == null ? 'top' : (prev.slots.left == null ? 'left' : 'top')
-      } else if (scatterMark && position === 'bottom') {
-        target = prev.slots.bottom == null ? 'bottom' : (prev.slots.right == null ? 'right' : 'bottom')
-      }
-      return { ...prev, show: true, slots: { ...prev.slots, [target]: variable } }
+      const cur = prev.slots[position]
+      if (cur.includes(variable)) return prev
+      return { ...prev, show: true, slots: { ...prev.slots, [position]: [...cur, variable] } }
     }
     if (section === 'mark') setMarkLabelConfig(updater)
     else setColLabelConfig(updater)
@@ -264,6 +257,18 @@ export default function App() {
       decorations, layers, activeDataset,
       colorMode, colorGradient, colorTint,
     }
+  }
+
+  async function handleSubmitStudy() {
+    if (studyStatus === 'saving') return
+    setStudyStatus('saving')
+    const participant = getParticipantId()
+    const label = currentSaveName ?? (activeDataset || '')
+    const result = await submitStudySession(participant, captureState(), label)
+    const next = result.ok ? 'sent' : result.downloaded ? 'downloaded' : 'error'
+    setStudyStatus(next)
+    if (!result.ok) console.warn('[study] submit fell back:', result.error)
+    setTimeout(() => setStudyStatus('idle'), 3500)
   }
 
   function doSave(name: string) {
@@ -310,8 +315,24 @@ export default function App() {
     } else {
       setMarkConfig(rawMark)
     }
-    setCol1Config(d.col1Config ?? DEFAULT_COLLECTION1)
-    setCol2Config(d.col2Config ?? DEFAULT_COLLECTION2)
+    // Collections used to reference a global decoration as their surface / exclusion
+    // target; that role now lives on the collection itself as `object`. Migrate old
+    // saves by moving the referenced decoration into the collection and dropping it
+    // from the global list (so it isn't drawn twice).
+    const resolvedDecs = ((d.decorations ?? []) as DecorationConfig[]).map((dec) => resolveCustomModel(dec))
+    const usedDecIds = new Set<string>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const migrateCollectionObj = (cfg: any): CollectionConfig => {
+      if (!cfg || cfg.object) return cfg
+      const refId = cfg.surfaceTargetId || cfg.scatterExclusionId
+      if (!refId) return cfg
+      const dec = resolvedDecs.find((dd) => dd.id === refId)
+      if (!dec) return cfg
+      usedDecIds.add(dec.id)
+      return { ...cfg, object: dec, scatterExcludeObject: !!cfg.scatterExclusionId, surfaceTargetId: null, scatterExclusionId: null }
+    }
+    setCol1Config(migrateCollectionObj(d.col1Config ?? DEFAULT_COLLECTION1))
+    setCol2Config(migrateCollectionObj(d.col2Config ?? DEFAULT_COLLECTION2))
     // Migrate the old boolean occlusion flag to the new mode (true → optimized).
     const rawScene = d.sceneConfig ?? DEFAULT_SCENE
     const occ = rawScene.sceneLabelOcclude
@@ -338,18 +359,24 @@ export default function App() {
       markSizeZ:    migrateVar(rawBindings.markSizeZ    ?? null),
       markScale:    migrateVar(rawBindings.markScale    ?? null),
     })
-    const migrateSlots = (cfg: LabelConfig): LabelConfig => ({
+    // Old saves stored a single variable (or null) per slot; new saves store a
+    // list. Normalise either shape to a list.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const migrateSlot = (v: any): DataVariable[] =>
+      (Array.isArray(v) ? v : [v]).map((x) => migrateVar(x)).filter((x): x is DataVariable => x != null)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const migrateSlots = (cfg: any): LabelConfig => ({
       ...cfg,
       slots: {
-        top:    migrateVar(cfg.slots.top),
-        bottom: migrateVar(cfg.slots.bottom),
-        left:   migrateVar(cfg.slots.left),
-        right:  migrateVar(cfg.slots.right),
+        top:    migrateSlot(cfg.slots.top),
+        bottom: migrateSlot(cfg.slots.bottom),
+        left:   migrateSlot(cfg.slots.left),
+        right:  migrateSlot(cfg.slots.right),
       },
     })
     setMarkLabelConfig(d.markLabelConfig ? migrateSlots(d.markLabelConfig) : DEFAULT_LABEL)
     setColLabelConfig(d.colLabelConfig   ? migrateSlots(d.colLabelConfig)  : DEFAULT_LABEL)
-    setDecorations((d.decorations ?? []).map((dec: DecorationConfig) => resolveCustomModel(dec)))
+    setDecorations(resolvedDecs.filter((dec) => !usedDecIds.has(dec.id)))
     setLayers(d.layers ?? DEFAULT_LAYERS)
     if (d.activeDataset != null) setActiveDataset(d.activeDataset)
     setColorMode(d.colorMode ?? 'distinct')
@@ -440,6 +467,30 @@ export default function App() {
           >
             {pathTracingActive ? 'Rendering...' : 'Render'}
           </button>
+          <button
+            onClick={handleSubmitStudy}
+            disabled={studyStatus === 'saving'}
+            title={studyConfigured()
+              ? 'Submit your work to the study'
+              : 'Study backend not configured — this will download a JSON file instead'}
+            style={{
+              background:
+                studyStatus === 'sent'       ? '#34C759'
+                : studyStatus === 'error'      ? '#FF3B30'
+                : studyStatus === 'downloaded' ? '#FF9500'
+                : '#007AFF',
+              color: '#fff', border: 'none', borderRadius: '7px', padding: '7px 8px',
+              fontSize: '12px', fontWeight: '700', width: '100%', fontFamily: 'inherit',
+              cursor: studyStatus === 'saving' ? 'default' : 'pointer',
+              opacity: studyStatus === 'saving' ? 0.75 : 1, transition: 'background 0.15s',
+            }}
+          >
+            {studyStatus === 'saving'     ? 'Submitting…'
+              : studyStatus === 'sent'       ? '✓ Submitted'
+              : studyStatus === 'downloaded' ? '✓ Saved (backup file)'
+              : studyStatus === 'error'      ? 'Submit failed — retry'
+              : 'Submit my work'}
+          </button>
         </div>
 
         {/* Hierarchy panel fills remaining space */}
@@ -492,6 +543,12 @@ export default function App() {
           colorTint={colorTint}
           scatterSeed={scatterSeed}
           datasetTitle={DATASET_TITLES[activeDataset]}
+          onSelectElement={(el) => { setActiveElement(el); setActiveDecorationId(null) }}
+          onSelectDecoration={setActiveDecorationId}
+          onMarkChange={setMarkConfig}
+          onDecorationChange={handleUpdateDecoration}
+          onCollection1Change={setCol1Config}
+          onCollection2Change={setCol2Config}
           pathTracingActive={pathTracingActive}
           onSamplesUpdate={setPathTracerSamples}
           downloadRenderRef={downloadRenderRef}
@@ -630,18 +687,18 @@ export default function App() {
                     : pos[0].toUpperCase() + pos.slice(1)
               const labelTags: Array<{ key: string; label: string; onRemove: () => void }> = []
               ;(['top', 'bottom', 'left', 'right'] as const).forEach(pos => {
-                if (markLabelConfig.slots[pos] === v.varName) {
+                if (markLabelConfig.slots[pos].includes(v.varName)) {
                   labelTags.push({
                     key: `mark-${pos}`,
                     label: `Label ${markPosName(pos)}`,
-                    onRemove: () => setMarkLabelConfig(prev => ({ ...prev, slots: { ...prev.slots, [pos]: null } })),
+                    onRemove: () => setMarkLabelConfig(prev => ({ ...prev, slots: { ...prev.slots, [pos]: prev.slots[pos].filter(x => x !== v.varName) } })),
                   })
                 }
-                if (colLabelConfig.slots[pos] === v.varName) {
+                if (colLabelConfig.slots[pos].includes(v.varName)) {
                   labelTags.push({
                     key: `col-${pos}`,
                     label: `Label ${pos[0].toUpperCase() + pos.slice(1)}`,
-                    onRemove: () => setColLabelConfig(prev => ({ ...prev, slots: { ...prev.slots, [pos]: null } })),
+                    onRemove: () => setColLabelConfig(prev => ({ ...prev, slots: { ...prev.slots, [pos]: prev.slots[pos].filter(x => x !== v.varName) } })),
                   })
                 }
               })

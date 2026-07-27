@@ -70,20 +70,25 @@ export interface CollectionConfig {
   scatterBoundingVolume?: 'box' | 'sphere'
   scatterShowBounds?:    boolean
   scatterOrientation?:   'random' | 'static'
-  scatterExclusionId?:   string | null
+  scatterExclusionId?:   string | null  // deprecated — migrated into `object`
   scatterEven?:          boolean
   scatterSizeAxes?:      { x: boolean; y: boolean; z: boolean }  // axes the Scatter-Size encoding grows (default Y)
+  scatterExcludeObject?: boolean  // keep scattered marks out of the collection object's volume
   // Adjacent placement — marks scattered on a flat surface, bottom-aligned
   adjacentShowGrid?:     boolean  // show a reference grid on the surface
   // Stacking — marks piled in a vertical column
   stackingRandomOrient?: boolean  // give each stacked mark a random tumble
   // Piling — physics-settled pile
   pilingCount:       number    // number of marks to drop (default 10)
-  // Surface placement — marks scattered onto a decoration's surface, standing
-  // along its normals (e.g. mushrooms on a log)
-  surfaceTargetId?:  string | null  // decoration to place marks on
+  // Surface placement — marks scattered onto the collection object's surface,
+  // standing along its normals (e.g. mushrooms on a log)
+  surfaceTargetId?:  string | null  // deprecated — migrated into `object`
   surfaceCount?:     number         // number of marks (default 24)
   surfaceScale?:     number         // mark size multiplier (default 1)
+  // Optional embedded object — a decoration that belongs to this collection.
+  // Rendered with the collection and used as the surface / exclusion target.
+  // (Replaces linking to a global decoration by id.)
+  object?:           DecorationConfig | null
 }
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
@@ -129,11 +134,13 @@ export interface SceneConfig {
 // ── Label configuration ───────────────────────────────────────────────────────
 export type LabelPosition = 'top' | 'bottom' | 'left' | 'right'
 
+// Each slot holds a list of variables, shown joined with " · " (multiple
+// variables can share one label position).
 export interface LabelSlots {
-  top:    DataVariable | null
-  bottom: DataVariable | null
-  left:   DataVariable | null
-  right:  DataVariable | null
+  top:    DataVariable[]
+  bottom: DataVariable[]
+  left:   DataVariable[]
+  right:  DataVariable[]
 }
 
 // ── Data bindings ─────────────────────────────────────────────────────────────

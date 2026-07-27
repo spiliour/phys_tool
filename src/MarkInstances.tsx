@@ -10,12 +10,13 @@
  * MarkInstances gets it automatically. Add a new arrangement by producing
  * placements and rendering <MarkInstances> — all encodings come for free.
  */
-import { useRef, useMemo, useEffect, useContext, createContext, Suspense, CSSProperties } from 'react'
+import { useRef, useMemo, useEffect, useContext, createContext, CSSProperties } from 'react'
 import * as THREE from 'three'
 import { Html, useGLTF } from '@react-three/drei'
 import { MarkShape, MarkMaterial, StructuralConfig, Vec3, LabelOccludeMode } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 import { MarkMaterialElement } from './MarkMaterial'
+import { SafeModel } from './ModelBoundary'
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
@@ -397,10 +398,11 @@ export function MarkInstances(props: MarkInstancesProps) {
   } = props
   const resolved = { ...props, scaleBoost, standOnAnchor, stack, labelGapFactor }
   if (markShape === 'custom' && customModelUrl) {
+    // Missing model → fall back to primitive (box) instances instead of crashing.
     return (
-      <Suspense fallback={null}>
+      <SafeModel resetKey={customModelUrl} fallback={<PrimitiveInstances {...resolved} />}>
         <GLBInstances {...resolved} url={customModelUrl} />
-      </Suspense>
+      </SafeModel>
     )
   }
   return <PrimitiveInstances {...resolved} />
