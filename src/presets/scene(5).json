@@ -1,0 +1,151 @@
+{
+  "level": 2,
+  "activeElement": "mark",
+  "markConfig": {
+    "shape": "custom",
+    "material": "original",
+    "color": "#F06951",
+    "position": {
+      "x": 0.9,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "size": {
+      "x": 1,
+      "y": 1,
+      "z": 1
+    },
+    "orientation": {
+      "x": 67,
+      "y": 3,
+      "z": 23
+    },
+    "structural": {
+      "deformation": "none",
+      "fluidDistort": 0.35,
+      "fluidSpeed": 1.5
+    },
+    "customModelUrl": "/phys_tool/src/assets/models/fly_agaric_mushroom.glb",
+    "customModelHasMat": true,
+    "customModelName": "fly_agaric_mushroom"
+  },
+  "col1Config": {
+    "arrangement": "alignment",
+    "color": "#5E5CE6",
+    "alignCount": 6,
+    "alignAxis": "X",
+    "alignSpacing": 2.7,
+    "alignAnchor": "center",
+    "scatterMode": "count",
+    "scatterCount": 12,
+    "scatterDimensions": {
+      "x": 4.5,
+      "y": 4,
+      "z": 3
+    },
+    "scatterDensity": 1,
+    "pilingCount": 10,
+    "stackingRandomOrient": true
+  },
+  "col2Config": {
+    "arrangement": "alignment",
+    "color": "#9D9BF4",
+    "alignCount": 3,
+    "alignAxis": "X",
+    "alignSpacing": 0.5,
+    "alignAnchor": "center",
+    "scatterMode": "count",
+    "scatterCount": 30,
+    "scatterDimensions": {
+      "x": 20,
+      "y": 6,
+      "z": 8
+    },
+    "scatterDensity": 1,
+    "pilingCount": 10
+  },
+  "sceneConfig": {
+    "background": "dark",
+    "hdriPreset": "city",
+    "focalLength": 130,
+    "sceneTitleShow": false
+  },
+  "bindings": {
+    "markColor": "numerical",
+    "markGeometry": null,
+    "scatterSize": null,
+    "scatterCount": null,
+    "c1AlignCount": null,
+    "c2AlignCount": null,
+    "markSizeX": null,
+    "markSizeY": null,
+    "markSizeZ": null,
+    "markScale": "numerical"
+  },
+  "markLabelConfig": {
+    "show": true,
+    "slots": {
+      "top": "numerical",
+      "bottom": "categorical",
+      "left": null,
+      "right": null
+    }
+  },
+  "colLabelConfig": {
+    "show": false,
+    "slots": {
+      "top": null,
+      "bottom": null,
+      "left": null,
+      "right": null
+    }
+  },
+  "decorations": [],
+  "layers": [
+    {
+      "id": "1",
+      "name": "Death cap (Amanita phalloides)",
+      "percentage": 10,
+      "color": "#7C8C4E"
+    },
+    {
+      "id": "2",
+      "name": "Destroying angel (Amanita virosa)",
+      "percentage": 10,
+      "color": "#F0ECE0"
+    },
+    {
+      "id": "3",
+      "name": "Funeral bell (Galerina marginata)",
+      "percentage": 9,
+      "color": "#6B4E31"
+    },
+    {
+      "id": "4",
+      "name": "Deadly webcap (Cortinarius rubellus)",
+      "percentage": 8,
+      "color": "#A0522D"
+    },
+    {
+      "id": "5",
+      "name": "False morel (Gyromitra esculenta)",
+      "percentage": 6,
+      "color": "#8B4A2F"
+    },
+    {
+      "id": "6",
+      "name": "Panther cap (Amanita pantherina)",
+      "percentage": 5,
+      "color": "#C2A878"
+    }
+  ],
+  "activeDataset": "mushroomToxicity",
+  "colorMode": "continuous",
+  "colorGradient": {
+    "from": "#f3e1ff",
+    "to": "#83318e"
+  },
+  "colorTint": true,
+  "thumbnail": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAkGBwgHBgkIBwgKCgkLDRYPDQwMDRsUFRAWIB0iIiAdHx8kKDQsJCYxJx8fLT0tMTU3Ojo6Iys/RD84QzQ5Ojf/2wBDAQoKCg0MDRoPDxo3JR8lNzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzf/wAARCADfAUADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDxKiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACirmm6bNqEhCMkUScvNJnav5ZJPHQfyzXQWlpo1i4VLSXU5+WSSUlY+DnIjXkjAxgkj9RUuSRrToTqapaHJ0V2l9exoyzT2GmafG+WjjFsm4jJ7bS3YjJAFc3rd/BqF0ktvaxW6pGEIiiWMMeTkqvGecfgKIyv0HUpKC3VzPoooqjEKKv6bouo6oGaxtHkRc7pDhUBGONxwM8jjOa1f+EVitm/4mWsW0SFcoYI3lLfmFH60nJLcuFKc/hRzdFbOtaLbWNqlzZakt1GWCMrwtE4JBPAOQRx1zWNQmnsKUXF2YUUUUyQooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKALltqMttatbpHEQWLBmBJUnHTnHbuDWxoniAiZk1CVysjKiKqqkSZPzOwAHIGOcetc3RScUy/aS0V9jrPGs90qW0TGM2rqQqlFLKykZwSNyjBXoecVydd5qCHWfDrFX3yui3KiP7vmKPmXGD2LgD1xXB1NN6WHUXvXCr+iizN2xvtpVYy0auSFZuODjtjJ9yAPaqFFWyIuzudgdUj1W6htTcysJAEjjt4cpEvpj5QoAHUA8ZqzqVjaWOnSzSXQgnSQNG7x+dvO0kJjoM46n0561w6OyHKMVOCMg44IwR+VdrZRf2z4XSDKyXHlFE2x5Kuh+RR0wSAoz6NWMoqLTOlV5zTWxx09zPcFfPmkk2Dau9ido9B6CoqKK2OUK29N8P+bAt1qVx9kt3XdEFTfJLz2XPAxnk+2Ac1iVfudYu7hizeWrMm12EYy3Od3PQ/TFJ36GlPkTvM3/L0S2h32umecYZMeddyMwP+9tITHYeveqGr6xY3tkYhp1ik3JSS1g8oocjg4xngHqD17GtzSNR/tLT51tFf7VGnlAzybtxKYViTxyc5ByOPSuIuJmuJmlkCBm6iONUX8FUAD8BWcU29TapVXLaMVZkdFFFanKFT2ljd3u/7Haz3GzlvKjL7frjpVzRRZRtJdXojk8kgrDI2A3uR1bHoD9fQ9Na3dzqySC3naCxjO1BDGUiGeSqjjkenuOvUxKdjenRUtZSsc3ceG9YtrP7XNYyCEKGbDKWUYJyyg7gMA9RWVWrq0ktneS20V1HKFyrMiMpByQVO4ZBHfGR7msqqjfqZ1FBP3QooopkBRV2w0m+1CN5baDMKHDSuwRAeONzEDPI461dl8PGPcF1XTpGUE7UaTnA6ZKY/EnHqRScki1TnJXSMWiiimQFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB2Xg+/3WawCQLPbyZjHAO08gjuec5444rmNWWBNSuBaOrQ7yV2DAGedo9h0z3xVSipUbNspyukgoooqiQrqvBlyTDc2pcDawlRcc88Mc/gv51ytT2N5NYXCz27YYcEHkMPQj0qZK6sVCXLK5oeKbGOz1RmgwIZ181VAA2E/eXAAA5BwB2K1kVe1XVJtTkRpVVFQHaq9Oep/l+VUacb21FK19AooopiN/wdceXqEluzuFmj+VR0Lqcgn6Dd+dQ+KrNrfVHuAGMV3mVWPPzH7wzgDOecDoCKztPu3sb2G5TdmNskK20sO4z7jI/GtfxHqllqFtCtuHaRW3bmXG0YIIPuePXpUNNTuaXThYwKKKKszCtXwzdNBrFshaXy5GMZRG4YtwMj0ztP4D0rKpUZkdXRirKcgg8g0mrqw07O5seK7M22pmZVAjuR5gxuPzdGBJ7554/vD6VjV2HiSS0v8ARBdxsAAyvDkgsM8FPy5P+7XH1MHdFTVpaBRRRVkG0Neee5Q3qE2yAhY4jjaNpAVecBc4/D9XeLYhBfpGsMSLs3K0ZbLDpyCcDp/CB155rDrqL1E1HwrbXAwJLVAAqtu6YVgeeCQA3rwPXNQ0otM155Ti02cvRRRVmQVo6ZY20yG41C4MVurbdsYBdzwcc8AY78/Q1nUUmVFpO7VzqdSt9P0y2hd9FiIJK5nuXaRyOeQrrx7heP58tXQPG+peF1mCF57WZy7lizMD8zH/AMeBOf7p5rn6UCqkrtaWCiiiqMwooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigApyyyLG0auwR8blB4bHTIptFABRRRQAUUUUAW7HUJ7KOeOHYUmXa4dc+vP6n2qpRRRYLhRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB/9k="
+}

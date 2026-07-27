@@ -1,0 +1,220 @@
+{
+  "level": 2,
+  "activeElement": "mark",
+  "markConfig": {
+    "shape": "custom",
+    "material": "plastic",
+    "color": "#F06951",
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 5.9,
+    "size": {
+      "x": 0.5,
+      "y": 0.5,
+      "z": 0.5
+    },
+    "orientation": {
+      "x": 19,
+      "y": 93,
+      "z": 19
+    },
+    "structural": {
+      "deformation": "none",
+      "fluidDistort": 0.35,
+      "fluidSpeed": 1.5
+    },
+    "customModelUrl": "/phys_tool/src/assets/models/carbon_dioxide_co2.glb",
+    "customModelHasMat": true,
+    "customModelName": "carbon_dioxide_co2"
+  },
+  "col1Config": {
+    "arrangement": "surface",
+    "color": "#5E5CE6",
+    "alignCount": 12,
+    "alignAxis": "X",
+    "alignSpacing": 6,
+    "alignAnchor": "center",
+    "scatterMode": "count",
+    "scatterCount": 50,
+    "scatterDimensions": {
+      "x": 4.5,
+      "y": 4,
+      "z": 3
+    },
+    "scatterDensity": 1,
+    "pilingCount": 10,
+    "surfaceTargetId": "dec_1784811104543",
+    "surfaceScale": 0.6,
+    "surfaceCount": 12
+  },
+  "col2Config": {
+    "arrangement": "scattering",
+    "color": "#9D9BF4",
+    "alignCount": 3,
+    "alignAxis": "X",
+    "alignSpacing": 0.5,
+    "alignAnchor": "center",
+    "scatterMode": "density",
+    "scatterCount": 6,
+    "scatterDimensions": {
+      "x": 20,
+      "y": 6,
+      "z": 8
+    },
+    "scatterDensity": 0.55,
+    "pilingCount": 10,
+    "scatterBoundingVolume": "sphere",
+    "scatterEven": true
+  },
+  "sceneConfig": {
+    "background": "dark",
+    "hdriPreset": "city",
+    "focalLength": 130
+  },
+  "bindings": {
+    "markColor": "numerical",
+    "markGeometry": null,
+    "scatterSize": null,
+    "scatterCount": null,
+    "c1AlignCount": null,
+    "c2AlignCount": null,
+    "markSizeX": null,
+    "markSizeY": null,
+    "markSizeZ": null,
+    "markScale": "numerical"
+  },
+  "markLabelConfig": {
+    "show": true,
+    "slots": {
+      "top": "numerical",
+      "bottom": null,
+      "left": "categorical",
+      "right": null
+    }
+  },
+  "colLabelConfig": {
+    "show": true,
+    "slots": {
+      "top": null,
+      "bottom": null,
+      "left": null,
+      "right": null
+    }
+  },
+  "decorations": [
+    {
+      "id": "dec_1784811104543",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": 0,
+        "y": -1.5,
+        "z": 0
+      },
+      "size": {
+        "x": 8,
+        "y": 8,
+        "z": 8
+      },
+      "orientation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models/airplane_crj-900_cityjet.glb",
+      "customModelHasMat": true,
+      "customModelName": "airplane_crj-900_cityjet"
+    }
+  ],
+  "layers": [
+    {
+      "id": "1",
+      "name": "Germany",
+      "percentage": 572.32,
+      "color": "#E63946"
+    },
+    {
+      "id": "2",
+      "name": "Canada",
+      "percentage": 533.34,
+      "color": "#F4A261"
+    },
+    {
+      "id": "3",
+      "name": "Turkey",
+      "percentage": 513.03,
+      "color": "#E9C46A"
+    },
+    {
+      "id": "4",
+      "name": "Brazil",
+      "percentage": 483.01,
+      "color": "#2A9D8F"
+    },
+    {
+      "id": "5",
+      "name": "South Africa",
+      "percentage": 439.83,
+      "color": "#264653"
+    },
+    {
+      "id": "6",
+      "name": "Australia",
+      "percentage": 386.73,
+      "color": "#E76F51"
+    },
+    {
+      "id": "7",
+      "name": "Vietnam",
+      "percentage": 370.93,
+      "color": "#8AB17D"
+    },
+    {
+      "id": "8",
+      "name": "United Kingdom",
+      "percentage": 312.91,
+      "color": "#457B9D"
+    },
+    {
+      "id": "9",
+      "name": "France",
+      "percentage": 264.16,
+      "color": "#6A4C93"
+    },
+    {
+      "id": "10",
+      "name": "Qatar",
+      "percentage": 125.81,
+      "color": "#B5838D"
+    },
+    {
+      "id": "11",
+      "name": "Greece",
+      "percentage": 53.36,
+      "color": "#1D3557"
+    },
+    {
+      "id": "12",
+      "name": "Denmark",
+      "percentage": 24.4,
+      "color": "#A8DADC"
+    }
+  ],
+  "activeDataset": "co2Emissions",
+  "colorMode": "continuous",
+  "colorGradient": {
+    "from": "#ffd5d5",
+    "to": "#ae0000"
+  },
+  "colorTint": false,
+  "thumbnail": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAkGBwgHBgkIBwgKCgkLDRYPDQwMDRsUFRAWIB0iIiAdHx8kKDQsJCYxJx8fLT0tMTU3Ojo6Iys/RD84QzQ5Ojf/2wBDAQoKCg0MDRoPDxo3JR8lNzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzf/wAARCADfAUADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDxKiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAop8DrFNHI8STKrBjG5IVwD0OCDg+xB969y8PeAPCXjPwtBqFvo17ok0jEgx3TSFsZGRvLAoT7KePTkgHhVFepat8EtZtUnksNRtLpUGY1kBieTjOMcgHPA5x6kVwmk+H7nUbi6geWGze1yJRdZUhuRtxjOcg59KTdldlQhKcuWKuzIop0iNFI8b43ISpwc8j3ptMlqwUUV1XgHwgnjKfULKK/+y38Fv51ujRlkkAODuI+7yUHQ9ScHFAHK0VtW/hnUh4mh0K+s5oLsybZImKq20ZLFSx2ngEg5we2aZ4ps9NsNVa20lrkwog3G4ILbuehAAIxgg989aLlcr5eboZFFFSW1vNdTpBawyTTOcLHGpZm+gFBJHRTpY5IZXimRo5EYq6OMFSOoI7Gm0AFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAFrS7e2utQggvr1LG2dsS3Lxs4jXudqgkn0HrjJA5HtifEfwb4O0K10vwisl7yQztE6hScZkkLBS7HrgemMqMV4TRQB9M6brcniBf7T06/SWyWXaYtuSQAM8gkg85xtyePXNUvEXhbTdYupNWtrWKTVooSpjdtqzjHAcdNwAwCeOx6Ar5v8MPFWi+HQ0V/NdRG4P79j80YK7tpUAEjOQDXsNh4m8OX83+hXdpNKBnCThjj6ZosmrGsajU1JdDw64+Gfik3Ujf2VHbW5YsC93EyxJnvhyTgfU12Wn/AtZLaGW819g7xqzJFZ8KxHIDFuR+A+gr0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"
+}
