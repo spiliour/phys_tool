@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { LayerData } from './types'
 
 interface LeftDataPanelProps {
@@ -193,26 +193,91 @@ export function VarChip({ label, type, varName }: VarChipProps) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function LeftDataPanel({ layers, onChange, onDatasetChange, selectedDataset = 'garbageInOcean' }: LeftDataPanelProps) {
+  const ds = DATASETS[selectedDataset] ?? DATASETS.garbageInOcean
+
+  // The full row list for this dataset, plus any active rows that aren't part of
+  // it (e.g. a loaded preset's custom layers) so nothing on screen is lost.
+  const fullRows = useMemo(() => {
+    const dsRows = DATASETS[selectedDataset]?.layers ?? []
+    const extra  = layers.filter(l => !dsRows.some(r => r.id === l.id))
+    return dsRows.length ? [...dsRows, ...extra] : layers
+  }, [selectedDataset, layers])
+  const total = fullRows.length
+
+  // Which rows are currently in use (drive the visualization).
+  const selectedIds = useMemo(() => new Set(layers.map(l => l.id)), [layers])
+
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [preview,  setPreview]  = useState<Set<string> | null>(null)  // live selection while dragging
+  const [dragRect, setDragRect] = useState<{ top: number; height: number } | null>(null)
+
+  // Emit the subset of full rows whose ids are selected (keeps dataset order).
+  // Never commit an empty set — the scene always keeps at least one row.
+  const commit = (ids: Set<string>) => {
+    if (ids.size === 0) return
+    onChange(fullRows.filter(r => ids.has(r.id)))
+  }
+
   function handleDatasetChange(key: string) {
-    onChange(DATASETS[key].layers)
+    onChange(DATASETS[key].layers)   // new dataset starts with every row in use
     onDatasetChange?.(key)
   }
 
-  const ds = DATASETS[selectedDataset] ?? DATASETS.garbageInOcean
+  const setTopN = (n: number) => commit(new Set(fullRows.slice(0, n).map(r => r.id)))
 
-  const cell: React.CSSProperties = {
-    padding: '6px 8px', verticalAlign: 'middle',
-    fontSize: '12px', color: '#1D1D1F',
+  // Ids of rows whose vertical band overlaps the client-Y range [a, b].
+  const rowsBetween = (a: number, b: number): Set<string> => {
+    const top = Math.min(a, b), bot = Math.max(a, b)
+    const ids = new Set<string>()
+    wrapRef.current?.querySelectorAll<HTMLElement>('[data-rowid]').forEach(el => {
+      const r = el.getBoundingClientRect()
+      if (r.bottom >= top && r.top <= bot) ids.add(el.dataset.rowid!)
+    })
+    return ids
   }
+
+  // Mouse-down on the table starts a rubber-band selection; a click with no drag
+  // toggles the single row under the cursor.
+  const beginDrag = (e: React.MouseEvent) => {
+    const startY = e.clientY
+    let moved = false
+    setPreview(rowsBetween(startY, startY))
+    const move = (ev: MouseEvent) => {
+      if (Math.abs(ev.clientY - startY) > 4) moved = true
+      setPreview(rowsBetween(startY, ev.clientY))
+      const w = wrapRef.current
+      if (w) {
+        const r = w.getBoundingClientRect()
+        setDragRect({ top: Math.min(startY, ev.clientY) - r.top, height: Math.abs(ev.clientY - startY) })
+      }
+    }
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      if (moved) {
+        commit(rowsBetween(startY, ev.clientY))
+      } else {
+        const next = new Set(selectedIds)
+        rowsBetween(ev.clientY, ev.clientY).forEach(id => (next.has(id) ? next.delete(id) : next.add(id)))
+        commit(next)
+      }
+      setPreview(null); setDragRect(null)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    e.preventDefault()
+  }
+
+  const active = preview ?? selectedIds
+  const cell: React.CSSProperties = { padding: '6px 8px', verticalAlign: 'middle', fontSize: '12px', color: '#1D1D1F' }
+  const capLabel: React.CSSProperties = { fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }
 
   return (
     <div style={{ padding: '14px 14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
       {/* Dataset selector */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-        <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
-          Dataset
-        </span>
+        <span style={capLabel}>Dataset</span>
         <select
           value={selectedDataset}
           onChange={(e) => handleDatasetChange(e.target.value)}
@@ -228,26 +293,56 @@ export function LeftDataPanel({ layers, onChange, onDatasetChange, selectedDatas
         </select>
       </div>
 
-      {/* Read-only data table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid #E5E5EA' }}>
-            <th style={{ ...cell, textAlign: 'left', color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>{ds.categoricalCol}</th>
-            <th style={{ ...cell, textAlign: 'right', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '60px' }}>{ds.numericalCol}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {layers.map((layer, i) => (
-            <tr
-              key={layer.id}
-              style={{ borderBottom: '1px solid #F2F2F7', background: i % 2 === 0 ? 'transparent' : '#FAFAFA' }}
-            >
-              <td style={cell}>{layer.name}</td>
-              <td style={{ ...cell, textAlign: 'right', color: '#6C6C70' }}>{layer.percentage}</td>
+      {/* Row-count control (use the first N rows) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={capLabel}>Rows used</span>
+          <span style={{ fontSize: '12px', color: '#6C6C70', fontWeight: '600' }}>{selectedIds.size} / {total}</span>
+        </div>
+        <input
+          type="range" min={1} max={Math.max(1, total)} value={Math.min(selectedIds.size || 1, total)}
+          onChange={(e) => setTopN(Number(e.target.value))}
+          style={{ width: '100%', accentColor: '#007AFF', cursor: 'pointer' }}
+        />
+      </div>
+
+      {/* Interactive data table with rubber-band row selection */}
+      <div ref={wrapRef} onMouseDown={beginDrag} style={{ position: 'relative', userSelect: 'none', cursor: 'crosshair' }}>
+        {dragRect && (
+          <div style={{
+            position: 'absolute', left: 0, right: 0, top: dragRect.top, height: dragRect.height,
+            background: 'rgba(0,122,255,0.12)', border: '1px solid rgba(0,122,255,0.5)',
+            borderRadius: '4px', pointerEvents: 'none', zIndex: 2,
+          }} />
+        )}
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #E5E5EA' }}>
+              <th style={{ ...cell, textAlign: 'left',  color: '#8E8E93', fontWeight: '500', fontSize: '11px' }}>{ds.categoricalCol}</th>
+              <th style={{ ...cell, textAlign: 'right', color: '#8E8E93', fontWeight: '500', fontSize: '11px', width: '60px' }}>{ds.numericalCol}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {fullRows.map((row, i) => {
+              const on = active.has(row.id)
+              return (
+                <tr
+                  key={row.id}
+                  data-rowid={row.id}
+                  style={{
+                    borderBottom: '1px solid #F2F2F7',
+                    background: i % 2 === 0 ? 'transparent' : '#FAFAFA',
+                    opacity: on ? 1 : 0.32, transition: 'opacity 0.1s',
+                  }}
+                >
+                  <td style={cell}>{row.name}</td>
+                  <td style={{ ...cell, textAlign: 'right', color: '#6C6C70' }}>{row.percentage}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
 
     </div>
   )
