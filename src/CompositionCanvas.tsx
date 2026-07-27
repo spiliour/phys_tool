@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState, useCallback, createContext, useContext } from 'react'
+import { useRef, useMemo, useEffect, useState, useCallback, Suspense, createContext, useContext } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, Environment, Sky, Stars, Grid, Html, useGLTF, TransformControls } from '@react-three/drei'
 import {
@@ -13,7 +13,6 @@ import {
 } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 import { MODEL_PRESETS, MODEL_SCALE_OVERRIDES } from './models'
-import { SafeModel } from './ModelBoundary'
 
 // ── Color context (avoids prop-drilling colorMode/colorGradient) ──────────────
 
@@ -399,16 +398,9 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
       onClick={onClick}
     >
       {config.shape === 'custom' && config.customModelUrl ? (
-        <SafeModel
-          resetKey={config.customModelUrl}
-          fallback={
-            <mesh geometry={geo} scale={[s * sz.x, s * sz.y, s * sz.z]}>
-              <MarkMaterialElement material={config.material} structural={config.structural} color={color} />
-            </mesh>
-          }
-        >
+        <Suspense fallback={null}>
           <CustomModelMesh url={config.customModelUrl} material={config.material} color={color} sz={[s * sz.x, s * sz.y, s * sz.z]} recolor={bindings.markColor !== null} tint={colorTint} />
-        </SafeModel>
+        </Suspense>
       ) : (
         <mesh geometry={geo} scale={[s * sz.x, s * sz.y, s * sz.z]}>
           <MarkMaterialElement material={config.material} structural={config.structural} color={color} />
@@ -445,12 +437,9 @@ function AlignedMarkBody({ shape, customModelUrl, material, structural, color, s
   useEffect(() => () => { geo.dispose() }, [geo])
   if (shape === 'custom' && customModelUrl) {
     return (
-      <SafeModel
-        resetKey={customModelUrl}
-        fallback={<mesh geometry={geo} scale={scale}><MarkMaterialElement material={material} structural={structural} color={color} /></mesh>}
-      >
+      <Suspense fallback={null}>
         <CustomModelMesh url={customModelUrl} material={material} color={color} sz={scale} recolor={recolor} tint={tint} />
-      </SafeModel>
+      </Suspense>
     )
   }
   return (
@@ -1004,21 +993,14 @@ function DecorationMesh({
       onClick={onClick}
     >
       {config.shape === 'custom' && config.customModelUrl ? (
-        <SafeModel
-          resetKey={config.customModelUrl}
-          fallback={
-            <mesh geometry={geo} scale={[s * config.size.x, s * config.size.y, s * config.size.z]}>
-              <MarkMaterialElement material={config.material} structural={config.structural} color={config.color} />
-            </mesh>
-          }
-        >
+        <Suspense fallback={null}>
           <CustomModelMesh
             url={config.customModelUrl}
             material={config.material}
             color={config.color}
             sz={[s * config.size.x, s * config.size.y, s * config.size.z]}
           />
-        </SafeModel>
+        </Suspense>
       ) : (
         <mesh geometry={geo} scale={[s * config.size.x, s * config.size.y, s * config.size.z]}>
           <MarkMaterialElement material={config.material} structural={config.structural} color={config.color} />
