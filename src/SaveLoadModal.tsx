@@ -165,6 +165,24 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDialogProps) {
   const [hoverId, setHoverId] = useState<string | null>(null)
+  const [importText, setImportText] = useState<string | null>(null)   // non-null → import view open
+  const [importErr,  setImportErr]  = useState<string>('')
+
+  // Load a scene from pasted JSON. Accepts a bare scene state (like a preset
+  // file), a study export { data: … }, or a whole DB row { participant, data, … }.
+  function loadFromJson(raw: string, name: string) {
+    let parsed: unknown
+    try { parsed = JSON.parse(raw) } catch { setImportErr('That is not valid JSON.'); return }
+    const asObj = (o: unknown): Record<string, unknown> | null =>
+      o && typeof o === 'object' ? (o as Record<string, unknown>) : null
+    const isScene = (o: Record<string, unknown> | null): boolean =>
+      !!o && ('markConfig' in o || 'col1Config' in o || 'sceneConfig' in o)
+    const root  = asObj(parsed)
+    const inner = asObj(root?.data)                      // study export / DB row { data: … }
+    const data  = isScene(root) ? root : (isScene(inner) ? inner : null)
+    if (!data) { setImportErr('This JSON doesn’t look like a saved scene.'); return }
+    onLoad({ id: 'import', name: name || 'Imported', createdAt: '', data })
+  }
 
   function row(s: SceneSave, last: boolean) {
     const thumb = s.data?.thumbnail as string | undefined
@@ -216,38 +234,83 @@ export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDi
           Load Scene
         </div>
 
-        {/* Scrollable list */}
-        <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
-
-          {/* Presets */}
-          {PRESETS.length > 0 ? (
-            <>
-              <SectionLabel>Presets</SectionLabel>
-              {PRESETS.map((s, i) => row(s, i === PRESETS.length - 1))}
-            </>
-          ) : (
-            <div style={{ padding: '36px 20px', textAlign: 'center', color: '#8E8E93', fontSize: '13px' }}>
-              No scenes yet
+        {importText === null ? (
+          <>
+            {/* Scrollable list */}
+            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+              {PRESETS.length > 0 ? (
+                <>
+                  <SectionLabel>Presets</SectionLabel>
+                  {PRESETS.map((s, i) => row(s, i === PRESETS.length - 1))}
+                </>
+              ) : (
+                <div style={{ padding: '36px 20px', textAlign: 'center', color: '#8E8E93', fontSize: '13px' }}>
+                  No scenes yet
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Footer */}
-        <div style={{
-          padding: '12px 20px', borderTop: '1px solid #E5E5EA',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
-          <button
-            onClick={() => exportScene(currentName, currentData)}
-            title="Export current scene as JSON"
-            style={{ ...btnBase, background: '#F2F2F7', color: '#007AFF', padding: '7px 12px' }}
-          >
-            Export scene
-          </button>
-          <button onClick={onClose} style={{ ...btnBase, background: '#F2F2F7', color: '#6C6C70' }}>
-            Close
-          </button>
-        </div>
+            {/* Footer */}
+            <div style={{
+              padding: '12px 20px', borderTop: '1px solid #E5E5EA',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+            }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => exportScene(currentName, currentData)}
+                  title="Export current scene as JSON"
+                  style={{ ...btnBase, background: '#F2F2F7', color: '#007AFF', padding: '7px 12px' }}
+                >
+                  Export
+                </button>
+                <button
+                  onClick={() => { setImportErr(''); setImportText('') }}
+                  title="Load a scene from JSON (paste or file) — e.g. a session from Supabase"
+                  style={{ ...btnBase, background: '#F2F2F7', color: '#007AFF', padding: '7px 12px' }}
+                >
+                  Import
+                </button>
+              </div>
+              <button onClick={onClose} style={{ ...btnBase, background: '#F2F2F7', color: '#6C6C70' }}>
+                Close
+              </button>
+            </div>
+          </>
+        ) : (
+          /* Import view — paste JSON or choose a file */
+          <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ fontSize: '12px', color: '#6C6C70', lineHeight: 1.4 }}>
+              Paste a session’s JSON.
+            </div>
+            <textarea
+              value={importText}
+              onChange={(e) => { setImportText(e.target.value); setImportErr('') }}
+              placeholder='{ "level": 2, "markConfig": { … }, … }'
+              spellCheck={false}
+              style={{
+                width: '100%', height: '150px', resize: 'vertical', boxSizing: 'border-box',
+                border: '1px solid #D1D1D6', borderRadius: '8px', padding: '8px',
+                fontSize: '11px', fontFamily: 'monospace', color: '#1D1D1F', outline: 'none',
+              }}
+            />
+            {importErr && <div style={{ fontSize: '11px', color: '#FF3B30' }}>{importErr}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                onClick={() => { setImportText(null); setImportErr('') }}
+                style={{ ...btnBase, background: '#F2F2F7', color: '#6C6C70' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => loadFromJson(importText, 'Imported')}
+                disabled={!importText.trim()}
+                style={{ ...btnBase, background: importText.trim() ? '#007AFF' : '#C7C7CC', color: '#fff', cursor: importText.trim() ? 'pointer' : 'default' }}
+              >
+                Load
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </ModalOverlay>
   )
