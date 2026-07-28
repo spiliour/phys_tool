@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, createContext, useContext } from 'react'
 import {
   ActiveElement, CompositionLevel,
   MarkConfig, CollectionConfig, SceneConfig, BackgroundMode,
@@ -13,7 +13,11 @@ const VAR_LABELS: Record<string, { label: string; type: 'numerical' | 'categoric
   garbageType: { label: 'Garbage Type', type: 'categorical' },
   count:       { label: 'Count',        type: 'numerical'   },
 }
-import { MODEL_PRESETS } from './models'
+import { MODEL_PRESETS, ModelPreset } from './models'
+
+// The list of models the shape/model pickers offer. App swaps this to the active
+// model collection; defaults to the master set so nested pickers always have a list.
+export const ModelListContext = createContext<ModelPreset[]>(MODEL_PRESETS)
 
 // ── Focal length utility ──────────────────────────────────────────────────────
 export function focalLengthToFov(mm: number): number {
@@ -574,9 +578,20 @@ function ShapeDropdown({ config, onChange }: {
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const blobUrlRef   = useRef<string | null>(null)
+  const models       = useContext(ModelListContext)
 
-  const isPreset     = config.shape === 'custom' && MODEL_PRESETS.some(p => p.name === config.customModelName)
+  // A model chosen from a different collection (e.g. loaded from a save) is still a
+  // preset — recognise it by name across every collection so it stays selectable.
+  const selName      = config.shape === 'custom' ? config.customModelName : undefined
+  const isPreset     = !!selName && (models.some(p => p.name === selName) || MODEL_PRESETS.some(p => p.name === selName))
   const isUserImport = config.shape === 'custom' && !isPreset
+
+  // The picker lists the active collection, plus the current selection if it lives
+  // outside that collection (so switching collections never hides what's in use).
+  const extraPreset  = isPreset && selName && !models.some(p => p.name === selName)
+    ? MODEL_PRESETS.find(p => p.name === selName)
+    : undefined
+  const modelOptions = extraPreset ? [extraPreset, ...models] : models
 
   const selectValue = config.shape !== 'custom'
     ? config.shape
@@ -593,7 +608,7 @@ function ShapeDropdown({ config, onChange }: {
     if (value === '__blob__') return
     if (value.startsWith('preset:')) {
       const name   = value.slice(7)
-      const preset = MODEL_PRESETS.find(p => p.name === name)
+      const preset = models.find(p => p.name === name) ?? MODEL_PRESETS.find(p => p.name === name)
       if (preset) onChange({ shape: 'custom', customModelUrl: preset.url, customModelHasMat: true, customModelName: preset.name, material: 'original' })
       return
     }
@@ -623,19 +638,19 @@ function ShapeDropdown({ config, onChange }: {
   return (
     <>
       <select value={selectValue} onChange={handleChange} style={selectStyle}>
+        {modelOptions.length > 0 && (
+          <optgroup label="3D Models">
+            {modelOptions.map(p => (
+              <option key={p.name} value={`preset:${p.name}`}>{p.name}</option>
+            ))}
+          </optgroup>
+        )}
+
         <optgroup label="Primitives">
           <option value="box">■  Box</option>
           <option value="sphere">●  Sphere</option>
           <option value="star">★  Star</option>
         </optgroup>
-
-        {MODEL_PRESETS.length > 0 && (
-          <optgroup label="3D Models">
-            {MODEL_PRESETS.map(p => (
-              <option key={p.name} value={`preset:${p.name}`}>{p.name}</option>
-            ))}
-          </optgroup>
-        )}
 
         <optgroup label="Custom">
           {isUserImport && (
@@ -1598,6 +1613,7 @@ interface PropertiesPanelProps {
   onColorTintChange:     (b: boolean) => void
   markOpenSection?:      string
   onReseed?:             () => void
+  models?:               ModelPreset[]
 }
 
 export function PropertiesPanel({
@@ -1611,12 +1627,14 @@ export function PropertiesPanel({
   colLabelConfig,  onColLabelChange,
   activeDecorationId, decorations, onDecorationChange,
   colorMode, colorGradient, onColorGradientChange, colorTint, onColorTintChange, markOpenSection, onReseed,
+  models,
 }: PropertiesPanelProps) {
   const activeDec = activeDecorationId !== null
     ? decorations.find((d) => d.id === activeDecorationId) ?? null
     : null
 
   return (
+    <ModelListContext.Provider value={models ?? MODEL_PRESETS}>
     <div style={{
       padding: '18px 14px', color: '#1D1D1F', fontSize: '13px',
       display: 'flex', flexDirection: 'column', gap: '10px',
@@ -1656,5 +1674,6 @@ export function PropertiesPanel({
       ) : null}
 
     </div>
+    </ModelListContext.Provider>
   )
 }

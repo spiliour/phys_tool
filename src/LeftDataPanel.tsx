@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { LayerData } from './types'
+import { MODEL_COLLECTION_NAMES, collectionLabel, MASTER_COLLECTION } from './models'
 
 interface LeftDataPanelProps {
-  layers:           LayerData[]
-  onChange:         (layers: LayerData[]) => void
-  onDatasetChange?: (key: string) => void
-  selectedDataset?: string
+  layers:               LayerData[]
+  onChange:             (layers: LayerData[]) => void
+  onDatasetChange?:     (key: string) => void
+  selectedDataset?:     string
+  modelCollection?:     string
+  onModelCollectionChange?: (c: string) => void
 }
 
 // A dataset may carry a reference — a title, an image and a source link. Images
@@ -26,6 +29,7 @@ const DATASETS: Record<string, {
   numericalCol:    string
   layers:          LayerData[]
   reference?:      DatasetReference
+  modelCollection?: string   // auto-selected model collection for this dataset
 }> = {
   garbageInOcean: {
     label:          'Garbage in the Ocean',
@@ -60,6 +64,7 @@ const DATASETS: Record<string, {
     label:          'CO₂ Emissions by Country',
     categoricalCol: 'Country',
     numericalCol:   'CO₂ Emissions (Mt)',
+    modelCollection: 'CO2',
     layers: [
       { id: '1',  name: 'Germany',        percentage: 572.32, color: '#E63946' },
       { id: '2',  name: 'Canada',         percentage: 533.34, color: '#F4A261' },
@@ -84,6 +89,7 @@ const DATASETS: Record<string, {
     label:          'Mushroom danger score',
     categoricalCol: 'Name',
     numericalCol:   'Danger Score',
+    modelCollection: 'mushrooms',
     layers: [
       { id: '1',  name: 'Death cap (Amanita phalloides)',       percentage: 10, color: '#7C8C4E' },
       { id: '2',  name: 'Destroying angel (Amanita virosa)',    percentage: 10, color: '#F0ECE0' },
@@ -192,7 +198,12 @@ export function VarChip({ label, type, varName }: VarChipProps) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function LeftDataPanel({ layers, onChange, onDatasetChange, selectedDataset = 'garbageInOcean' }: LeftDataPanelProps) {
+/** The model collection a dataset auto-loads (master if it doesn't specify one). */
+export function datasetModelCollection(key: string): string {
+  return DATASETS[key]?.modelCollection ?? MASTER_COLLECTION
+}
+
+export function LeftDataPanel({ layers, onChange, onDatasetChange, selectedDataset = 'garbageInOcean', modelCollection = MASTER_COLLECTION, onModelCollectionChange }: LeftDataPanelProps) {
   const ds = DATASETS[selectedDataset] ?? DATASETS.garbageInOcean
 
   // The full row list for this dataset, plus any active rows that aren't part of
@@ -221,6 +232,9 @@ export function LeftDataPanel({ layers, onChange, onDatasetChange, selectedDatas
   function handleDatasetChange(key: string) {
     onChange(DATASETS[key].layers)   // new dataset starts with every row in use
     onDatasetChange?.(key)
+    // Auto-load the dataset's matching model collection (the user can still
+    // override afterwards via the Models dropdown).
+    onModelCollectionChange?.(DATASETS[key].modelCollection ?? MASTER_COLLECTION)
   }
 
   const setTopN = (n: number) => commit(new Set(fullRows.slice(0, n).map(r => r.id)))
@@ -292,6 +306,26 @@ export function LeftDataPanel({ layers, onChange, onDatasetChange, selectedDatas
           ))}
         </select>
       </div>
+
+      {/* Model collection selector — auto-set by the dataset, freely overridable */}
+      {MODEL_COLLECTION_NAMES.length > 1 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <span style={capLabel}>Models</span>
+          <select
+            value={MODEL_COLLECTION_NAMES.includes(modelCollection) ? modelCollection : MASTER_COLLECTION}
+            onChange={(e) => onModelCollectionChange?.(e.target.value)}
+            style={{
+              background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px',
+              color: '#1D1D1F', fontSize: '13px', padding: '7px 10px',
+              fontFamily: 'inherit', cursor: 'pointer', outline: 'none', width: '100%',
+            }}
+          >
+            {MODEL_COLLECTION_NAMES.map(name => (
+              <option key={name} value={name}>{collectionLabel(name)}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Row-count control (use the first N rows) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

@@ -9,9 +9,9 @@ import { PropertiesPanel }   from './PropertiesPanel'
 import { CompositionCanvas } from './CompositionCanvas'
 import { SceneSave, SaveDialog, LoadDialog, loadSaves, persistSaves, captureThumbnail } from './SaveLoadModal'
 import { submitStudySession, getParticipantId, studyConfigured } from './studySave'
-import { LeftDataPanel, VarChip, DatasetReferenceCard } from './LeftDataPanel'
+import { LeftDataPanel, VarChip, DatasetReferenceCard, datasetModelCollection } from './LeftDataPanel'
 import { RadialBindMenu } from './RadialBindMenu'
-import { resolveCustomModel } from './models'
+import { resolveCustomModel, MASTER_COLLECTION, modelsForCollection } from './models'
 
 // ── Data variable definitions ─────────────────────────────────────────────────
 
@@ -126,6 +126,7 @@ export default function App() {
   const [col2Config,    setCol2Config]    = useState<CollectionConfig>(DEFAULT_COLLECTION2)
   const [sceneConfig,   setSceneConfig]   = useState<SceneConfig>(DEFAULT_SCENE)
   const [activeDataset, setActiveDataset] = useState<string>('garbageInOcean')
+  const [activeModelCollection, setActiveModelCollection] = useState<string>(MASTER_COLLECTION)
   const varLabels = DATASET_VAR_LABELS[activeDataset] ?? DATASET_VAR_LABELS.garbageInOcean
   const VAR_LIST: Array<{ label: string; type: 'numerical' | 'categorical'; varName: DataVariable }> = [
     { label: varLabels.numerical,   type: 'numerical',   varName: 'numerical'   },
@@ -254,7 +255,7 @@ export default function App() {
       level, activeElement,
       markConfig, col1Config, col2Config, sceneConfig,
       bindings, markLabelConfig, colLabelConfig,
-      decorations, layers, activeDataset,
+      decorations, layers, activeDataset, activeModelCollection,
       colorMode, colorGradient, colorTint,
     }
   }
@@ -378,7 +379,13 @@ export default function App() {
     setColLabelConfig(d.colLabelConfig   ? migrateSlots(d.colLabelConfig)  : DEFAULT_LABEL)
     setDecorations(resolvedDecs.filter((dec) => !usedDecIds.has(dec.id)))
     setLayers(d.layers ?? DEFAULT_LAYERS)
-    if (d.activeDataset != null) setActiveDataset(d.activeDataset)
+    if (d.activeDataset != null) {
+      setActiveDataset(d.activeDataset)
+      // Restore the saved collection if present, else fall back to the dataset's default.
+      setActiveModelCollection(d.activeModelCollection ?? datasetModelCollection(d.activeDataset))
+    } else if (d.activeModelCollection != null) {
+      setActiveModelCollection(d.activeModelCollection)
+    }
     setColorMode(d.colorMode ?? 'distinct')
     setColorGradient(d.colorGradient ?? { from: '#EE6655', to: '#4488EE' })
     setColorTint(d.colorTint ?? false)
@@ -653,6 +660,7 @@ export default function App() {
             onColorTintChange={setColorTint}
             markOpenSection={markOpenSection}
             onReseed={() => setScatterSeed(s => s + 1)}
+            models={modelsForCollection(activeModelCollection)}
           />
         </div>
 
@@ -770,7 +778,7 @@ export default function App() {
               <button onClick={() => setShowDataModal(false)} style={{ background: 'none', border: 'none', fontSize: '18px', color: '#AEAEB2', cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
             </div>
             <div style={{ overflowY: 'auto', flex: 1 }}>
-              <LeftDataPanel layers={layers} onChange={setLayers} onDatasetChange={setActiveDataset} selectedDataset={activeDataset} />
+              <LeftDataPanel layers={layers} onChange={setLayers} onDatasetChange={setActiveDataset} selectedDataset={activeDataset} modelCollection={activeModelCollection} onModelCollectionChange={setActiveModelCollection} />
             </div>
           </div>
         </div>
