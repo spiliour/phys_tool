@@ -1,0 +1,438 @@
+{
+  "level": 1,
+  "activeElement": "mark",
+  "markConfig": {
+    "shape": "sphere",
+    "material": "plastic",
+    "color": "#F06951",
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "size": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "orientation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "structural": {
+      "deformation": "none",
+      "fluidDistort": 0.35,
+      "fluidSpeed": 1.5
+    }
+  },
+  "col1Config": {
+    "arrangement": "alignment",
+    "color": "#5E5CE6",
+    "alignCount": 5,
+    "alignAxis": "X",
+    "alignSpacing": 1.5,
+    "alignAnchor": "center",
+    "scatterMode": "count",
+    "scatterCount": 50,
+    "scatterDimensions": {
+      "x": 4.5,
+      "y": 4,
+      "z": 3
+    },
+    "scatterDensity": 1,
+    "pilingCount": 10
+  },
+  "col2Config": {
+    "arrangement": "alignment",
+    "color": "#9D9BF4",
+    "alignCount": 3,
+    "alignAxis": "X",
+    "alignSpacing": 0.5,
+    "alignAnchor": "center",
+    "scatterMode": "count",
+    "scatterCount": 30,
+    "scatterDimensions": {
+      "x": 20,
+      "y": 6,
+      "z": 8
+    },
+    "scatterDensity": 1,
+    "pilingCount": 10
+  },
+  "sceneConfig": {
+    "background": "dark",
+    "hdriPreset": "city",
+    "focalLength": 130
+  },
+  "bindings": {
+    "markColor": null,
+    "markGeometry": null,
+    "scatterSize": null,
+    "scatterCount": null,
+    "c1AlignCount": null,
+    "c2AlignCount": null,
+    "markSizeX": null,
+    "markSizeY": null,
+    "markSizeZ": null,
+    "markScale": null
+  },
+  "markLabelConfig": {
+    "show": false,
+    "slots": {
+      "top": [],
+      "bottom": [],
+      "left": [],
+      "right": []
+    }
+  },
+  "colLabelConfig": {
+    "show": false,
+    "slots": {
+      "top": [],
+      "bottom": [],
+      "left": [],
+      "right": []
+    }
+  },
+  "decorations": [
+    {
+      "id": "dec_1785239776800",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": 0.06702975226950691,
+        "y": -2.9209068999245345,
+        "z": 0
+      },
+      "size": {
+        "x": 1.2,
+        "y": 1.2,
+        "z": 1.2
+      },
+      "orientation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/corals%201.glb",
+      "customModelHasMat": true,
+      "customModelName": "corals 1"
+    },
+    {
+      "id": "dec_1785239796688",
+      "shape": "custom",
+      "material": "fluid",
+      "color": "#2fd3e1",
+      "position": {
+        "x": 1.9910985760209705,
+        "y": 0.8565123344000618,
+        "z": 0
+      },
+      "size": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "orientation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/drop_of_water.glb",
+      "customModelHasMat": true,
+      "customModelName": "drop_of_water"
+    },
+    {
+      "id": "dec_1785239818521",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": 2.077946559836162,
+        "y": -1.815612586193299,
+        "z": 0
+      },
+      "size": {
+        "x": 5.5,
+        "y": 5.5,
+        "z": 5.5
+      },
+      "orientation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/water_waves.glb",
+      "customModelHasMat": true,
+      "customModelName": "water_waves"
+    },
+    {
+      "id": "dec_1785239824257",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": 0,
+        "y": 0.8092072794486445,
+        "z": 0
+      },
+      "size": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "orientation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/trash_bag.glb",
+      "customModelHasMat": true,
+      "customModelName": "trash_bag"
+    },
+    {
+      "id": "dec_1785239850993",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": -1.6671060148258432,
+        "y": 0.7874136355249424,
+        "z": 0
+      },
+      "size": {
+        "x": 1.3,
+        "y": 1.3,
+        "z": 1.3
+      },
+      "orientation": {
+        "x": 25,
+        "y": 142,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/sea_turtle.glb",
+      "customModelHasMat": true,
+      "customModelName": "sea_turtle"
+    },
+    {
+      "id": "dec_1785239918201",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": -1.530037701275162,
+        "y": -0.7247997625560911,
+        "z": 0
+      },
+      "size": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "orientation": {
+        "x": 0,
+        "y": -80,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/sea_shell.glb",
+      "customModelHasMat": true,
+      "customModelName": "sea_shell"
+    },
+    {
+      "id": "dec_1785239924312",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": 0.08067082731122155,
+        "y": -0.7811536453889287,
+        "z": 0
+      },
+      "size": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "orientation": {
+        "x": 0,
+        "y": -71,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/plastic_water_bottle.glb",
+      "customModelHasMat": true,
+      "customModelName": "plastic_water_bottle"
+    },
+    {
+      "id": "dec_1785239955417",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": -1.652898597920611,
+        "y": -1.8655315101074894,
+        "z": 0
+      },
+      "size": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "orientation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/garbage%20bag.glb",
+      "customModelHasMat": true,
+      "customModelName": "garbage bag"
+    },
+    {
+      "id": "dec_1785239968993",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": 0.09053427897427183,
+        "y": -1.9189669517084416,
+        "z": 0
+      },
+      "size": {
+        "x": 1.2,
+        "y": 1.2,
+        "z": 1.2
+      },
+      "orientation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/fish.glb",
+      "customModelHasMat": true,
+      "customModelName": "fish"
+    },
+    {
+      "id": "dec_1785239986329",
+      "shape": "custom",
+      "material": "original",
+      "color": "#888888",
+      "position": {
+        "x": 2.0508671017933784,
+        "y": -0.5648406628700835,
+        "z": 0
+      },
+      "size": {
+        "x": 1.5,
+        "y": 1.5,
+        "z": 1.5
+      },
+      "orientation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "structural": {
+        "deformation": "none",
+        "fluidDistort": 0.35,
+        "fluidSpeed": 1.5
+      },
+      "customModelUrl": "/phys_tool/src/assets/models%20-%20sea%20pollution/corals%202.glb",
+      "customModelHasMat": true,
+      "customModelName": "corals 2"
+    }
+  ],
+  "layers": [
+    {
+      "id": "1",
+      "name": "North Pacific",
+      "percentage": 1990,
+      "color": "#023E8A"
+    },
+    {
+      "id": "2",
+      "name": "Indian Ocean",
+      "percentage": 1300,
+      "color": "#0077B6"
+    },
+    {
+      "id": "3",
+      "name": "North Atlantic",
+      "percentage": 930,
+      "color": "#0096C7"
+    },
+    {
+      "id": "4",
+      "name": "South Pacific",
+      "percentage": 491,
+      "color": "#00B4D8"
+    },
+    {
+      "id": "5",
+      "name": "Mediterranean Sea",
+      "percentage": 247,
+      "color": "#48CAE4"
+    },
+    {
+      "id": "6",
+      "name": "South Atlantic",
+      "percentage": 297,
+      "color": "#90E0EF"
+    }
+  ],
+  "activeDataset": "oceanPlastic",
+  "activeModelCollection": "sea pollution",
+  "colorMode": "distinct",
+  "colorGradient": {
+    "from": "#EE6655",
+    "to": "#4488EE"
+  },
+  "colorTint": false,
+  "thumbnail": "data:image/jpeg;base64,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"
+}

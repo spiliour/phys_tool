@@ -46,6 +46,8 @@ const DATASET_VAR_LABELS: Record<string, { numerical: string; categorical: strin
   mahler:         { numerical: 'Number of Instruments', categorical: 'Orchestra Section' },
   co2Emissions:   { numerical: 'CO₂ Emissions (Mt)', categorical: 'Country' },
   mushroomToxicity: { numerical: 'Danger Score', categorical: 'Name' },
+  oceanPlastic:   { numerical: 'Plastic Pieces (billions)', categorical: 'Ocean' },
+  nantesHousing:  { numerical: 'Share (%)', categorical: 'Tenure Type' },
 }
 
 const DATASET_TITLES: Record<string, string> = {
@@ -53,6 +55,8 @@ const DATASET_TITLES: Record<string, string> = {
   mahler:         "Mahler's Symphony No. 8 Orchestra",
   co2Emissions:   'CO₂ Emissions by Country',
   mushroomToxicity: 'Mushroom danger score',
+  oceanPlastic:   "Surface Plastic Mass across the world's Oceans",
+  nantesHousing:  'Nantes Metropolitan Area Housing',
 }
 
 // ── Default state ─────────────────────────────────────────────────────────────

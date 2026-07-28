@@ -47,6 +47,7 @@ const DATASETS: Record<string, {
     label:          "Mahler's Symphony No. 8 Orchestra",
     categoricalCol: 'Orchestra Section',
     numericalCol:   'Number of Instruments',
+    modelCollection: 'malhers orchestra',
     layers: [
       { id: '1', name: 'Strings',      percentage: 80, color: '#C8A882' },
       { id: '2', name: 'Brass',        percentage: 28, color: '#D4A017' },
@@ -108,6 +109,41 @@ const DATASETS: Record<string, {
       title: 'Mushroom Danger Score',
       image: 'mushroom-danger.png',
       link:  'https://namyco.org/interests/toxicology/mushroom-poisoning-syndromes/',
+    },
+  },
+  oceanPlastic: {
+    label:          "Surface Plastic Mass across the world's Oceans",
+    categoricalCol: 'Ocean',
+    numericalCol:   'Plastic Pieces (billions)',
+    modelCollection: 'sea pollution',
+    layers: [
+      { id: '1', name: 'North Pacific',     percentage: 1990, color: '#023E8A' },
+      { id: '2', name: 'Indian Ocean',      percentage: 1300, color: '#0077B6' },
+      { id: '3', name: 'North Atlantic',    percentage:  930, color: '#0096C7' },
+      { id: '4', name: 'South Pacific',     percentage:  491, color: '#00B4D8' },
+      { id: '5', name: 'Mediterranean Sea', percentage:  247, color: '#48CAE4' },
+      { id: '6', name: 'South Atlantic',    percentage:  297, color: '#90E0EF' },
+    ],
+    reference: {
+      title: "Surface Plastic Mass across the world's Oceans",
+      image: 'plastic-oceans.png',
+      link:  'https://ourworldindata.org/grapher/surface-plastic-mass-by-ocean',
+    },
+  },
+  nantesHousing: {
+    label:          'Nantes Metropolitan Area Housing',
+    categoricalCol: 'Tenure Type',
+    numericalCol:   'Share (%)',
+    modelCollection: 'nantes logements',
+    layers: [
+      { id: '1', name: 'Homeowners',                     percentage: 52.2, color: '#E76F51' },
+      { id: '2', name: 'Private-sector tenants',         percentage: 28.0, color: '#2A9D8F' },
+      { id: '3', name: 'Social housing tenants (SRU law)', percentage: 17.5, color: '#457B9D' },
+    ],
+    reference: {
+      title: 'Nantes Metropolitan Area — 298,700 housing units',
+      image: 'nantes-housing.png',
+      link:  'http://rokovoko.fr/realisations/la-cantine',
     },
   },
 }
