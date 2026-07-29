@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import {
   CompositionLevel, ActiveElement,
   MarkConfig, CollectionConfig, SceneConfig, LayerData,
-  DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig,
+  DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig, BindingScale,
 } from './types'
 import { HierarchyPanel }    from './HierarchyPanel'
 import { PropertiesPanel }   from './PropertiesPanel'
@@ -26,6 +26,75 @@ const BINDING_LABELS: Record<keyof DataBindings, string> = {
   markSizeY:    'Height',
   markSizeZ:    'Depth',
   markScale:    'Scale',
+}
+
+// Quantity encodings whose value can be scaled by a ×N multiplier on the tag.
+const SCALABLE_BINDINGS = new Set<keyof DataBindings>([
+  'markScale', 'markSizeX', 'markSizeY', 'markSizeZ', 'scatterSize', 'scatterCount',
+])
+
+// Multiplier control for a numeric tag, using a factor glyph (ƒ) for "times" so it
+// never collides with the delete ×. It stays hidden as a faint ƒ affordance until
+// a factor is set; clicking it opens an editable ƒN pill. Buffers while typing so
+// a value can be cleared/retyped without snapping, and never commits 0 or empty.
+function ScaleInput({ value, disabled, onCommit }: { value: number; disabled: boolean; onCommit: (n: number) => void }) {
+  const [buf, setBuf]         = useState(String(value))
+  const [editing, setEditing] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (!editing) setBuf(String(value)) }, [value, editing])
+  useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select() } }, [editing])
+
+  // Collapsed (no factor set): a faint ƒ that reveals the field on click.
+  if (!editing && value === 1) {
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); setEditing(true) }}
+        title="Set a multiplier ( ƒ2 = ×2, ƒ0.5 = ÷2 )"
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          color: disabled ? '#CFCFD6' : '#AEC8F2', fontSize: '14px', fontWeight: '700', fontStyle: 'italic', lineHeight: 1, fontFamily: 'inherit',
+        }}
+        onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.color = '#4A90E2'; e.currentTarget.style.background = '#DCEBFF' } }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = disabled ? '#CFCFD6' : '#AEC8F2'; e.currentTarget.style.background = 'none' }}
+      >ƒ</button>
+    )
+  }
+
+  // Active (factor set or editing): the editable ƒN pill.
+  return (
+    <span
+      onClick={(e) => e.stopPropagation()}
+      title="Multiplier ( ƒ2 = ×2, ƒ0.5 = ÷2 )"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '2px',
+        background: disabled ? '#E7E7EC' : '#FFFFFF',
+        border: `1px solid ${disabled ? '#D8D8DE' : '#C4DBFF'}`,
+        borderRadius: '999px', padding: '1px 7px 1px 7px',
+      }}
+    >
+      <span style={{ color: disabled ? '#B4B4BC' : '#7FAEF0', fontWeight: '700', fontStyle: 'italic', fontSize: '13px', lineHeight: 1 }}>ƒ</span>
+      <input
+        ref={inputRef}
+        type="text" inputMode="decimal" value={buf}
+        onFocus={(e) => { setEditing(true); e.currentTarget.select() }}
+        onChange={(e) => { const raw = e.target.value; setBuf(raw); const n = Number(raw); if (raw.trim() !== '' && Number.isFinite(n) && n > 0) onCommit(n) }}
+        onBlur={() => {
+          setEditing(false)
+          const n = Number(buf)
+          const final = buf.trim() !== '' && Number.isFinite(n) && n > 0 ? n : value
+          setBuf(String(final))
+          if (final !== value) onCommit(final)
+        }}
+        style={{
+          width: '24px', border: 'none', background: 'transparent',
+          color: disabled ? '#AEAEB2' : '#0A66DA', fontSize: '12px', fontWeight: '700',
+          textAlign: 'center', padding: '0', fontFamily: 'inherit', outline: 'none',
+        }}
+      />
+    </span>
+  )
 }
 
 const BINDING_LEVEL: Record<keyof DataBindings, string> = {
@@ -142,6 +211,11 @@ export default function App() {
     c1AlignCount: null, c2AlignCount: null,
     markSizeX: null, markSizeY: null, markSizeZ: null, markScale: null,
   })
+  // Encodings can be deactivated without deleting them: a disabled binding is
+  // parked here and treated as null by everything that consumes encodings.
+  const [bindingDisabled, setBindingDisabled] = useState<Partial<Record<keyof DataBindings, boolean>>>({})
+  // Per-encoding numeric multiplier (×N) applied to a quantity binding's value.
+  const [bindingScale, setBindingScale] = useState<BindingScale>({})
   const [markLabelConfig, setMarkLabelConfig] = useState<LabelConfig>(DEFAULT_LABEL)
   const [colLabelConfig,  setColLabelConfig]  = useState<LabelConfig>(DEFAULT_LABEL)
   const [colorMode,     setColorMode]     = useState<'distinct' | 'continuous'>('distinct')
@@ -185,6 +259,10 @@ export default function App() {
       }
       return next
     })
+    // A fresh (re)bind or clear is always active — drop any parked/disabled flag.
+    setBindingDisabled((prev) => { if (!(attr in prev)) return prev; const n = { ...prev }; delete n[attr]; return n })
+    // Removing a binding resets its ×N multiplier so a later bind starts at ×1.
+    if (variable === null) setBindingScale((prev) => { if (!(attr in prev)) return prev; const n = { ...prev }; delete n[attr]; return n })
     // Auto-open geometry section and select mark when geometry encoding is activated
     if (attr === 'markGeometry' && variable !== null) {
       setActiveElement('mark')
@@ -202,6 +280,23 @@ export default function App() {
     if (attr === 'scatterSize' && variable !== null) {
       setCol2Config((prev) => ({ ...prev, alignCount: layers.length }))
     }
+  }
+
+  // Bindings actually applied to the visualization: disabled ones read as null so
+  // no encoding code needs to know about the disable feature.
+  const activeBindings = useMemo<DataBindings>(() => {
+    const out = { ...bindings }
+    ;(Object.keys(out) as Array<keyof DataBindings>).forEach((k) => { if (bindingDisabled[k]) out[k] = null })
+    return out
+  }, [bindings, bindingDisabled])
+
+  function handleToggleBind(attr: keyof DataBindings) {
+    if (bindings[attr] === null) return   // nothing bound → nothing to toggle
+    setBindingDisabled((prev) => ({ ...prev, [attr]: !prev[attr] }))
+  }
+
+  function handleSetScale(attr: keyof DataBindings, value: number) {
+    setBindingScale((prev) => ({ ...prev, [attr]: value }))
   }
 
   function handleColorBind(variable: DataVariable, mode: 'distinct' | 'continuous') {
@@ -258,7 +353,7 @@ export default function App() {
     return {
       level, activeElement,
       markConfig, col1Config, col2Config, sceneConfig,
-      bindings, markLabelConfig, colLabelConfig,
+      bindings, bindingDisabled, bindingScale, markLabelConfig, colLabelConfig,
       decorations, layers, activeDataset, activeModelCollection,
       colorMode, colorGradient, colorTint,
     }
@@ -364,6 +459,8 @@ export default function App() {
       markSizeZ:    migrateVar(rawBindings.markSizeZ    ?? null),
       markScale:    migrateVar(rawBindings.markScale    ?? null),
     })
+    setBindingDisabled(d.bindingDisabled ?? {})
+    setBindingScale(d.bindingScale ?? {})
     // Old saves stored a single variable (or null) per slot; new saves store a
     // list. Normalise either shape to a list.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -545,7 +642,8 @@ export default function App() {
           collection2Config={col2Config}
           sceneConfig={sceneConfig}
           layers={layers}
-          bindings={bindings}
+          bindings={activeBindings}
+          bindingScale={bindingScale}
           markLabelConfig={markLabelConfig}
           colLabelConfig={colLabelConfig}
           decorations={decorations}
@@ -651,7 +749,7 @@ export default function App() {
             collection1Config={col1Config} onCollection1Change={setCol1Config}
             collection2Config={col2Config} onCollection2Change={setCol2Config}
             sceneConfig={sceneConfig}      onSceneChange={setSceneConfig}
-            bindings={bindings}            onBind={handleBind}
+            bindings={activeBindings}      onBind={handleBind}
             markLabelConfig={markLabelConfig}  onMarkLabelChange={setMarkLabelConfig}
             colLabelConfig={colLabelConfig}    onColLabelChange={setColLabelConfig}
             activeDecorationId={activeDecorationId}
@@ -669,7 +767,7 @@ export default function App() {
         </div>
 
         {/* Pinned data variables section — capped so it can't crowd out the properties */}
-        <div style={{ borderTop: '1px solid #E5E5EA', padding: '14px 14px 16px', flexShrink: 0, maxHeight: '42%', overflowY: 'auto' }}>
+        <div style={{ borderTop: '1px solid #E5E5EA', padding: '14px 14px 16px', flexShrink: 0, maxHeight: '50%', overflowY: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
             <span style={{ fontSize: '10px', color: '#AEAEB2', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>
               Data
@@ -719,33 +817,60 @@ export default function App() {
                 <div key={v.varName}>
                   <VarChip label={v.label} type={v.type} varName={v.varName} />
                   {(activeKeys.length > 0 || labelTags.length > 0) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                      {activeKeys.map(k => (
-                        <div key={k} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '3px',
-                          background: '#EBF3FF', border: '1px solid #A8CAFF',
-                          borderRadius: '5px', padding: '3px 5px 3px 8px',
-                          fontSize: '10px', color: '#007AFF', fontWeight: '600',
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                      {activeKeys.map(k => {
+                        const off = !!bindingDisabled[k]
+                        return (
+                        <div key={k}
+                          onClick={() => handleToggleBind(k)}
+                          title={off ? 'Disabled — click to re-enable' : 'Click to disable (keeps the binding)'}
+                          style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer',
+                          background: off ? '#F1F1F5' : '#E8F1FF', border: `1px solid ${off ? '#DADAE0' : '#BBD6FF'}`,
+                          borderRadius: '10px', padding: '4px 6px 4px 11px',
+                          fontSize: '12.5px', color: off ? '#A0A0A8' : '#0A66DA', fontWeight: '600', lineHeight: 1.2,
                         }}>
-                          {BINDING_LEVEL[k] && <span style={{ color: '#60A0EE', marginRight: '2px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>}
-                          {BINDING_LABELS[k]}
+                          <span style={{ textDecoration: off ? 'line-through' : 'none', whiteSpace: 'nowrap' }}>
+                            {BINDING_LEVEL[k] && <span style={{ color: off ? '#C7C7CC' : '#8FB6EE', marginRight: '3px', fontWeight: '500' }}>{BINDING_LEVEL[k]}</span>}
+                            {BINDING_LABELS[k]}
+                          </span>
+                          {SCALABLE_BINDINGS.has(k) && (
+                            <ScaleInput value={bindingScale[k] ?? 1} disabled={off} onCommit={(n) => handleSetScale(k, n)} />
+                          )}
                           <button
-                            onClick={() => handleBind(k, null)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60A0EE', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
+                            onClick={(e) => { e.stopPropagation(); handleBind(k, null) }}
+                            title="Remove"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: '17px', height: '17px', borderRadius: '50%', flexShrink: 0,
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              color: off ? '#B4B4BC' : '#7FAEF0', fontSize: '14px', lineHeight: 1, fontFamily: 'inherit', padding: 0,
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = off ? '#E4E4EA' : '#D3E4FF' }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
                           >×</button>
                         </div>
-                      ))}
+                        )
+                      })}
                       {labelTags.map(lt => (
                         <div key={lt.key} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '3px',
-                          background: '#EBF3FF', border: '1px solid #A8CAFF',
-                          borderRadius: '5px', padding: '3px 5px 3px 8px',
-                          fontSize: '10px', color: '#007AFF', fontWeight: '600',
+                          display: 'inline-flex', alignItems: 'center', gap: '5px',
+                          background: '#EFEAFB', border: '1px solid #DCCFFA',
+                          borderRadius: '10px', padding: '4px 6px 4px 11px',
+                          fontSize: '12.5px', color: '#5E5CE6', fontWeight: '600', lineHeight: 1.2,
                         }}>
-                          {lt.label}
+                          <span style={{ whiteSpace: 'nowrap' }}>{lt.label}</span>
                           <button
                             onClick={lt.onRemove}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60A0EE', padding: '0 1px', fontSize: '13px', lineHeight: 1, fontFamily: 'inherit' }}
+                            title="Remove"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: '17px', height: '17px', borderRadius: '50%', flexShrink: 0,
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              color: '#9A98EE', fontSize: '14px', lineHeight: 1, fontFamily: 'inherit', padding: 0,
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#E4DCFA' }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
                           >×</button>
                         </div>
                       ))}

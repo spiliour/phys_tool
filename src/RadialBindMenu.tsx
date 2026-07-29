@@ -139,7 +139,7 @@ export function RadialBindMenu({
     // ── Collection ──
     { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter - Size',  icon: '⊞', section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
     { action: 'bind',  bindKey: 'scatterCount', label: 'Population', icon: '#',  section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering', 'stacking', 'adjacent'], minLevel: 2 },
-    { action: 'label',                           label: 'Label',              icon: 'Aa', section: 'collection', varTypes: ['numerical', 'categorical'],                             minLevel: 2 },
+    { action: 'label',                           label: 'Label',              icon: 'Aa', section: 'collection', varTypes: ['numerical', 'categorical'],                             minLevel: 3 },
   ]
 
   function ruleMatches(r: Rule): boolean {

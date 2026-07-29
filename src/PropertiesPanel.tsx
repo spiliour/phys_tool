@@ -521,15 +521,32 @@ function Vec3Input({
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const MATERIAL_HINTS: Record<MarkMaterial, string> = {
-  plastic:  'Matte diffuse surface',
-  fluid:    'Glass-like, clearcoat + iridescence',
-  metal:    'Polished — mirrors the HDRI',
-  emissive: 'Self-illuminated, glows with color',
-  original: "Use the model's built-in materials",
-}
+const MATERIAL_OPTIONS: MarkMaterial[] = ['plastic', 'fluid', 'glass', 'metal', 'iridescent', 'emissive', 'toon', 'wireframe', 'custom']
 
-const MATERIAL_OPTIONS: MarkMaterial[] = ['plastic', 'fluid', 'metal', 'emissive']
+// Opacity slider (all materials) + roughness/metalness (only for 'custom'). Shared
+// by the Mark and the collection-object material sections.
+function MaterialExtras({ material, opacity, roughness, metalness, onPatch }: {
+  material:  MarkMaterial
+  opacity?:  number
+  roughness?: number
+  metalness?: number
+  onPatch:   (patch: { opacity?: number; roughness?: number; metalness?: number }) => void
+}) {
+  return (
+    <>
+      <LabeledSlider label="Opacity" value={opacity ?? 1} min={0} max={1} step={0.05} decimals={2}
+        onChange={(v) => onPatch({ opacity: v })} />
+      {material === 'custom' && (
+        <>
+          <LabeledSlider label="Roughness" value={roughness ?? 0.5} min={0} max={1} step={0.05} decimals={2}
+            onChange={(v) => onPatch({ roughness: v })} />
+          <LabeledSlider label="Metalness" value={metalness ?? 0} min={0} max={1} step={0.05} decimals={2}
+            onChange={(v) => onPatch({ metalness: v })} />
+        </>
+      )}
+    </>
+  )
+}
 
 const ARRANGEMENT_OPTIONS: { value: CollectionArrangement; label: string }[] = [
   { value: 'alignment',  label: 'Alignment'         },
@@ -732,7 +749,7 @@ function MarkProperties({
   compositionLevel: CompositionLevel
 }) {
   const materialOptions: MarkMaterial[] = config.shape === 'custom' && config.customModelHasMat
-    ? ['original', 'plastic', 'fluid', 'metal', 'emissive']
+    ? ['original', 'plastic', 'fluid', 'glass', 'metal', 'iridescent', 'emissive', 'toon', 'wireframe']
     : MATERIAL_OPTIONS
   const acc = useAccordion('Spatial', openSection)
 
@@ -833,7 +850,6 @@ function MarkProperties({
               <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
             ))}
           </select>
-          <div style={{ fontSize: '11px', color: '#AEAEB2', lineHeight: 1.5 }}>{MATERIAL_HINTS[config.material]}</div>
         </Row>
 
         <Row label="Color">
@@ -883,6 +899,12 @@ function MarkProperties({
             </DropZone>
           )}
         </Row>
+
+        <MaterialExtras
+          material={config.material}
+          opacity={config.opacity} roughness={config.roughness} metalness={config.metalness}
+          onPatch={(p) => onChange({ ...config, ...p })}
+        />
       </AttributeCategory>
 
       {/* ── Structural ── (temporarily hidden)
@@ -1283,8 +1305,13 @@ function CollectionProperties({
         {/* ── Stacking controls (vertical column, no physics) ── */}
         {config.arrangement === 'stacking' && (
           <>
-            <LabeledSlider label="Population" value={config.scatterCount} min={1} max={100} step={1}
-              onChange={(v) => onChange({ ...config, scatterCount: v })} />
+            {/* A lone stack uses one mark per data row (set via the data panel's
+                "Rows used"); a manual count only applies when a second collection
+                arranges these stacks (level 3). */}
+            {compositionLevel >= 3 && (
+              <LabeledSlider label="Population" value={config.scatterCount} min={1} max={100} step={1}
+                onChange={(v) => onChange({ ...config, scatterCount: v })} />
+            )}
             <CheckRow label="Random orientation" checked={config.stackingRandomOrient ?? false}
               onChange={(v) => onChange({ ...config, stackingRandomOrient: v })} />
           </>
@@ -1344,7 +1371,7 @@ function ObjectAttributeSections({ config, onChange, acc }: {
   acc:      ReturnType<typeof useAccordion>
 }) {
   const materialOptions: MarkMaterial[] = config.shape === 'custom' && config.customModelHasMat
-    ? ['original', 'plastic', 'fluid', 'metal', 'emissive']
+    ? ['original', 'plastic', 'fluid', 'glass', 'metal', 'iridescent', 'emissive', 'toon', 'wireframe']
     : MATERIAL_OPTIONS
   return (
     <>
@@ -1377,7 +1404,6 @@ function ObjectAttributeSections({ config, onChange, acc }: {
               <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>
             ))}
           </select>
-          <div style={{ fontSize: '11px', color: '#AEAEB2', lineHeight: 1.5 }}>{MATERIAL_HINTS[config.material]}</div>
         </Row>
         <Row label="Color">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '2px' }}>
@@ -1389,6 +1415,12 @@ function ObjectAttributeSections({ config, onChange, acc }: {
             <span style={{ fontSize: '12px', color: '#8E8E93', fontFamily: 'monospace' }}>{config.color}</span>
           </div>
         </Row>
+
+        <MaterialExtras
+          material={config.material}
+          opacity={config.opacity} roughness={config.roughness} metalness={config.metalness}
+          onPatch={(p) => onChange({ ...config, ...p })}
+        />
       </AttributeCategory>
     </>
   )

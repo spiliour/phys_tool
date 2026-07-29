@@ -15,7 +15,7 @@ import * as THREE from 'three'
 import { Html, useGLTF } from '@react-three/drei'
 import { MarkShape, MarkMaterial, StructuralConfig, Vec3, LabelOccludeMode } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
-import { MarkMaterialElement } from './MarkMaterial'
+import { MarkMaterialElement, MaterialParams, DEFAULT_MATERIAL_PARAMS, MaterialParamsContext, TOON_GRADIENT } from './MarkMaterial'
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
@@ -75,20 +75,37 @@ function glbScaleOverride(url: string): number {
 }
 
 /** Imperative material for GLB clones (mirrors MarkMaterialElement's presets). */
-function buildMaterial(material: MarkMaterial, color: string): THREE.Material {
+function buildMaterial(material: MarkMaterial, color: string, params: MaterialParams = DEFAULT_MATERIAL_PARAMS): THREE.Material {
   const col = new THREE.Color(color)
+  const alpha = { transparent: params.opacity < 1, opacity: params.opacity }
   switch (material) {
+    case 'custom':
+      return new THREE.MeshStandardMaterial({ color: col, roughness: params.roughness, metalness: params.metalness, ...alpha })
     case 'fluid':
       return new THREE.MeshPhysicalMaterial({
         color: col, transmission: 0.92, roughness: 0.04,
-        metalness: 0, ior: 1.5, thickness: 0.5, envMapIntensity: 1.0,
+        metalness: 0, ior: 1.5, thickness: 0.5, envMapIntensity: 1.0, ...alpha,
+      })
+    case 'glass':
+      return new THREE.MeshPhysicalMaterial({
+        color: col, transmission: 1, roughness: 0, metalness: 0,
+        ior: 1.52, thickness: 0.6, specularIntensity: 1, envMapIntensity: 1, ...alpha,
       })
     case 'metal':
-      return new THREE.MeshStandardMaterial({ color: col, roughness: 0.06, metalness: 0.95, envMapIntensity: 2.0 })
+      return new THREE.MeshStandardMaterial({ color: col, roughness: 0.06, metalness: 0.95, envMapIntensity: 2.0, ...alpha })
+    case 'iridescent':
+      return new THREE.MeshPhysicalMaterial({
+        color: col, metalness: 0, roughness: 0.2,
+        iridescence: 1, iridescenceIOR: 1.3, iridescenceThicknessRange: [100, 400], envMapIntensity: 1.2, ...alpha,
+      })
     case 'emissive':
-      return new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 2.2, roughness: 0.55 })
+      return new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 2.2, roughness: 0.55, ...alpha })
+    case 'toon':
+      return new THREE.MeshToonMaterial({ color: col, gradientMap: TOON_GRADIENT, ...alpha })
+    case 'wireframe':
+      return new THREE.MeshBasicMaterial({ color: col, wireframe: true, ...alpha })
     default:
-      return new THREE.MeshStandardMaterial({ color: col, roughness: 0.65, metalness: 0.05 })
+      return new THREE.MeshStandardMaterial({ color: col, roughness: 0.65, metalness: 0.05, ...alpha })
   }
 }
 
@@ -273,6 +290,7 @@ function GLBInstances({
   url,
 }: MarkInstancesProps & { url: string; scaleBoost: number; standOnAnchor: boolean; stack: boolean; labelGapFactor: number }) {
   const { scene: gltfScene } = useGLTF(url)
+  const matParams = useContext(MaterialParamsContext)
 
   // Normalise scale AND compute centre so every model is centred at its
   // instance position regardless of where the GLB's origin sits.
@@ -298,8 +316,8 @@ function GLBInstances({
 
   // Shared material for non-original mode; rebuild when selection changes.
   const mat = useMemo(
-    () => (markMaterial !== 'original' ? buildMaterial(markMaterial, color) : null),
-    [markMaterial, color],
+    () => (markMaterial !== 'original' ? buildMaterial(markMaterial, color, matParams) : null),
+    [markMaterial, color, matParams],
   )
   useEffect(() => () => { mat?.dispose() }, [mat])
 
@@ -307,9 +325,9 @@ function GLBInstances({
   // models have no base colour, so treat them as plastic. (Not used when tinting.)
   const colorMats = useMemo(
     () => (instanceColors && !colorTint
-      ? instanceColors.map(c => buildMaterial(markMaterial === 'original' ? 'plastic' : markMaterial, c))
+      ? instanceColors.map(c => buildMaterial(markMaterial === 'original' ? 'plastic' : markMaterial, c, matParams))
       : null),
-    [instanceColors, colorTint, markMaterial],
+    [instanceColors, colorTint, markMaterial, matParams],
   )
   useEffect(() => () => { colorMats?.forEach(m => m.dispose()) }, [colorMats])
 

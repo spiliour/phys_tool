@@ -221,8 +221,8 @@ export function VarChip({ label, type, varName }: VarChipProps) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: '5px',
         background: '#F2F2F7', border: '1px solid #D1D1D6',
-        borderRadius: '7px', padding: '6px 10px',
-        fontSize: '11px', color: '#1D1D1F', fontWeight: '600',
+        borderRadius: '7px', padding: '6px 11px',
+        fontSize: '12.5px', color: '#1D1D1F', fontWeight: '600',
         cursor: 'grab', userSelect: 'none', whiteSpace: 'nowrap',
       }}
     >

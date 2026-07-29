@@ -11,7 +11,7 @@ export interface Vec3 {
 
 // ── Mark ─────────────────────────────────────────────────────────────────────
 export type MarkShape    = 'box' | 'sphere' | 'star' | 'custom'
-export type MarkMaterial = 'plastic' | 'fluid' | 'metal' | 'emissive' | 'original'
+export type MarkMaterial = 'plastic' | 'fluid' | 'glass' | 'metal' | 'iridescent' | 'emissive' | 'toon' | 'wireframe' | 'original' | 'custom'
 
 // Structural deformation applied to mark geometry
 export type StructuralDeformation = 'none' | 'fluid'
@@ -38,6 +38,9 @@ export interface MarkConfig {
   // Material
   material: MarkMaterial
   color: string
+  opacity?:   number   // alpha, 0–1 (default 1) — applies to any material
+  roughness?: number   // 0–1 — used by the 'custom' material
+  metalness?: number   // 0–1 — used by the 'custom' material
   // Spatial (applied directly at Level 1; used as instance-scale multipliers at Levels 2–3)
   position:    Vec3   // scene-space offset from origin
   scale:       number // uniform scale multiplier on top of per-axis size (default 1)
@@ -159,6 +162,9 @@ export interface DataBindings {
   markScale:     DataVariable | null  // uniform scale of the whole mark
 }
 
+// Per-encoding multiplier applied to a numeric binding's value (e.g. ×2, ÷2).
+export type BindingScale = Partial<Record<keyof DataBindings, number>>
+
 export interface LabelConfig {
   show:  boolean
   slots: LabelSlots
@@ -171,6 +177,9 @@ export interface DecorationConfig {
   shape:        MarkShape
   material:     MarkMaterial
   color:        string
+  opacity?:     number   // alpha, 0–1 (default 1)
+  roughness?:   number   // 0–1 — used by the 'custom' material
+  metalness?:   number   // 0–1 — used by the 'custom' material
   position:     Vec3
   size:         Vec3
   orientation:  Vec3

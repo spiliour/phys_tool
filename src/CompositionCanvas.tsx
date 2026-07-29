@@ -1,6 +1,6 @@
 import { useRef, useMemo, useEffect, useState, useCallback, Suspense, createContext, useContext } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
-import { OrbitControls, Environment, Sky, Stars, Grid, Html, useGLTF, TransformControls } from '@react-three/drei'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
+import { OrbitControls, Environment, Sky, Stars, Grid, Html, useGLTF, PivotControls } from '@react-three/drei'
 import {
   PathTracingRenderer, PhysicalPathTracingMaterial, DynamicPathTracingSceneGenerator,
 } from 'three-gpu-pathtracer'
@@ -9,7 +9,7 @@ import * as THREE from 'three'
 import {
   CompositionLevel, MarkConfig, CollectionConfig, SceneConfig, LayerData,
   DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig,
-  MarkShape, MarkMaterial, StructuralConfig, Vec3, ActiveElement,
+  MarkShape, MarkMaterial, StructuralConfig, Vec3, ActiveElement, BindingScale,
 } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 import { MODEL_PRESETS, MODEL_SCALE_OVERRIDES } from './models'
@@ -26,6 +26,11 @@ const ColorContext = createContext<ColorCtx>({
   colorGradient: { from: '#EE6655', to: '#4488EE' },
   colorTint: false,
 })
+
+// Per-encoding numeric multiplier (e.g. ×2, ÷2), provided at the canvas root and
+// read wherever a numeric binding turns into a value.
+const BindingScaleContext = createContext<BindingScale>({})
+const bScaleOf = (scale: BindingScale, key: keyof DataBindings): number => scale[key] ?? 1
 
 function lerpHex(from: string, to: string, t: number): string {
   return '#' + new THREE.Color(from).lerp(new THREE.Color(to), Math.max(0, Math.min(1, t))).getHexString()
@@ -46,7 +51,7 @@ function resolveMarkColor(
   }
   return layers[i % Math.max(1, layers.length)]?.color ?? fallback
 }
-import { MarkMaterialElement } from './MarkMaterial'
+import { MarkMaterialElement, MaterialParamsContext, resolveMaterialParams } from './MarkMaterial'
 import { Layer, LayerLabelData, SCATTER_SCALE, ExclusionZone, MarkLabelPair, LabelOccludeContext, occludeProp } from './Layer'
 import { SurfacePlacement } from './SurfacePlacement'
 import { PilingLayer } from './PilingLayer'
@@ -141,31 +146,149 @@ interface HandleValue {
   enabled:    boolean
   isSelected: (t: HandleTarget) => boolean
   select:     (t: HandleTarget) => void
-  commit:     (t: HandleTarget, pos: { x: number; y: number; z: number }) => void
+  commit:     (t: HandleTarget, pos: Vec3, orient: Vec3, scale: Vec3) => void
 }
 const HandleContext = createContext<HandleValue>({
   enabled: false, isSelected: () => false, select: () => {}, commit: () => {},
 })
 
-// Wires a spatial mesh into the handle system: returns a ref-setter for its
-// outer group, an onClick that selects it, and a gizmo element to render (only
-// present while that target is selected). `target` undefined → fully inert.
-function useSpatialHandle(target?: HandleTarget) {
-  const ctx = useContext(HandleContext)
-  const [grp, setGrp] = useState<THREE.Object3D | null>(null)
+const DEG_TO_RAD = Math.PI / 180
+const ONE_SCALE  = new THREE.Vector3(1, 1, 1)
+
+// Wraps a spatial mesh in the handle system. Clicking it selects the object; while
+// selected it gets a PivotControls gizmo — axis arrows (move) + rotation rings
+// (orient), no plane/scale handles. On release it commits position + orientation.
+// `target` undefined (or handles disabled) → an inert plain group. `groupRef`
+// forwards the inner group (used e.g. for label-occluder registration).
+// A single uniform-scale handle at the gizmo centre. Drag it up/down to scale the
+// object about its centre; disables orbit while dragging and stays a constant
+// screen size. Reports the live factor (for preview) and the final factor.
+function CenterScaleHandle({ onScale, onScaleEnd }: {
+  onScale:    (factor: number) => void
+  onScaleEnd: (factor: number) => void
+}) {
+  const controls = useThree((s) => s.controls) as { enabled: boolean } | null
+  const ref = useRef<THREE.Mesh>(null)
+  const [hovered, setHovered] = useState(false)
+
+  // Keep the handle a constant on-screen size, and push it toward the camera so it
+  // always sits in front of the gizmo's own arrows/rings (winning the raycast at
+  // the centre) while still projecting to the object's centre on screen.
+  useFrame(({ camera }) => {
+    const m = ref.current
+    if (!m || !m.parent) return
+    const origin = new THREE.Vector3(); m.parent.getWorldPosition(origin)
+    const dist = camera.position.distanceTo(origin)
+    const camLocal = m.parent.worldToLocal(camera.position.clone()).normalize()
+    m.position.copy(camLocal.multiplyScalar(dist * 0.16))
+    m.scale.setScalar(dist * 0.0021)
+  })
+
+  return (
+    <mesh
+      ref={ref}
+      renderOrder={1000}
+      onPointerOver={(e) => { e.stopPropagation(); setHovered(true) }}
+      onPointerOut={() => setHovered(false)}
+      onPointerDown={(e) => {
+        e.stopPropagation()
+        const startY = e.nativeEvent.clientY
+        if (controls) controls.enabled = false
+        let factor = 1
+        const move = (ev: PointerEvent) => { factor = Math.max(0.05, 1 + (startY - ev.clientY) / 160); onScale(factor) }
+        const up = () => {
+          window.removeEventListener('pointermove', move)
+          window.removeEventListener('pointerup', up)
+          if (controls) controls.enabled = true
+          onScaleEnd(factor)
+        }
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', up)
+      }}
+    >
+      <sphereGeometry args={[1, 20, 20]} />
+      <meshBasicMaterial color={hovered ? '#ffe066' : '#ffcc33'} depthTest={false} transparent opacity={0.95} />
+    </mesh>
+  )
+}
+
+function SpatialHandle({ target, position, orientation, groupRef, children }: {
+  target?:      HandleTarget
+  position:     Vec3
+  orientation:  Vec3   // degrees
+  groupRef?:    (g: THREE.Group | null) => void
+  children:     React.ReactNode
+}) {
+  const ctx      = useContext(HandleContext)
   const active   = !!target && ctx.enabled
   const selected = active && ctx.isSelected(target!)
   const onClick  = active
     ? (e: { stopPropagation: () => void }) => { e.stopPropagation(); ctx.select(target!) }
     : undefined
-  const gizmo = selected && grp
-    ? <TransformControls
-        object={grp}
-        mode="translate"
-        onMouseUp={() => { const p = grp.position; ctx.commit(target!, { x: p.x, y: p.y, z: p.z }) }}
+
+  const rot: [number, number, number] = [orientation.x * DEG_TO_RAD, orientation.y * DEG_TO_RAD, orientation.z * DEG_TO_RAD]
+
+  // Initial gizmo transform (in the object's parent frame).
+  const matrix = useMemo(() => {
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rot[0], rot[1], rot[2]))
+    return new THREE.Matrix4().compose(new THREE.Vector3(position.x, position.y, position.z), q, ONE_SCALE)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [position.x, position.y, position.z, orientation.x, orientation.y, orientation.z])
+
+  const latest       = useRef(new THREE.Matrix4())
+  const liveScaleRef = useRef<THREE.Group>(null)
+
+  // Decompose a matrix into config-shaped { pos, orient(deg), scale }.
+  const decompose = (m: THREE.Matrix4) => {
+    const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3()
+    m.decompose(p, q, s)
+    const e = new THREE.Euler().setFromQuaternion(q)
+    return {
+      pos:    { x: p.x, y: p.y, z: p.z },
+      orient: { x: e.x / DEG_TO_RAD, y: e.y / DEG_TO_RAD, z: e.z / DEG_TO_RAD },
+      scale:  { x: s.x, y: s.y, z: s.z },
+    }
+  }
+
+  if (!selected) {
+    return (
+      <group ref={groupRef} position={[position.x, position.y, position.z]} rotation={rot} onClick={onClick}>
+        {children}
+      </group>
+    )
+  }
+
+  return (
+    <PivotControls
+      matrix={matrix}
+      autoTransform
+      fixed
+      scale={95}
+      lineWidth={2.5}
+      disableSliders
+      disableScaling
+      depthTest={false}
+      onDragStart={() => latest.current.copy(matrix)}
+      onDrag={(l) => latest.current.copy(l)}
+      onDragEnd={() => {
+        // The gizmo starts at scale 1, so `scale` is exactly 1 for pure move/rotate.
+        const t = decompose(latest.current)
+        ctx.commit(target!, t.pos, t.orient, t.scale)
+      }}
+    >
+      <group ref={liveScaleRef}>
+        <group ref={groupRef} onClick={onClick}>{children}</group>
+      </group>
+      <CenterScaleHandle
+        onScale={(f) => { liveScaleRef.current?.scale.setScalar(f) }}
+        onScaleEnd={(f) => {
+          liveScaleRef.current?.scale.setScalar(1)
+          const t = decompose(matrix)   // position/orientation unchanged by a scale drag
+          ctx.commit(target!, t.pos, t.orient, { x: f, y: f, z: f })
+        }}
       />
-    : null
-  return { setGrp, gizmo, onClick }
+    </PivotControls>
+  )
 }
 
 function CustomModelMesh({
@@ -339,6 +462,13 @@ function markSizeMultiplier(variable: DataVariable, layerIdx: number, layers: La
   return 0.2 + 1.8 * (pct / maxPct)
 }
 
+// Size multiplier for a bound size axis, with the per-encoding scale applied.
+// Returns 1 (no effect) when the axis isn't bound.
+function sizeMul(key: keyof DataBindings, i: number, bindings: DataBindings, layers: LayerData[], scale: BindingScale): number {
+  const v = bindings[key]
+  return v ? markSizeMultiplier(v, i, layers) * bScaleOf(scale, key) : 1
+}
+
 // ── Anchor offset helpers ──────────────────────────────────────────────────────
 
 function anchorOffset(
@@ -371,32 +501,23 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
   const geo   = useMemo(() => makeMarkGeometry(config.shape), [config.shape])
   useEffect(() => () => { geo.dispose() }, [geo])
   const { colorMode, colorGradient, colorTint } = useContext(ColorContext)
-  const { setGrp, gizmo, onClick } = useSpatialHandle({ kind: 'mark' })
+  const bScale = useContext(BindingScaleContext)
 
-  const DEG   = Math.PI / 180
   const s     = L1_MARK_SCALE
   const color = resolveMarkColor(0, bindings, layers, config.color, colorMode, colorGradient)
 
-  const sc = (config.scale ?? 1)
-    * (bindings.markScale ? markSizeMultiplier(bindings.markScale, 0, layers) : 1)
+  const sc = (config.scale ?? 1) * sizeMul('markScale', 0, bindings, layers, bScale)
   const sz = {
-    x: config.size.x * sc * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, 0, layers) : 1),
-    y: config.size.y * sc * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, 0, layers) : 1),
-    z: config.size.z * sc * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, 0, layers) : 1),
+    x: config.size.x * sc * sizeMul('markSizeX', 0, bindings, layers, bScale),
+    y: config.size.y * sc * sizeMul('markSizeY', 0, bindings, layers, bScale),
+    z: config.size.z * sc * sizeMul('markSizeZ', 0, bindings, layers, bScale),
   }
   const halfH = s * sz.y * 0.036 + 0.8
   const halfW = s * sz.x * 0.036 + 0.8
   const ld    = computeLabelValues(markLabelConfig.slots, layers, 0)
-  const rot: [number, number, number] = [config.orientation.x * DEG, config.orientation.y * DEG, config.orientation.z * DEG]
 
   return (
-    <>
-    <group
-      ref={setGrp}
-      position={[config.position.x, config.position.y, config.position.z]}
-      rotation={rot}
-      onClick={onClick}
-    >
+    <SpatialHandle target={{ kind: 'mark' }} position={config.position} orientation={config.orientation}>
       {config.shape === 'custom' && config.customModelUrl ? (
         <Suspense fallback={null}>
           <CustomModelMesh url={config.customModelUrl} material={config.material} color={color} sz={[s * sz.x, s * sz.y, s * sz.z]} recolor={bindings.markColor !== null} tint={colorTint} />
@@ -414,9 +535,7 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
           {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[1, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
         </>
       )}
-    </group>
-    {gizmo}
-    </>
+    </SpatialHandle>
   )
 }
 
@@ -469,6 +588,7 @@ function AlignedMarks({
   const offset = (count - 1) / 2
   const rot: [number, number, number] = [markConfig.orientation.x * DEG, markConfig.orientation.y * DEG, markConfig.orientation.z * DEG]
   const { colorMode, colorGradient, colorTint } = useContext(ColorContext)
+  const bScale = useContext(BindingScaleContext)
   const recolor = bindings.markColor !== null   // colour encoding active → recolour custom models too
 
   function getColor(i: number) {
@@ -477,11 +597,11 @@ function AlignedMarks({
 
   const msc = markConfig.scale ?? 1
   function getScale(i: number): [number, number, number] {
-    const uni = msc * (bindings.markScale ? markSizeMultiplier(bindings.markScale, i, layers) : 1)
+    const uni = msc * sizeMul('markScale', i, bindings, layers, bScale)
     const sz = {
-      x: markConfig.size.x * uni * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, i, layers) : 1),
-      y: markConfig.size.y * uni * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, i, layers) : 1),
-      z: markConfig.size.z * uni * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, i, layers) : 1),
+      x: markConfig.size.x * uni * sizeMul('markSizeX', i, bindings, layers, bScale),
+      y: markConfig.size.y * uni * sizeMul('markSizeY', i, bindings, layers, bScale),
+      z: markConfig.size.z * uni * sizeMul('markSizeZ', i, bindings, layers, bScale),
     }
     return [s * sz.x, s * sz.y, s * sz.z]
   }
@@ -543,6 +663,7 @@ function CollectionInstance({
   markConfig, collection1Config, color, position,
   layers, bindings, heightOverride,
   markLabelConfig, colLabelConfig, layerIndex, scatterSeed, objectHandle,
+  singleCollection = false,
 }: {
   markConfig:        MarkConfig
   collection1Config: CollectionConfig
@@ -556,9 +677,11 @@ function CollectionInstance({
   layerIndex:        number
   scatterSeed:       number
   objectHandle?:     HandleTarget   // handle descriptor for the collection object (L2 only)
+  singleCollection?: boolean        // the lone L2 collection (not one of many L3 groups)
 }) {
   const { colorMode, colorGradient, colorTint } = useContext(ColorContext)
   const { aspects } = useContext(ModelAspectContext)
+  const bScale = useContext(BindingScaleContext)
   const msc = markConfig.scale ?? 1
   const scaledMarkSize = { x: markConfig.size.x * msc, y: markConfig.size.y * msc, z: markConfig.size.z * msc }
 
@@ -577,15 +700,15 @@ function CollectionInstance({
   const instanceSizes = useMemo<Vec3[] | undefined>(() => {
     if (!sizeEncActive) return undefined
     return layers.map((_, i) => {
-      const uni = bindings.markScale ? markSizeMultiplier(bindings.markScale, i, layers) : 1
+      const uni = sizeMul('markScale', i, bindings, layers, bScale)
       return {
-        x: scaledMarkSize.x * uni * (bindings.markSizeX ? markSizeMultiplier(bindings.markSizeX, i, layers) : 1),
-        y: scaledMarkSize.y * uni * (bindings.markSizeY ? markSizeMultiplier(bindings.markSizeY, i, layers) : 1),
-        z: scaledMarkSize.z * uni * (bindings.markSizeZ ? markSizeMultiplier(bindings.markSizeZ, i, layers) : 1),
+        x: scaledMarkSize.x * uni * sizeMul('markSizeX', i, bindings, layers, bScale),
+        y: scaledMarkSize.y * uni * sizeMul('markSizeY', i, bindings, layers, bScale),
+        z: scaledMarkSize.z * uni * sizeMul('markSizeZ', i, bindings, layers, bScale),
       }
     })
   }, [
-    sizeEncActive, layers,
+    sizeEncActive, layers, bScale,
     bindings.markScale, bindings.markSizeX, bindings.markSizeY, bindings.markSizeZ,
     scaledMarkSize.x, scaledMarkSize.y, scaledMarkSize.z,
   ])
@@ -711,12 +834,13 @@ function CollectionInstance({
   const dimY = heightOverride != null && sizeAxes.y ? heightOverride : dim.y
   const dimZ = heightOverride != null && sizeAxes.z ? heightOverride : dim.z
   const dataLayerCount = bindings.scatterCount !== null
-    ? Math.max(1, Math.round(layers[layerIndex % Math.max(1, layers.length)]?.percentage ?? scatterCount))
+    ? Math.max(1, Math.round((layers[layerIndex % Math.max(1, layers.length)]?.percentage ?? scatterCount) * bScaleOf(bScale, 'scatterCount')))
     : null
   const effectiveCount = dataLayerCount !== null
     ? dataLayerCount
-    : perRowActive
-      ? layers.length   // size / colour encoding: one mark per data row
+    : perRowActive || (isStacking && singleCollection)
+      // size / colour encoding, or a lone stack: one mark per data row
+      ? Math.max(1, layers.length)
       : (scatterMode ?? 'count') === 'density' && !noVolume
         ? Math.max(5, Math.round(scatterDensity * dimX * dimY * dimZ))
         : scatterCount
@@ -777,9 +901,10 @@ function Level2Content({
   // Base colour for the collection's marks is the mark's own colour (matches L1).
   // A colour encoding, when bound, still overrides this per-instance downstream.
   const color  = markConfig.color ?? collection1Config.color
+  const bScale = useContext(BindingScaleContext)
   const maxPct = Math.max(...layers.map(l => l.percentage), 1)
   const heightOverride = isNumericalVar(bindings.scatterSize) && collection1Config.arrangement === 'scattering'
-    ? Math.max(0.5, ((layers[0]?.percentage ?? 50) / maxPct) * WEIGHT_MAX_H)
+    ? Math.max(0.5, ((layers[0]?.percentage ?? 50) / maxPct) * WEIGHT_MAX_H * bScaleOf(bScale, 'scatterSize'))
     : undefined
 
   return (
@@ -796,6 +921,7 @@ function Level2Content({
       layerIndex={0}
       scatterSeed={scatterSeed}
       objectHandle={{ kind: 'object', owner: 'col1' }}
+      singleCollection
     />
   )
 }
@@ -819,6 +945,8 @@ function Level3Content({
     arrangement, alignCount, alignAxis, alignSpacing, alignAnchor,
     scatterCount, scatterDimensions, color: col2Color,
   } = collection2Config
+  const bScale = useContext(BindingScaleContext)
+  const scatterSizeScale = bScaleOf(bScale, 'scatterSize')
 
   const groupCount = layers.length || alignCount
 
@@ -850,7 +978,7 @@ function Level3Content({
         if (c1.arrangement === 'scattering') {
           const dim = c1.scatterDimensions
           if (alignAxis === 'X') return dim.x
-          return isNumericalVar(bindings.scatterSize) ? Math.max(0.5, (g.pct / maxPct) * WEIGHT_MAX_H) : dim.y
+          return isNumericalVar(bindings.scatterSize) ? Math.max(0.5, (g.pct / maxPct) * WEIGHT_MAX_H * scatterSizeScale) : dim.y
         }
         if (c1.arrangement === 'alignment') {
           if (alignAxis === 'X') return c1.alignAxis === 'X' ? (c1.alignCount - 1) * c1.alignSpacing + alignW : alignW
@@ -867,7 +995,7 @@ function Level3Content({
       const perpExtents = base.map((g) => {
         if (c1.arrangement === 'scattering') {
           const dim = c1.scatterDimensions
-          if (alignAxis === 'X') return isNumericalVar(bindings.scatterSize) ? Math.max(0.5, (g.pct / maxPct) * WEIGHT_MAX_H) : dim.y
+          if (alignAxis === 'X') return isNumericalVar(bindings.scatterSize) ? Math.max(0.5, (g.pct / maxPct) * WEIGHT_MAX_H * scatterSizeScale) : dim.y
           return dim.x
         }
         if (c1.arrangement === 'alignment') {
@@ -916,7 +1044,7 @@ function Level3Content({
   }, [
     arrangement, groupCount, alignAxis, alignSpacing, alignAnchor,
     scatterCount, scatterDimensions.x, scatterDimensions.y, scatterDimensions.z,
-    layers, col2Color, bindings.scatterSize,
+    layers, col2Color, bindings.scatterSize, scatterSizeScale,
     collection1Config.arrangement, collection1Config.alignAxis,
     collection1Config.alignCount, collection1Config.alignSpacing,
     collection1Config.scatterDimensions.x, collection1Config.scatterDimensions.y,
@@ -929,7 +1057,7 @@ function Level3Content({
     <group>
       {groups.map(({ position, color, name, pct }, i) => {
         const heightOverride = isNumericalVar(bindings.scatterSize) && collection1Config.arrangement === 'scattering'
-          ? Math.max(0.5, (pct / maxPct) * WEIGHT_MAX_H)
+          ? Math.max(0.5, (pct / maxPct) * WEIGHT_MAX_H * scatterSizeScale)
           : undefined
         // Apply per-category geometry override for this group's layer
         const catEntry = markConfig.categoryShapes?.[name]
@@ -972,28 +1100,23 @@ function DecorationMesh({
   const geo = useMemo(() => makeMarkGeometry(config.shape), [config.shape])
   useEffect(() => () => { geo.dispose() }, [geo])
 
-  // Register this decoration's group as a label occluder (used by 'optimized' mode).
+  // The decoration's group doubles as a label occluder (used by 'optimized' mode).
+  // Registering via the ref keeps it correct when SpatialHandle re-mounts the group
+  // on select/deselect.
   const groupRef = useRef<THREE.Group | null>(null)
-  useEffect(() => {
-    if (groupRef.current) onRegister?.(config.id, groupRef.current)
-    return () => onUnregister?.(config.id)
+  const setDecGroup = useCallback((g: THREE.Group | null) => {
+    groupRef.current = g
+    if (g) onRegister?.(config.id, g)
+    else   onUnregister?.(config.id)
   }, [config.id, onRegister, onUnregister])
 
-  const { setGrp, gizmo, onClick } = useSpatialHandle(handleTarget)
-  const setRefs = useCallback((g: THREE.Group | null) => { groupRef.current = g; setGrp(g) }, [setGrp])
+  const s = L1_MARK_SCALE
 
-  const DEG = Math.PI / 180
-  const s   = L1_MARK_SCALE
-  const rot: [number, number, number] = [config.orientation.x * DEG, config.orientation.y * DEG, config.orientation.z * DEG]
+  const decMatParams = useMemo(() => resolveMaterialParams(config), [config.opacity, config.roughness, config.metalness])
 
   return (
-    <>
-    <group
-      ref={setRefs}
-      position={[config.position.x, config.position.y, config.position.z]}
-      rotation={rot}
-      onClick={onClick}
-    >
+    <MaterialParamsContext.Provider value={decMatParams}>
+    <SpatialHandle target={handleTarget} position={config.position} orientation={config.orientation} groupRef={setDecGroup}>
       {config.shape === 'custom' && config.customModelUrl ? (
         <Suspense fallback={null}>
           <CustomModelMesh
@@ -1008,9 +1131,8 @@ function DecorationMesh({
           <MarkMaterialElement material={config.material} structural={config.structural} color={config.color} />
         </mesh>
       )}
-    </group>
-    {gizmo}
-    </>
+    </SpatialHandle>
+    </MaterialParamsContext.Provider>
   )
 }
 
@@ -1304,6 +1426,7 @@ interface CompositionCanvasProps {
   sceneConfig:       SceneConfig
   layers:            LayerData[]
   bindings:          DataBindings
+  bindingScale:      BindingScale
   markLabelConfig:   LabelConfig
   colLabelConfig:    LabelConfig
   decorations:       DecorationConfig[]
@@ -1326,7 +1449,7 @@ interface CompositionCanvasProps {
 }
 
 export function CompositionCanvas({
-  level, markConfig, collection1Config, collection2Config, sceneConfig, layers, bindings,
+  level, markConfig, collection1Config, collection2Config, sceneConfig, layers, bindings, bindingScale,
   markLabelConfig, colLabelConfig, decorations,
   colorMode, colorGradient, colorTint, scatterSeed, datasetTitle,
   onSelectElement, onSelectDecoration,
@@ -1375,15 +1498,16 @@ export function CompositionCanvas({
       else if (t.kind === 'mark')  onSelectElement('mark')
       else onSelectElement(t.owner === 'col1' ? 'collection1' : 'collection2')
     },
-    commit: (t, pos) => {
-      if (t.kind === 'mark') onMarkChange({ ...markConfig, position: pos })
+    commit: (t, pos, orient, scale) => {
+      const scl = (sz: Vec3): Vec3 => ({ x: sz.x * scale.x, y: sz.y * scale.y, z: sz.z * scale.z })
+      if (t.kind === 'mark') onMarkChange({ ...markConfig, position: pos, orientation: orient, size: scl(markConfig.size) })
       else if (t.kind === 'decoration') {
         const d = decorations.find(x => x.id === t.id)
-        if (d) onDecorationChange({ ...d, position: pos })
+        if (d) onDecorationChange({ ...d, position: pos, orientation: orient, size: scl(d.size) })
       } else if (t.owner === 'col1' && collection1Config.object) {
-        onCollection1Change({ ...collection1Config, object: { ...collection1Config.object, position: pos } })
+        onCollection1Change({ ...collection1Config, object: { ...collection1Config.object, position: pos, orientation: orient, size: scl(collection1Config.object.size) } })
       } else if (t.owner === 'col2' && collection2Config.object) {
-        onCollection2Change({ ...collection2Config, object: { ...collection2Config.object, position: pos } })
+        onCollection2Change({ ...collection2Config, object: { ...collection2Config.object, position: pos, orientation: orient, size: scl(collection2Config.object.size) } })
       }
     },
   }), [
@@ -1391,6 +1515,13 @@ export function CompositionCanvas({
     markConfig, decorations, collection1Config, collection2Config,
     onSelectElement, onSelectDecoration, onMarkChange, onDecorationChange, onCollection1Change, onCollection2Change,
   ])
+
+  // Material params (alpha + custom PBR knobs) shared by every mark, provided via
+  // context so all mark renderers pick them up. Decorations override with their own.
+  const markMatParams = useMemo(
+    () => resolveMaterialParams(markConfig),
+    [markConfig.opacity, markConfig.roughness, markConfig.metalness],
+  )
 
   return (
     <Canvas
@@ -1414,6 +1545,8 @@ export function CompositionCanvas({
       <Physics gravity={[0, -9.81, 0]} timeStep="vary">
       <HandleContext.Provider value={handleValue}>
 
+      <MaterialParamsContext.Provider value={markMatParams}>
+      <BindingScaleContext.Provider value={bindingScale}>
       {level === 1 && (
         <SingleMarkMesh
           config={markConfig} layers={layers} bindings={bindings}
@@ -1443,6 +1576,8 @@ export function CompositionCanvas({
           scatterSeed={scatterSeed}
         />
       )}
+      </BindingScaleContext.Provider>
+      </MaterialParamsContext.Provider>
 
       {/* Decorations rendered at all levels */}
       {decorations.map((dec) => (
