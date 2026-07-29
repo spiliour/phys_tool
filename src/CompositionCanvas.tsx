@@ -774,7 +774,9 @@ function Level2Content({
   colLabelConfig:    LabelConfig
   scatterSeed:       number
 }) {
-  const color  = layers[0]?.color ?? collection1Config.color
+  // Base colour for the collection's marks is the mark's own colour (matches L1).
+  // A colour encoding, when bound, still overrides this per-instance downstream.
+  const color  = markConfig.color ?? collection1Config.color
   const maxPct = Math.max(...layers.map(l => l.percentage), 1)
   const heightOverride = isNumericalVar(bindings.scatterSize) && collection1Config.arrangement === 'scattering'
     ? Math.max(0.5, ((layers[0]?.percentage ?? 50) / maxPct) * WEIGHT_MAX_H)

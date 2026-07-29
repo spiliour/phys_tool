@@ -335,6 +335,51 @@ function useAccordion(initial: string, jumpTo?: string) {
 
 // ── Vec3 input with optional aspect-ratio lock and per-axis data binding ───────
 
+// A number input that tolerates transient/empty states while typing. It never
+// commits an empty or non-numeric field — which would otherwise land as 0 and
+// break scaling/geometry — and clamps committed values to [min, max]. The field
+// resyncs to the model value whenever it isn't being actively edited.
+function NumberCell({ value, min, max, step, onCommit, style }: {
+  value:    number
+  min?:     number
+  max?:     number
+  step?:    number
+  onCommit: (n: number) => void
+  style:    React.CSSProperties
+}) {
+  const [buf, setBuf]         = useState(String(value))
+  const [editing, setEditing] = useState(false)
+  useEffect(() => { if (!editing) setBuf(String(value)) }, [value, editing])
+
+  const clamp = (n: number) => {
+    if (min !== undefined) n = Math.max(min, n)
+    if (max !== undefined) n = Math.min(max, n)
+    return n
+  }
+
+  return (
+    <input
+      type="number"
+      value={buf}
+      min={min} max={max} step={step}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => {
+        const raw = e.target.value
+        setBuf(raw)                       // show exactly what's typed (incl. empty / "0.")
+        if (raw.trim() === '') return     // empty → keep the last value, never commit 0
+        const n = Number(raw)
+        if (Number.isFinite(n)) onCommit(clamp(n))
+      }}
+      onBlur={() => {
+        setEditing(false)
+        const n = Number(buf)
+        setBuf(String(buf.trim() !== '' && Number.isFinite(n) ? clamp(n) : value))
+      }}
+      style={style}
+    />
+  )
+}
+
 function Vec3Input({
   label, value, onChange, min, max, step = 0.1, lockable = false,
   axisBindings, onAxisBind, axes: axesProp,
@@ -455,11 +500,10 @@ function Vec3Input({
                 }}>
                   {axis.toUpperCase()}
                 </span>
-                <input
-                  type="number"
+                <NumberCell
                   value={value[axis]}
                   min={min} max={max} step={step}
-                  onChange={(e) => handleChange(axis, Number(e.target.value))}
+                  onCommit={(n) => handleChange(axis, n)}
                   style={{
                     flex: 1, minWidth: 0, background: '#F2F2F7', border: 'none',
                     padding: '4px 5px', fontSize: '11px', color: '#1D1D1F',
@@ -861,7 +905,7 @@ function MarkProperties({
 // ── Collection properties ─────────────────────────────────────────────────────
 
 function CollectionProperties({
-  config, onChange, collectionLevel, bindings, onBind, labelConfig, onLabelChange, onReseed,
+  config, onChange, collectionLevel, bindings, onBind, labelConfig, onLabelChange, onReseed, compositionLevel,
 }: {
   config:          CollectionConfig
   onChange:        (c: CollectionConfig) => void
@@ -871,6 +915,7 @@ function CollectionProperties({
   labelConfig?:    LabelConfig
   onLabelChange?:  (c: LabelConfig) => void
   onReseed?:       () => void
+  compositionLevel: CompositionLevel
 }) {
   const isL2 = collectionLevel === 2
   const acc = useAccordion('Groups & Populations')
@@ -998,7 +1043,7 @@ function CollectionProperties({
               </div>
             </Row>
             {(config.scatterMode ?? 'count') === 'count' ? (
-              <Row label="Mark Count">
+              <Row label="Population">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <input type="range" min={5} max={600} step={5} value={config.scatterCount}
                     onChange={(e) => onChange({ ...config, scatterCount: Number(e.target.value) })}
@@ -1160,7 +1205,7 @@ function CollectionProperties({
 
         {/* ── Piling controls ── */}
         {config.arrangement === 'piling' && (
-          <Row label="Mark Count">
+          <Row label="Population">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <input type="range" min={2} max={60} step={1} value={config.pilingCount}
                 onChange={(e) => onChange({ ...config, pilingCount: Number(e.target.value) })}
@@ -1180,7 +1225,7 @@ function CollectionProperties({
                   : 'Add an object below (Geometry) to use as the surface.'}
               </span>
             </Row>
-            <Row label="Mark Count">
+            <Row label="Population">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input type="range" min={1} max={200} step={1} value={config.surfaceCount ?? 24}
                   onChange={(e) => onChange({ ...config, surfaceCount: Number(e.target.value) })}
@@ -1214,7 +1259,7 @@ function CollectionProperties({
         {/* ── Adjacent controls (random scatter on a flat surface) ── */}
         {config.arrangement === 'adjacent' && (
           <>
-            <LabeledSlider label="Mark Count" value={config.scatterCount} min={1} max={200} step={1}
+            <LabeledSlider label="Population" value={config.scatterCount} min={1} max={200} step={1}
               onChange={(v) => onChange({ ...config, scatterCount: v })} />
             <Vec3Input label="Surface size" value={config.scatterDimensions}
               onChange={(v) => onChange({ ...config, scatterDimensions: v })} min={0.1} max={30} step={0.1} axes={['x', 'z']} />
@@ -1238,7 +1283,7 @@ function CollectionProperties({
         {/* ── Stacking controls (vertical column, no physics) ── */}
         {config.arrangement === 'stacking' && (
           <>
-            <LabeledSlider label="Mark Count" value={config.scatterCount} min={1} max={100} step={1}
+            <LabeledSlider label="Population" value={config.scatterCount} min={1} max={100} step={1}
               onChange={(v) => onChange({ ...config, scatterCount: v })} />
             <CheckRow label="Random orientation" checked={config.stackingRandomOrient ?? false}
               onChange={(v) => onChange({ ...config, stackingRandomOrient: v })} />
@@ -1277,8 +1322,10 @@ function CollectionProperties({
         </button>
       )}
 
-      {/* ── Labels (level 1 only) ── */}
-      {collectionLevel === 1 && labelConfig && onLabelChange && (
+      {/* ── Labels: only meaningful once a second collection arranges these
+             instances (composition level 3). At level 2 there is a single
+             collection, so a collection-wide label has nothing to distinguish. ── */}
+      {collectionLevel === 1 && compositionLevel >= 3 && labelConfig && onLabelChange && (
         <AttributeCategory icon={ICONS.labels} title="Labels" open={acc.isOpen('Labels')} onToggle={() => acc.toggle('Labels')}>
           <LabelSlotsEditor config={labelConfig} onChange={onLabelChange} />
         </AttributeCategory>
@@ -1661,13 +1708,13 @@ export function PropertiesPanel({
           config={collection1Config} onChange={onCollection1Change}
           collectionLevel={1} bindings={bindings} onBind={onBind}
           labelConfig={colLabelConfig} onLabelChange={onColLabelChange}
-          onReseed={onReseed}
+          onReseed={onReseed} compositionLevel={compositionLevel}
         />
       ) : activeElement === 'collection2' ? (
         <CollectionProperties
           config={collection2Config} onChange={onCollection2Change}
           collectionLevel={2} bindings={bindings} onBind={onBind}
-          onReseed={onReseed}
+          onReseed={onReseed} compositionLevel={compositionLevel}
         />
       ) : activeElement === 'scene' ? (
         <SceneProperties config={sceneConfig} onChange={onSceneChange} />
