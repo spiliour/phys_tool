@@ -8,7 +8,7 @@
 import { useMemo, useEffect, useContext } from 'react'
 import * as THREE from 'three'
 import { Html } from '@react-three/drei'
-import { MarkShape, MarkMaterial, StructuralConfig, Vec3 } from './types'
+import { MarkShape, MarkMaterial, StructuralConfig, Vec3, MarkPart } from './types'
 import { MARK_BASE } from './markGeometry'
 import {
   MarkInstances, MarkPlacement, MarkLabelPair,
@@ -38,6 +38,7 @@ interface LayerProps {
   markSize?:            Vec3
   structural?:          StructuralConfig
   customModelUrl?:      string
+  parts?:               MarkPart[]
   labelShow:            boolean
   labelData:            LayerLabelData
   seed?:                number
@@ -289,7 +290,7 @@ export function Layer({
   width, depth, height, color, position,
   particleCount, markShape, markMaterial,
   markSize = DEFAULT_SIZE, structural = DEFAULT_STRUCTURAL,
-  customModelUrl,
+  customModelUrl, parts,
   labelShow, labelData, seed = 0, boundingVolume = 'box',
   showBounds = true, orientation = 'random', exclusionZone, evenDistribution = false,
   adjacent = false, showGrid = false, stacking = false, stackRandomOrient = false,
@@ -364,6 +365,7 @@ export function Layer({
         color={color}
         structural={structural}
         customModelUrl={useCustom ? customModelUrl : undefined}
+        parts={parts}
         standOnAnchor={adjacent}
         stack={stacking}
         instanceSizes={instanceSizes}

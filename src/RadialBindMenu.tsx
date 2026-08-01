@@ -44,6 +44,7 @@ export interface RadialBindMenuProps {
   varType:         'numerical' | 'categorical'
   level:           CompositionLevel
   col1Arrangement: CollectionArrangement
+  markIsCompound?: boolean   // compound marks own their shapes → geometry encoding is disabled
   onBind:          (attr: keyof DataBindings, variable: DataVariable) => void
   onColorBind:     (variable: DataVariable, mode: 'distinct' | 'continuous') => void
   onBindLabel:     (section: 'mark' | 'collection', variable: DataVariable, position: keyof LabelSlots) => void
@@ -84,7 +85,7 @@ function CardHeader({ children }: { children: React.ReactNode }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function RadialBindMenu({
-  x, y, varName, varType, level, col1Arrangement, onBind, onColorBind, onBindLabel, onClose,
+  x, y, varName, varType, level, col1Arrangement, markIsCompound, onBind, onColorBind, onBindLabel, onClose,
 }: RadialBindMenuProps) {
 
   type Step = 'radial' | 'colorMode' | 'labelPos'
@@ -138,12 +139,14 @@ export function RadialBindMenu({
     { action: 'label',                           label: 'Label',    icon: 'Aa', section: 'mark',       varTypes: ['numerical', 'categorical'] },
     // ── Collection ──
     { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter - Size',  icon: '⊞', section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
-    { action: 'bind',  bindKey: 'scatterCount', label: 'Population', icon: '#',  section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering', 'stacking', 'adjacent'], minLevel: 2 },
+    { action: 'bind',  bindKey: 'scatterCount', label: 'Population', icon: '#',  section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering', 'stacking', 'adjacent', 'surface'], minLevel: 2 },
     { action: 'label',                           label: 'Label',              icon: 'Aa', section: 'collection', varTypes: ['numerical', 'categorical'],                             minLevel: 3 },
   ]
 
   function ruleMatches(r: Rule): boolean {
     if (!r.varTypes.includes(varType)) return false
+    // A compound mark defines its own sub-shapes, so geometry encoding can't apply.
+    if (markIsCompound && r.action === 'bind' && r.bindKey === 'markGeometry') return false
     if (r.minLevel !== undefined && level < r.minLevel) return false
     if ('arrangements' in r && r.arrangements !== undefined && !r.arrangements.includes(col1Arrangement)) return false
     if ('excludeArrangements' in r && r.excludeArrangements?.includes(col1Arrangement)) return false

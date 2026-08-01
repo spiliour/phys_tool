@@ -146,6 +146,32 @@ const DATASETS: Record<string, {
       link:  'http://rokovoko.fr/realisations/la-cantine',
     },
   },
+  whoAirQuality: {
+    label:          'WHO Ambient Air Quality Database',
+    categoricalCol: 'City',
+    numericalCol:   'Pollution concentration (PM2.5)',
+    modelCollection: 'Air Pollution',
+    // Colours follow air-quality severity: clean green → hazardous maroon, by value.
+    layers: [
+      { id: '1',  name: 'Copenhagen',  percentage:  9, color: '#43A047' },
+      { id: '2',  name: 'Stockholm',   percentage:  8, color: '#2E7D32' },
+      { id: '3',  name: 'Paris',       percentage: 14, color: '#C0CA33' },
+      { id: '4',  name: 'London',      percentage: 13, color: '#9CCC3C' },
+      { id: '5',  name: 'Berlin',      percentage: 12, color: '#7CB342' },
+      { id: '6',  name: 'Athens',      percentage: 22, color: '#FBC02D' },
+      { id: '7',  name: 'Istanbul',    percentage: 41, color: '#F4511E' },
+      { id: '8',  name: 'Mexico City', percentage: 24, color: '#FB8C00' },
+      { id: '9',  name: 'São Paulo',   percentage: 19, color: '#FDD835' },
+      { id: '10', name: 'Beijing',     percentage: 55, color: '#E53935' },
+      { id: '11', name: 'Delhi',       percentage: 92, color: '#8E0000' },
+      { id: '12', name: 'Cairo',       percentage: 67, color: '#C62828' },
+    ],
+    reference: {
+      title: 'WHO Ambient Air Quality Database — annual mean PM2.5 (µg/m³)',
+      image: '',
+      link:  'https://www.who.int/data/gho/data/themes/air-pollution/who-air-quality-database',
+    },
+  },
 }
 
 // ── Dataset reference card ────────────────────────────────────────────────────

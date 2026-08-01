@@ -9,7 +9,7 @@ import * as THREE from 'three'
 import {
   CompositionLevel, MarkConfig, CollectionConfig, SceneConfig, LayerData,
   DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig,
-  MarkShape, MarkMaterial, StructuralConfig, Vec3, ActiveElement, BindingScale,
+  MarkShape, MarkMaterial, StructuralConfig, Vec3, ActiveElement, BindingScale, MarkPart,
 } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 import { MODEL_PRESETS, MODEL_SCALE_OVERRIDES } from './models'
@@ -53,6 +53,7 @@ function resolveMarkColor(
 }
 import { MarkMaterialElement, MaterialParamsContext, resolveMaterialParams } from './MarkMaterial'
 import { Layer, LayerLabelData, SCATTER_SCALE, ExclusionZone, MarkLabelPair, LabelOccludeContext, occludeProp } from './Layer'
+import { compoundBounds, reportModelHalf, useModelHalvesVersion, buildMaterial } from './MarkInstances'
 import { SurfacePlacement } from './SurfacePlacement'
 import { PilingLayer } from './PilingLayer'
 import { Physics } from '@react-three/rapier'
@@ -136,11 +137,12 @@ const ModelAspectContext = createContext<{
 
 export type HandleTarget =
   | { kind: 'mark' }
+  | { kind: 'markPart'; id: string }   // one sub-shape of a compound mark (L1 only)
   | { kind: 'decoration'; id: string }
   | { kind: 'object'; owner: 'col1' | 'col2' }
 
 const handleKey = (t: HandleTarget) =>
-  t.kind === 'decoration' ? `decoration:${t.id}` : t.kind === 'object' ? `object:${t.owner}` : 'mark'
+  t.kind === 'decoration' ? `decoration:${t.id}` : t.kind === 'markPart' ? `markPart:${t.id}` : t.kind === 'object' ? `object:${t.owner}` : 'mark'
 
 interface HandleValue {
   enabled:    boolean
@@ -174,14 +176,19 @@ function CenterScaleHandle({ onScale, onScaleEnd }: {
   // Keep the handle a constant on-screen size, and push it toward the camera so it
   // always sits in front of the gizmo's own arrows/rings (winning the raycast at
   // the centre) while still projecting to the object's centre on screen.
+  // The knob may live inside a scaled frame (a compound mark's ×14 unit group), so
+  // divide out the parent's world scale to keep both the offset and size in world
+  // units regardless of that frame.
   useFrame(({ camera }) => {
     const m = ref.current
     if (!m || !m.parent) return
     const origin = new THREE.Vector3(); m.parent.getWorldPosition(origin)
     const dist = camera.position.distanceTo(origin)
+    const ps = new THREE.Vector3().setFromMatrixScale(m.parent.matrixWorld)
+    const avg = (ps.x + ps.y + ps.z) / 3 || 1
     const camLocal = m.parent.worldToLocal(camera.position.clone()).normalize()
-    m.position.copy(camLocal.multiplyScalar(dist * 0.16))
-    m.scale.setScalar(dist * 0.0021)
+    m.position.copy(camLocal.multiplyScalar((dist * 0.16) / avg))
+    m.scale.setScalar((dist * 0.0021) / avg)
   })
 
   return (
@@ -302,6 +309,7 @@ function CustomModelMesh({
   tint?:    boolean   // recolour the model's own material (keep textures) instead of replacing
 }) {
   const { scene } = useGLTF(url)
+  const matParams = useContext(MaterialParamsContext)
 
   const normalizedObj = useMemo(() => {
     const c = scene.clone(true)
@@ -334,18 +342,9 @@ function CustomModelMesh({
     }
 
     if (material !== 'original') {
-      const mat = material === 'fluid'
-        ? new THREE.MeshPhysicalMaterial({
-            color: new THREE.Color(color),
-            transmission: 0.92, roughness: 0.04, metalness: 0, ior: 1.5, thickness: 0.5,
-          })
-        : new THREE.MeshStandardMaterial({
-            color:             new THREE.Color(color),
-            roughness:         material === 'metal' ? 0.06 : material === 'emissive' ? 0.55 : 0.65,
-            metalness:         material === 'metal' ? 0.95 : 0,
-            emissive:          material === 'emissive' ? new THREE.Color(color) : new THREE.Color(0, 0, 0),
-            emissiveIntensity: material === 'emissive' ? 2.2 : 0,
-          })
+      // Same preset set as primitives (incl. glass / iridescent / toon / wireframe /
+      // custom) + opacity, so a custom-model object/mark honours every material.
+      const mat = buildMaterial(material as MarkMaterial, color, matParams)
       c.traverse((child) => {
         if (child instanceof THREE.Mesh) child.material = mat
       })
@@ -369,14 +368,19 @@ function CustomModelMesh({
     }
 
     return c
-  }, [scene, url, material, color, recolor, tint])
+  }, [scene, url, material, color, recolor, tint, matParams])
 
   // Publish the measured aspect so the exclusion zone can react to it (the memo
   // above ran during render and populated modelAspectCache for this url).
   const { report } = useContext(ModelAspectContext)
   useEffect(() => {
     const a = modelAspectCache.get(url)
-    if (a) report(url, a)
+    if (a) {
+      report(url, a)
+      // Aspect is dims/maxDim (× override); the normalised model's half-extent is
+      // aspect × MARK_BASE / 2. Publish it so compound bounds use the real height.
+      reportModelHalf(url, { x: a.x * MARK_BASE / 2, y: a.y * MARK_BASE / 2, z: a.z * MARK_BASE / 2 })
+    }
   }, [url, report, normalizedObj])
 
   return (
@@ -449,6 +453,27 @@ function MarkLabel({ pos, text }: { pos: 'top'|'bottom'|'left'|'right'; text: st
   )
 }
 
+// Collection labels for one L3 group, floating at the group's edges. Scatter groups
+// get these from <Layer> (sized to the volume); every other arrangement renders them
+// here, since the label lives on the group as a whole, not per mark. `halfW`/`halfH`
+// are the group's approximate half-extents so the tag clears the marks/object.
+function CollectionGroupLabels({ data, halfW, halfH }: { data: LayerLabelData; halfW: number; halfH: number }) {
+  const tag = (pos: 'top' | 'bottom' | 'left' | 'right', p: [number, number, number], text: string) => (
+    <>
+      <group position={p} userData={{ isLabel: true, labelText: text, labelPos: pos }} />
+      <Html zIndexRange={[1, 0]} position={p} style={{ pointerEvents: 'none' }}><MarkLabel pos={pos} text={text} /></Html>
+    </>
+  )
+  return (
+    <>
+      {data.top    && tag('top',    [0,  halfH, 0], data.top)}
+      {data.bottom && tag('bottom', [0, -halfH, 0], data.bottom)}
+      {data.left   && tag('left',   [-halfW, 0, 0], data.left)}
+      {data.right  && tag('right',  [ halfW, 0, 0], data.right)}
+    </>
+  )
+}
+
 // ── Mark size binding multiplier ───────────────────────────────────────────────
 
 // Returns true for any numerical variable binding (old dataset-specific keys + universal key)
@@ -492,6 +517,72 @@ function anchorOffset(
 
 // ── Single mark mesh ──────────────────────────────────────────────────────────
 
+// One sub-shape of a compound mark, rendered in the mark's unit frame (the parent
+// group applies the mark's overall size). Used at level 1. Wrapped in a
+// SpatialHandle so each part is individually clickable → selectable → gets its own
+// move/rotate/scale gizmo (offset+orientation live on the handle, size on the mesh).
+function SingleMarkPart({ part, markMaterial, markColor, structural }: {
+  part: MarkPart; markMaterial: MarkMaterial; markColor: string; structural: StructuralConfig
+}) {
+  const geo = useMemo(() => (part.shape === 'custom' ? null : makeMarkGeometry(part.shape)), [part.shape])
+  useEffect(() => () => { geo?.dispose() }, [geo])
+  return (
+    <SpatialHandle target={{ kind: 'markPart', id: part.id }} position={part.offset} orientation={part.orientation}>
+      {part.shape === 'custom' && part.customModelUrl ? (
+        <Suspense fallback={null}>
+          <CustomModelMesh url={part.customModelUrl} material={part.material ?? markMaterial} color={part.color ?? markColor} sz={[part.size.x, part.size.y, part.size.z]} />
+        </Suspense>
+      ) : (
+        <mesh geometry={geo!} scale={[part.size.x, part.size.y, part.size.z]}>
+          <MarkMaterialElement material={part.material ?? markMaterial} structural={structural} color={part.color ?? markColor} />
+        </mesh>
+      )}
+    </SpatialHandle>
+  )
+}
+
+// A compound part rendered without any handle — for collection marks (aligned,
+// scattered, …) where individual parts aren't selectable. Same geometry as
+// SingleMarkPart, just a plain group carrying the part's offset + orientation.
+function PlainMarkPart({ part, markMaterial, markColor, structural }: {
+  part: MarkPart; markMaterial: MarkMaterial; markColor: string; structural: StructuralConfig
+}) {
+  const geo = useMemo(() => (part.shape === 'custom' ? null : makeMarkGeometry(part.shape)), [part.shape])
+  useEffect(() => () => { geo?.dispose() }, [geo])
+  const rot: [number, number, number] = [part.orientation.x * DEG_TO_RAD, part.orientation.y * DEG_TO_RAD, part.orientation.z * DEG_TO_RAD]
+  return (
+    <group position={[part.offset.x, part.offset.y, part.offset.z]} rotation={rot}>
+      {part.shape === 'custom' && part.customModelUrl ? (
+        <Suspense fallback={null}>
+          <CustomModelMesh url={part.customModelUrl} material={part.material ?? markMaterial} color={part.color ?? markColor} sz={[part.size.x, part.size.y, part.size.z]} />
+        </Suspense>
+      ) : (
+        <mesh geometry={geo!} scale={[part.size.x, part.size.y, part.size.z]}>
+          <MarkMaterialElement material={part.material ?? markMaterial} structural={structural} color={part.color ?? markColor} />
+        </mesh>
+      )}
+    </group>
+  )
+}
+
+// Compound parts as a self-contained group scaled into a collection mark's frame,
+// centred on the compound's bounding box (so it sits/scales like one object).
+function CompoundMarkGroup({ parts, scale, markMaterial, markColor, structural }: {
+  parts: MarkPart[]; scale: [number, number, number]; markMaterial: MarkMaterial; markColor: string; structural: StructuralConfig
+}) {
+  useModelHalvesVersion()   // recompute the centre once a GLB part reports its height
+  const c = compoundBounds(parts).center
+  return (
+    <group scale={scale}>
+      <group position={[-c.x, -c.y, -c.z]}>
+        {parts.map(part => (
+          <PlainMarkPart key={part.id} part={part} markMaterial={markMaterial} markColor={markColor} structural={structural} />
+        ))}
+      </group>
+    </group>
+  )
+}
+
 function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
   config:          MarkConfig
   layers:          LayerData[]
@@ -515,10 +606,23 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
   const halfH = s * sz.y * 0.036 + 0.8
   const halfW = s * sz.x * 0.036 + 0.8
   const ld    = computeLabelValues(markLabelConfig.slots, layers, 0)
+  // Centre the compound on its bounding box so the mark's origin (its handle +
+  // scale pivot) is the compound's true centre — matches how collections render it.
+  // Subscribe to model measurements so the centre updates once a GLB part loads.
+  useModelHalvesVersion()
+  const partsCenter = config.parts && config.parts.length > 0 ? compoundBounds(config.parts).center : null
 
   return (
     <SpatialHandle target={{ kind: 'mark' }} position={config.position} orientation={config.orientation}>
-      {config.shape === 'custom' && config.customModelUrl ? (
+      {config.parts && config.parts.length > 0 && partsCenter ? (
+        <group scale={[s * sz.x, s * sz.y, s * sz.z]}>
+          <group position={[-partsCenter.x, -partsCenter.y, -partsCenter.z]}>
+            {config.parts.map(part => (
+              <SingleMarkPart key={part.id} part={part} markMaterial={config.material} markColor={color} structural={config.structural} />
+            ))}
+          </group>
+        </group>
+      ) : config.shape === 'custom' && config.customModelUrl ? (
         <Suspense fallback={null}>
           <CustomModelMesh url={config.customModelUrl} material={config.material} color={color} sz={[s * sz.x, s * sz.y, s * sz.z]} recolor={bindings.markColor !== null} tint={colorTint} />
         </Suspense>
@@ -629,19 +733,31 @@ function AlignedMarks({
         const markHasMat = catEntry ? catEntry.customModelHasMat : markConfig.customModelHasMat
         const effectiveMaterial = catEntry?.customModelHasMat ? 'original' as const : markConfig.material
 
+        const isCompound = !!markConfig.parts && markConfig.parts.length > 0
+
         return (
           <group key={i} position={pos} rotation={rot}>
-            <AlignedMarkBody
-              shape={markShape}
-              customModelUrl={markUrl}
-              customModelHasMat={markHasMat}
-              material={effectiveMaterial}
-              structural={markConfig.structural}
-              color={getColor(i)}
-              scale={sc}
-              recolor={recolor}
-              tint={colorTint}
-            />
+            {isCompound ? (
+              <CompoundMarkGroup
+                parts={markConfig.parts!}
+                scale={sc}
+                markMaterial={markConfig.material}
+                markColor={getColor(i)}
+                structural={markConfig.structural}
+              />
+            ) : (
+              <AlignedMarkBody
+                shape={markShape}
+                customModelUrl={markUrl}
+                customModelHasMat={markHasMat}
+                material={effectiveMaterial}
+                structural={markConfig.structural}
+                color={getColor(i)}
+                scale={sc}
+                recolor={recolor}
+                tint={colorTint}
+              />
+            )}
             {markLabelConfig.show && (
               <>
                 {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[1, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
@@ -797,28 +913,37 @@ function CollectionInstance({
   if (collection1Config.arrangement === 'surface') {
     const target = collectionObject
     if (!target) return null
-    // With a size/colour encoding, place one mark per data row; otherwise use the count slider.
-    const surfaceCount = perRowActive ? layers.length : (collection1Config.surfaceCount ?? 24)
+    // Count precedence: a Population encoding (this group's data value) wins, so a
+    // level-3 alignment of collections scatters a different number on each object's
+    // surface. Otherwise: one mark per row (size/colour encoding), else the slider.
+    const surfaceCount = bindings.scatterCount !== null
+      ? Math.max(1, Math.round((layers[layerIndex % Math.max(1, layers.length)]?.percentage ?? (collection1Config.surfaceCount ?? 24)) * bScaleOf(bScale, 'scatterCount')))
+      : perRowActive ? layers.length : (collection1Config.surfaceCount ?? 24)
     const surfaceLabels = markLabelConfig.show
       ? surfaceLabelStrings(markLabelConfig.slots, layers, surfaceCount)
       : undefined
+    // Surface samples are in the object's local frame; offset by the group position
+    // (like the object + scatter) so a level-3 alignment scatters on each copy.
     return (
-      <SurfacePlacement
-        dec={target}
-        markShape={markConfig.shape}
-        markMaterial={markConfig.material}
-        markSize={scaledMarkSize}
-        color={color}
-        count={surfaceCount}
-        surfaceScale={collection1Config.surfaceScale ?? 1}
-        seed={scatterSeed}
-        structural={markConfig.structural}
-        markUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
-        instanceSizes={instanceSizes}
-        instanceColors={instanceColors}
-        colorTint={colorTint}
-        markLabels={surfaceLabels}
-      />
+      <group position={position}>
+        <SurfacePlacement
+          dec={target}
+          markShape={markConfig.shape}
+          markMaterial={markConfig.material}
+          markSize={scaledMarkSize}
+          color={color}
+          count={surfaceCount}
+          surfaceScale={collection1Config.surfaceScale ?? 1}
+          seed={scatterSeed}
+          structural={markConfig.structural}
+          markUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
+          parts={markConfig.parts}
+          instanceSizes={instanceSizes}
+          instanceColors={instanceColors}
+          colorTint={colorTint}
+          markLabels={surfaceLabels}
+        />
+      </group>
     )
   }
 
@@ -859,6 +984,7 @@ function CollectionInstance({
       markSize={scaledMarkSize}
       structural={markConfig.structural}
       customModelUrl={markConfig.shape === 'custom' ? markConfig.customModelUrl : undefined}
+      parts={markConfig.parts}
       labelShow={colLabelConfig.show}
       labelData={labelData}
       seed={scatterSeed}
@@ -879,7 +1005,43 @@ function CollectionInstance({
   )
   })()
 
-  return <>{marks}{objectEl}</>
+  // Collection labels: scattering renders them inside <Layer> (sized to the volume).
+  // Every other arrangement renders them here at the group's approximate edges, so a
+  // level-3 grouping (e.g. alignment of surfaces) labels each group.
+  const arr = collection1Config.arrangement
+  const colLabelData = computeLabelValues(colLabelConfig.slots, layers, layerIndex)
+  const hasColLabel = colLabelConfig.show && (colLabelData.top || colLabelData.bottom || colLabelData.left || colLabelData.right)
+  const colLabelEl = hasColLabel && arr !== 'scattering'
+    ? (() => {
+        const wsObj = L1_MARK_SCALE * MARK_BASE           // ≈ one object unit (size 1)
+        const mw    = MARK_BASE * SCATTER_SCALE            // one collection-mark unit
+        let halfH = 1.5, halfW = 1.5
+        if (arr === 'surface') {
+          const d  = collectionObject
+          const ss = collection1Config.surfaceScale ?? 1
+          halfH = (d ? wsObj * d.size.y * 0.5 : 0.5) + mw * ss + 0.7
+          halfW = (d ? wsObj * d.size.x * 0.5 : 0.5) + mw * ss + 0.5
+        } else if (arr === 'adjacent') {
+          halfH = mw * scaledMarkSize.y + 0.8
+          halfW = collection1Config.scatterDimensions.x * 0.5 + 0.5
+        } else if (arr === 'stacking') {
+          halfH = mw * scaledMarkSize.y * Math.max(1, layers.length) + 0.7
+          halfW = mw * scaledMarkSize.x + 0.5
+        } else if (arr === 'piling') {
+          halfH = mw * scaledMarkSize.y * 3 + 0.7
+          halfW = mw * scaledMarkSize.x * 2 + 0.5
+        } else if (arr === 'alignment') {
+          const cnt   = layers.length || collection1Config.alignCount
+          const spanX = collection1Config.alignAxis === 'X' ? (cnt - 1) * collection1Config.alignSpacing + wsObj * scaledMarkSize.x : wsObj * scaledMarkSize.x
+          const spanY = collection1Config.alignAxis === 'Y' ? (cnt - 1) * collection1Config.alignSpacing + wsObj * scaledMarkSize.y : wsObj * scaledMarkSize.y
+          halfH = spanY * 0.5 + 0.9
+          halfW = spanX * 0.5 + 0.5
+        }
+        return <group position={position}><CollectionGroupLabels data={colLabelData} halfW={halfW} halfH={halfH} /></group>
+      })()
+    : null
+
+  return <>{marks}{objectEl}{colLabelEl}</>
 }
 
 // ── Max scatter height when weight binding is active ──────────────────────────
@@ -1438,6 +1600,7 @@ interface CompositionCanvasProps {
   // Viewport transform handles: selection writers + config writers
   onSelectElement:     (el: ActiveElement) => void
   onSelectDecoration:  (id: string | null) => void
+  onSelectPart?:       (id: string | null) => void   // select a compound-mark sub-part
   onMarkChange:        (c: MarkConfig) => void
   onDecorationChange:  (c: DecorationConfig) => void
   onCollection1Change: (c: CollectionConfig) => void
@@ -1452,7 +1615,7 @@ export function CompositionCanvas({
   level, markConfig, collection1Config, collection2Config, sceneConfig, layers, bindings, bindingScale,
   markLabelConfig, colLabelConfig, decorations,
   colorMode, colorGradient, colorTint, scatterSeed, datasetTitle,
-  onSelectElement, onSelectDecoration,
+  onSelectElement, onSelectDecoration, onSelectPart,
   onMarkChange, onDecorationChange, onCollection1Change, onCollection2Change,
   pathTracingActive, onSamplesUpdate, downloadRenderRef,
 }: CompositionCanvasProps) {
@@ -1495,12 +1658,17 @@ export function CompositionCanvas({
     select: (t) => {
       setHandleSel(handleKey(t))
       if (t.kind === 'decoration') onSelectDecoration(t.id)
+      else if (t.kind === 'markPart') onSelectPart?.(t.id)   // also focuses the Mark panel + that part's editor
       else if (t.kind === 'mark')  onSelectElement('mark')
       else onSelectElement(t.owner === 'col1' ? 'collection1' : 'collection2')
     },
     commit: (t, pos, orient, scale) => {
       const scl = (sz: Vec3): Vec3 => ({ x: sz.x * scale.x, y: sz.y * scale.y, z: sz.z * scale.z })
       if (t.kind === 'mark') onMarkChange({ ...markConfig, position: pos, orientation: orient, size: scl(markConfig.size) })
+      else if (t.kind === 'markPart') {
+        const parts = markConfig.parts ?? []
+        onMarkChange({ ...markConfig, parts: parts.map(p => p.id === t.id ? { ...p, offset: pos, orientation: orient, size: scl(p.size) } : p) })
+      }
       else if (t.kind === 'decoration') {
         const d = decorations.find(x => x.id === t.id)
         if (d) onDecorationChange({ ...d, position: pos, orientation: orient, size: scl(d.size) })
@@ -1513,7 +1681,7 @@ export function CompositionCanvas({
   }), [
     pathTracingActive, handleSel,
     markConfig, decorations, collection1Config, collection2Config,
-    onSelectElement, onSelectDecoration, onMarkChange, onDecorationChange, onCollection1Change, onCollection2Change,
+    onSelectElement, onSelectDecoration, onSelectPart, onMarkChange, onDecorationChange, onCollection1Change, onCollection2Change,
   ])
 
   // Material params (alpha + custom PBR knobs) shared by every mark, provided via
@@ -1585,7 +1753,7 @@ export function CompositionCanvas({
       ))}
 
       {/* Dataset title — floats above/below the scene */}
-      {datasetTitle && (sceneConfig.sceneTitleShow ?? true) && (
+      {datasetTitle && (sceneConfig.sceneTitleShow ?? false) && (
         <Html
           zIndexRange={[1, 0]}
           position={[

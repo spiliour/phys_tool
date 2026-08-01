@@ -3,6 +3,7 @@ import {
   CompositionLevel, ActiveElement,
   MarkConfig, CollectionConfig, SceneConfig, LayerData,
   DataBindings, DataVariable, LabelConfig, LabelSlots, DecorationConfig, BindingScale,
+  MarkShape, MarkPart,
 } from './types'
 import { HierarchyPanel }    from './HierarchyPanel'
 import { PropertiesPanel }   from './PropertiesPanel'
@@ -117,6 +118,7 @@ const DATASET_VAR_LABELS: Record<string, { numerical: string; categorical: strin
   mushroomToxicity: { numerical: 'Danger Score', categorical: 'Name' },
   oceanPlastic:   { numerical: 'Plastic Pieces (billions)', categorical: 'Ocean' },
   nantesHousing:  { numerical: 'Share (%)', categorical: 'Tenure Type' },
+  whoAirQuality:  { numerical: 'Pollution concentration (PM2.5)', categorical: 'City' },
 }
 
 const DATASET_TITLES: Record<string, string> = {
@@ -126,6 +128,7 @@ const DATASET_TITLES: Record<string, string> = {
   mushroomToxicity: 'Mushroom danger score',
   oceanPlastic:   "Surface Plastic Mass across the world's Oceans",
   nantesHousing:  'Nantes Metropolitan Area Housing',
+  whoAirQuality:  'WHO Ambient Air Quality Database',
 }
 
 // ── Default state ─────────────────────────────────────────────────────────────
@@ -225,6 +228,8 @@ export default function App() {
   const [scatterSeed,     setScatterSeed]     = useState(0)
   const [decorations,        setDecorations]        = useState<DecorationConfig[]>([])
   const [activeDecorationId, setActiveDecorationId] = useState<string | null>(null)
+  // The selected sub-shape of a compound mark (edited in the Mark panel + viewport).
+  const [activePartId, setActivePartId] = useState<string | null>(null)
 
   // Data modal
   const [showDataModal, setShowDataModal] = useState(false)
@@ -343,6 +348,59 @@ export default function App() {
 
   function handleUpdateDecoration(dec: DecorationConfig) {
     setDecorations((prev) => prev.map((d) => d.id === dec.id ? dec : d))
+  }
+
+  // ── Compound-mark parts ──────────────────────────────────────────────────────
+  const partIdRef = useRef(0)
+  const newPartId = () => `part_${Date.now().toString(36)}_${partIdRef.current++}`
+
+  function newMarkPart(shape: MarkShape, offsetY: number): MarkPart {
+    return { id: newPartId(), shape, offset: { x: 0, y: offsetY, z: 0 }, size: { x: 0.6, y: 0.6, z: 0.6 }, orientation: { x: 0, y: 0, z: 0 } }
+  }
+  // Turn the mark's single shape into the first part of a compound.
+  function partFromMark(m: MarkConfig): MarkPart {
+    return {
+      id: newPartId(),
+      shape: m.shape, customModelUrl: m.customModelUrl, customModelHasMat: m.customModelHasMat, customModelName: m.customModelName,
+      offset: { x: 0, y: 0, z: 0 }, size: { x: 1, y: 1, z: 1 }, orientation: { x: 0, y: 0, z: 0 },
+    }
+  }
+
+  function handleAddPart() {
+    let newId = ''
+    setMarkConfig((prev) => {
+      const base = prev.parts && prev.parts.length ? prev.parts : [partFromMark(prev)]
+      const np = newMarkPart('sphere', 0.06)
+      newId = np.id
+      return { ...prev, parts: [...base, np] }
+    })
+    setActiveElement('mark')
+    setActivePartId(newId)
+  }
+
+  function handleRemovePart(id: string) {
+    setMarkConfig((prev) => {
+      if (!prev.parts) return prev
+      const remaining = prev.parts.filter((p) => p.id !== id)
+      // Dropping to a single part reverts to a plain (non-compound) mark.
+      if (remaining.length <= 1) {
+        const only = remaining[0]
+        const next: MarkConfig = { ...prev, parts: undefined }
+        if (only) {
+          next.shape = only.shape
+          next.customModelUrl = only.customModelUrl
+          next.customModelHasMat = only.customModelHasMat
+          next.customModelName = only.customModelName
+        }
+        return next
+      }
+      return { ...prev, parts: remaining }
+    })
+    setActivePartId((cur) => (cur === id ? null : cur))
+  }
+
+  function handleUpdatePart(id: string, patch: Partial<MarkPart>) {
+    setMarkConfig((prev) => (prev.parts ? { ...prev, parts: prev.parts.map((p) => (p.id === id ? { ...p, ...patch } : p)) } : prev))
   }
 
   function handleRenameDecoration(id: string, name: string) {
@@ -492,7 +550,7 @@ export default function App() {
     setColorTint(d.colorTint ?? false)
     setCurrentSaveId(save.id)
     setCurrentSaveName(save.name)
-    setActiveDecorationId(null)
+    setActiveDecorationId(null); setActivePartId(null)
     setModalMode('none')
   }
 
@@ -606,7 +664,7 @@ export default function App() {
           <HierarchyPanel
             level={level}
             activeElement={activeElement}
-            onSelectElement={(el) => { setActiveElement(el); setActiveDecorationId(null) }}
+            onSelectElement={(el) => { setActiveElement(el); setActiveDecorationId(null); setActivePartId(null) }}
             onAdvanceLevel={advanceLevel}
             onDowngradeLevel={downgradeLevel}
             decorations={decorations}
@@ -652,8 +710,9 @@ export default function App() {
           colorTint={colorTint}
           scatterSeed={scatterSeed}
           datasetTitle={DATASET_TITLES[activeDataset]}
-          onSelectElement={(el) => { setActiveElement(el); setActiveDecorationId(null) }}
+          onSelectElement={(el) => { setActiveElement(el); setActiveDecorationId(null); setActivePartId(null) }}
           onSelectDecoration={setActiveDecorationId}
+          onSelectPart={(id) => { setActiveElement('mark'); setActiveDecorationId(null); setActivePartId(id) }}
           onMarkChange={setMarkConfig}
           onDecorationChange={handleUpdateDecoration}
           onCollection1Change={setCol1Config}
@@ -763,6 +822,11 @@ export default function App() {
             markOpenSection={markOpenSection}
             onReseed={() => setScatterSeed(s => s + 1)}
             models={modelsForCollection(activeModelCollection)}
+            activePartId={activePartId}
+            onAddPart={handleAddPart}
+            onRemovePart={handleRemovePart}
+            onUpdatePart={handleUpdatePart}
+            onSelectPart={setActivePartId}
           />
         </div>
 
@@ -931,6 +995,7 @@ export default function App() {
           varType={radialMenu.varType}
           level={level}
           col1Arrangement={col1Config.arrangement}
+          markIsCompound={!!markConfig.parts && markConfig.parts.length > 0}
           onBind={handleBind}
           onColorBind={handleColorBind}
           onBindLabel={handleBindLabel}

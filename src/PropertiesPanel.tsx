@@ -5,7 +5,7 @@ import {
   MarkShape, MarkMaterial, HdriPreset, Vec3,
   StructuralDeformation, CollectionArrangement,
   DataBindings, DataVariable, LabelConfig, LabelPosition,
-  LabelSlots, DecorationConfig, LayerData, CategoryShapeEntry,
+  LabelSlots, DecorationConfig, LayerData, CategoryShapeEntry, MarkPart,
 } from './types'
 
 const VAR_LABELS: Record<string, { label: string; type: 'numerical' | 'categorical' }> = {
@@ -728,10 +728,92 @@ function ShapeDropdown({ config, onChange }: {
   )
 }
 
+// Editor for a compound mark's sub-shapes: a selectable list of parts + an inline
+// editor for the active part (shape / material / color / offset / size / rotation).
+function PartsEditor({ config, activePartId, onAddPart, onRemovePart, onUpdatePart, onSelectPart }: {
+  config:        MarkConfig
+  activePartId?: string | null
+  onAddPart?:    () => void
+  onRemovePart?: (id: string) => void
+  onUpdatePart?: (id: string, patch: Partial<MarkPart>) => void
+  onSelectPart?: (id: string | null) => void
+}) {
+  const parts    = config.parts ?? []
+  const active   = parts.find(p => p.id === activePartId) ?? null
+  const partName = (p: MarkPart) => (p.shape === 'custom' ? (p.customModelName ?? 'model') : p.shape)
+
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        {parts.map((p, i) => {
+          const sel = p.id === activePartId
+          return (
+            <div key={p.id}
+              onClick={() => onSelectPart?.(sel ? null : p.id)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer',
+                background: sel ? '#EBF3FF' : '#F2F2F7', border: `1px solid ${sel ? '#A8CAFF' : '#E5E5EA'}`,
+                borderRadius: '8px', padding: '7px 10px',
+              }}>
+              <span style={{ fontSize: '12.5px', fontWeight: '600', color: sel ? '#007AFF' : '#1D1D1F' }}>
+                Part {i + 1} <span style={{ color: '#8E8E93', fontWeight: '500', textTransform: 'capitalize' }}>· {partName(p)}</span>
+              </span>
+              <button onClick={(e) => { e.stopPropagation(); onRemovePart?.(p.id) }} title="Remove part"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#AEAEB2', fontSize: '16px', lineHeight: 1, padding: '0 2px', fontFamily: 'inherit' }}>×</button>
+            </div>
+          )
+        })}
+      </div>
+
+      <button onClick={onAddPart}
+        style={{ width: '100%', padding: '8px', background: '#F2F2F7', border: '1px dashed #C7C7CC', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#3A3A3C', fontFamily: 'inherit' }}
+        onMouseEnter={e => (e.currentTarget.style.background = '#E9E9EE')}
+        onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+      >+ Add part</button>
+
+      {active && (
+        <div style={{ marginTop: '6px', paddingTop: '10px', borderTop: '1px solid #E5E5EA', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <Row label="Shape">
+            <ShapeDropdown
+              config={{ shape: active.shape, material: active.material ?? config.material, customModelUrl: active.customModelUrl, customModelHasMat: active.customModelHasMat, customModelName: active.customModelName }}
+              onChange={(patch) => onUpdatePart?.(active.id, {
+                shape:             patch.shape ?? active.shape,
+                customModelUrl:    patch.customModelUrl,
+                customModelHasMat: patch.customModelHasMat,
+                customModelName:   patch.customModelName,
+                ...(patch.material ? { material: patch.material } : {}),
+              })}
+            />
+          </Row>
+          <Row label="Material">
+            <select value={active.material ?? config.material}
+              onChange={(e) => onUpdatePart?.(active.id, { material: e.target.value as MarkMaterial })}
+              style={{ width: '100%', background: '#F2F2F7', border: '1px solid #D1D1D6', borderRadius: '8px', color: '#1D1D1F', fontSize: '13px', padding: '7px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit', appearance: 'auto' }}>
+              {MATERIAL_OPTIONS.map(m => <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
+            </select>
+          </Row>
+          <Row label="Color">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '2px' }}>
+              <input type="color" value={active.color ?? config.color}
+                onChange={(e) => onUpdatePart?.(active.id, { color: e.target.value })}
+                style={{ width: '36px', height: '32px', border: '1px solid #D1D1D6', borderRadius: '6px', background: 'none', cursor: 'pointer', padding: '2px' }} />
+              <span style={{ fontSize: '12px', color: '#8E8E93', fontFamily: 'monospace' }}>{active.color ?? config.color}</span>
+            </div>
+          </Row>
+          <Vec3Input label="Offset"   value={active.offset}      onChange={(v) => onUpdatePart?.(active.id, { offset: v })}      min={-1}   max={1}   step={0.01} />
+          <Vec3Input label="Size"     value={active.size}        onChange={(v) => onUpdatePart?.(active.id, { size: v })}        min={0.05} max={3}   step={0.05} lockable />
+          <Vec3Input label="Rotation" value={active.orientation} onChange={(v) => onUpdatePart?.(active.id, { orientation: v })} min={-180} max={180} step={1} />
+        </div>
+      )}
+    </>
+  )
+}
+
 function MarkProperties({
   config, onChange, bindings, onBind, labelConfig, onLabelChange,
   colorMode, colorGradient, onColorGradientChange, colorTint, onColorTintChange, openSection,
   layers, compositionLevel,
+  activePartId, onAddPart, onRemovePart, onUpdatePart, onSelectPart,
 }: {
   config:         MarkConfig
   onChange:       (c: MarkConfig) => void
@@ -747,7 +829,13 @@ function MarkProperties({
   openSection?:            string
   layers:          LayerData[]
   compositionLevel: CompositionLevel
+  activePartId?:   string | null
+  onAddPart?:      () => void
+  onRemovePart?:   (id: string) => void
+  onUpdatePart?:   (id: string, patch: Partial<MarkPart>) => void
+  onSelectPart?:   (id: string | null) => void
 }) {
+  const isCompound = !!config.parts && config.parts.length > 0
   const materialOptions: MarkMaterial[] = config.shape === 'custom' && config.customModelHasMat
     ? ['original', 'plastic', 'fluid', 'glass', 'metal', 'iridescent', 'emissive', 'toon', 'wireframe']
     : MATERIAL_OPTIONS
@@ -797,7 +885,17 @@ function MarkProperties({
 
       {/* ── Geometry ── */}
       <AttributeCategory icon={ICONS.shape} title="Geometry" open={acc.isOpen('Geometry')} onToggle={() => acc.toggle('Geometry')}>
-        {bindings.markGeometry !== null && layers.length > 1 ? (
+        {isCompound ? (
+          // Compound mark: a list of sub-shapes, each editable.
+          <PartsEditor
+            config={config}
+            activePartId={activePartId}
+            onAddPart={onAddPart}
+            onRemovePart={onRemovePart}
+            onUpdatePart={onUpdatePart}
+            onSelectPart={onSelectPart}
+          />
+        ) : bindings.markGeometry !== null && layers.length > 1 ? (
           // Per-category shape selection (active when geometry encoding is bound)
           layers.map((layer) => {
             const catEntry: CategoryShapeEntry | undefined = config.categoryShapes?.[layer.name]
@@ -829,12 +927,25 @@ function MarkProperties({
             )
           })
         ) : (
-          <Row label="Shape">
-            <ShapeDropdown
-              config={config}
-              onChange={(patch) => onChange({ ...config, ...patch } as MarkConfig)}
-            />
-          </Row>
+          <>
+            <Row label="Shape">
+              <ShapeDropdown
+                config={config}
+                onChange={(patch) => onChange({ ...config, ...patch } as MarkConfig)}
+              />
+            </Row>
+            {onAddPart && bindings.markGeometry === null && (
+              <button
+                onClick={onAddPart}
+                title="Combine shapes into one mark (e.g. a sphere on a leaf)"
+                style={{ width: '100%', padding: '8px', background: '#F2F2F7', border: '1px dashed #C7C7CC', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#3A3A3C', fontFamily: 'inherit' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#E9E9EE')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
+              >
+                + Make it a compound mark
+              </button>
+            )}
+          </>
         )}
       </AttributeCategory>
 
@@ -1510,7 +1621,7 @@ function SceneProperties({
 }: { config: SceneConfig; onChange: (c: SceneConfig) => void }) {
   const [framingOpen, setFramingOpen] = useState(true)
   const [labelOpen,   setLabelOpen]   = useState(false)
-  const titleShow   = config.sceneTitleShow   ?? true
+  const titleShow   = config.sceneTitleShow   ?? false
   const titleOffset = config.sceneTitleOffset ?? 2.5
   const titleBelow  = config.sceneTitleBelow  ?? false
   return (
@@ -1693,6 +1804,11 @@ interface PropertiesPanelProps {
   markOpenSection?:      string
   onReseed?:             () => void
   models?:               ModelPreset[]
+  activePartId?:         string | null
+  onAddPart?:            () => void
+  onRemovePart?:         (id: string) => void
+  onUpdatePart?:         (id: string, patch: Partial<MarkPart>) => void
+  onSelectPart?:         (id: string | null) => void
 }
 
 export function PropertiesPanel({
@@ -1707,6 +1823,7 @@ export function PropertiesPanel({
   activeDecorationId, decorations, onDecorationChange,
   colorMode, colorGradient, onColorGradientChange, colorTint, onColorTintChange, markOpenSection, onReseed,
   models,
+  activePartId, onAddPart, onRemovePart, onUpdatePart, onSelectPart,
 }: PropertiesPanelProps) {
   const activeDec = activeDecorationId !== null
     ? decorations.find((d) => d.id === activeDecorationId) ?? null
@@ -1734,6 +1851,11 @@ export function PropertiesPanel({
           openSection={markOpenSection}
           layers={layers}
           compositionLevel={compositionLevel}
+          activePartId={activePartId}
+          onAddPart={onAddPart}
+          onRemovePart={onRemovePart}
+          onUpdatePart={onUpdatePart}
+          onSelectPart={onSelectPart}
         />
       ) : activeElement === 'collection1' ? (
         <CollectionProperties

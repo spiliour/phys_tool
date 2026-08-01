@@ -30,9 +30,27 @@ export interface CategoryShapeEntry {
   customModelName?:  string
 }
 
+// One sub-shape of a compound mark. Its transform is relative to the mark's unit
+// frame (offset/size are in the same normalized space as a single mark's geometry).
+export interface MarkPart {
+  id:                 string
+  shape:              MarkShape
+  customModelUrl?:    string
+  customModelHasMat?: boolean
+  customModelName?:   string
+  material?:          MarkMaterial   // falls back to the mark's material
+  color?:             string         // falls back to the mark's color
+  offset:             Vec3           // relative position (mark-unit space)
+  size:               Vec3           // relative per-axis size
+  orientation:        Vec3           // relative rotation (degrees)
+}
+
 export interface MarkConfig {
   // Geometry
   shape: MarkShape
+  // A compound mark is a list of sub-shapes rendered together and treated as one
+  // mark everywhere (scatter/stack/etc.). Absent/empty → a plain single-shape mark.
+  parts?: MarkPart[]
   // Per-category shape overrides (level 2+): layer.name → shape entry
   categoryShapes?: Record<string, CategoryShapeEntry>
   // Material

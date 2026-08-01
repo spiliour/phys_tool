@@ -10,10 +10,10 @@
  * MarkInstances gets it automatically. Add a new arrangement by producing
  * placements and rendering <MarkInstances> — all encodings come for free.
  */
-import { useRef, useMemo, useEffect, useContext, createContext, Suspense, CSSProperties } from 'react'
+import { useRef, useMemo, useEffect, useReducer, useContext, createContext, Suspense, CSSProperties } from 'react'
 import * as THREE from 'three'
 import { Html, useGLTF } from '@react-three/drei'
-import { MarkShape, MarkMaterial, StructuralConfig, Vec3, LabelOccludeMode } from './types'
+import { MarkShape, MarkMaterial, StructuralConfig, Vec3, LabelOccludeMode, MarkPart } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 import { MarkMaterialElement, MaterialParams, DEFAULT_MATERIAL_PARAMS, MaterialParamsContext, TOON_GRADIENT } from './MarkMaterial'
 
@@ -75,7 +75,7 @@ function glbScaleOverride(url: string): number {
 }
 
 /** Imperative material for GLB clones (mirrors MarkMaterialElement's presets). */
-function buildMaterial(material: MarkMaterial, color: string, params: MaterialParams = DEFAULT_MATERIAL_PARAMS): THREE.Material {
+export function buildMaterial(material: MarkMaterial, color: string, params: MaterialParams = DEFAULT_MATERIAL_PARAMS): THREE.Material {
   const col = new THREE.Color(color)
   const alpha = { transparent: params.opacity < 1, opacity: params.opacity }
   switch (material) {
@@ -182,6 +182,7 @@ export interface MarkInstancesProps {
   instanceColors?: string[]
   colorTint?:      boolean         // tint GLB material instead of replacing it
   markLabels?:     MarkLabelPair[]
+  parts?:          MarkPart[]      // compound mark: render each sub-shape per placement
 }
 
 const instSize = (instanceSizes: Vec3[] | undefined, fallback: Vec3, i: number): Vec3 =>
@@ -406,14 +407,243 @@ function GLBInstances({
   )
 }
 
+// ── Compound marks: many sub-shapes rendered per placement ────────────────────
+// A compound mark is a small set of parts. Each placement's mark transform is
+// computed ONCE (position/orientation/scale, incl. stacking + surface normal) and
+// every part is instanced/cloned at markTransform · partLocalTransform, so the
+// arrangement layer stays identical — a compound still occupies one placement.
+
+const DEG = Math.PI / 180
+
+interface MarkTransform { matrix: THREE.Matrix4; center: [number, number, number]; halfY: number; normal?: [number, number, number] }
+
+// Part transform in the compound's *centred* frame: its authored offset minus the
+// compound centre, so the whole mark sits on its origin (fixes off-centre scaling,
+// surface stand-on and stacking).
+function partLocalMatrix(part: MarkPart, center: Vec3): THREE.Matrix4 {
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(part.orientation.x * DEG, part.orientation.y * DEG, part.orientation.z * DEG))
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3(part.offset.x - center.x, part.offset.y - center.y, part.offset.z - center.z),
+    q,
+    new THREE.Vector3(part.size.x, part.size.y, part.size.z),
+  )
+}
+
+// ── Measured model half-extents ───────────────────────────────────────────────
+// A primitive's extent is known from its shape, but a custom GLB's isn't until the
+// model loads (a flat leaf is far shorter than the cube fallback). GLB parts report
+// their measured normalised half-extents (mark-unit, before part.size) into this
+// shared cache; compoundBounds reads it so the compound's true height is used for
+// centring + surface stand-on. A subscription re-runs bounds once a model loads.
+const modelHalfCache = new Map<string, Vec3>()
+const modelHalfListeners = new Set<() => void>()
+export function reportModelHalf(url: string, half: Vec3) {
+  const ex = modelHalfCache.get(url)
+  if (ex && ex.x === half.x && ex.y === half.y && ex.z === half.z) return
+  modelHalfCache.set(url, half)
+  modelHalfListeners.forEach(fn => fn())
+}
+// Subscribe a component to model-measurement updates; returns a version that bumps
+// whenever a model reports, so callers of compoundBounds recompute.
+export function useModelHalvesVersion(): number {
+  const [v, bump] = useReducer((x: number) => x + 1, 0)
+  useEffect(() => { modelHalfListeners.add(bump); return () => { modelHalfListeners.delete(bump) } }, [])
+  return v
+}
+
+// Half-extents of one part in mark-unit space (before part.size): a measured model
+// height if known, else the primitive's exact half-height (cube fallback for a
+// not-yet-measured / unknown model).
+function partHalfExtents(p: MarkPart): Vec3 {
+  const mh = p.shape === 'custom' && p.customModelUrl ? modelHalfCache.get(p.customModelUrl) : undefined
+  if (mh) return { x: mh.x * p.size.x, y: mh.y * p.size.y, z: mh.z * p.size.z }
+  const h = primitiveHalfY(p.shape)
+  return { x: h * p.size.x, y: h * p.size.y, z: h * p.size.z }
+}
+
+// Axis-aligned bounds of the whole compound in mark-unit space (part rotation
+// ignored — a good-enough approximation). `center` is the shift that puts the
+// compound's geometric centre on the mark origin; `half` gives the per-axis
+// half-extents (half.y drives stacking spacing + surface stand-on offset).
+export function compoundBounds(parts: MarkPart[]): { center: Vec3; half: Vec3 } {
+  let minX = Infinity, minY = Infinity, minZ = Infinity
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+  for (const p of parts) {
+    const h = partHalfExtents(p)
+    minX = Math.min(minX, p.offset.x - h.x); maxX = Math.max(maxX, p.offset.x + h.x)
+    minY = Math.min(minY, p.offset.y - h.y); maxY = Math.max(maxY, p.offset.y + h.y)
+    minZ = Math.min(minZ, p.offset.z - h.z); maxZ = Math.max(maxZ, p.offset.z + h.z)
+  }
+  if (!isFinite(minX)) { minX = maxX = minY = maxY = minZ = maxZ = 0 }
+  return {
+    center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2, z: (minZ + maxZ) / 2 },
+    half:   { x: Math.max(0.001, (maxX - minX) / 2), y: Math.max(0.001, (maxY - minY) / 2), z: Math.max(0.001, (maxZ - minZ) / 2) },
+  }
+}
+
+// One primitive part across all placements → a single InstancedMesh.
+function CompoundPrimitivePart({ part, center, transforms, markMaterial, markColor, structural, instanceColors }: {
+  part: MarkPart; center: Vec3; transforms: MarkTransform[]; markMaterial: MarkMaterial; markColor: string; structural: StructuralConfig; instanceColors?: string[]
+}) {
+  const ref = useRef<THREE.InstancedMesh>(null)
+  const geo = useMemo(() => makeMarkGeometry(part.shape), [part.shape])
+  useEffect(() => () => { geo.dispose() }, [geo])
+  const partLocal = useMemo(() => partLocalMatrix(part, center),
+    [part.offset.x, part.offset.y, part.offset.z, part.orientation.x, part.orientation.y, part.orientation.z, part.size.x, part.size.y, part.size.z, center.x, center.y, center.z])
+
+  useEffect(() => {
+    const mesh = ref.current
+    if (!mesh) return
+    const m = new THREE.Matrix4(), col = new THREE.Color()
+    transforms.forEach((t, i) => {
+      m.multiplyMatrices(t.matrix, partLocal)
+      mesh.setMatrixAt(i, m)
+      if (instanceColors) mesh.setColorAt(i, col.set(instanceColors[i % instanceColors.length]))
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    if (instanceColors && mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  }, [transforms, partLocal, instanceColors])
+
+  return (
+    <instancedMesh
+      key={`${transforms.length}-${part.shape}-${instanceColors ? 'col' : 'plain'}`}
+      ref={ref}
+      args={[geo, undefined, transforms.length]}
+    >
+      <MarkMaterialElement material={part.material ?? markMaterial} structural={structural} color={instanceColors ? '#ffffff' : (part.color ?? markColor)} />
+    </instancedMesh>
+  )
+}
+
+// One GLB part across all placements → cloned per placement.
+function CompoundGLBPart({ part, center, transforms, markMaterial, markColor, instanceColors, colorTint }: {
+  part: MarkPart; center: Vec3; transforms: MarkTransform[]; markMaterial: MarkMaterial; markColor: string; instanceColors?: string[]; colorTint?: boolean
+}) {
+  const url = part.customModelUrl!
+  const { scene: gltfScene } = useGLTF(url)
+  const matParams = useContext(MaterialParamsContext)
+  const material  = part.material ?? markMaterial
+  const baseColor = part.color ?? markColor
+
+  const { normScale, glbCenter, modelHalf } = useMemo(() => {
+    gltfScene.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(gltfScene)
+    const size = new THREE.Vector3(), c = new THREE.Vector3()
+    box.getSize(size); box.getCenter(c)
+    const maxDim = Math.max(size.x, size.y, size.z, 0.001)
+    const ns = (MARK_BASE / maxDim) * glbScaleOverride(url)
+    return { normScale: ns, glbCenter: c, modelHalf: { x: (size.x * ns) / 2, y: (size.y * ns) / 2, z: (size.z * ns) / 2 } }
+  }, [gltfScene, url])
+  // Publish the measured height so the compound's bounds use it (not the cube fallback).
+  useEffect(() => { reportModelHalf(url, modelHalf) }, [url, modelHalf])
+
+  const partLocal = useMemo(() => partLocalMatrix(part, center),
+    [part.offset.x, part.offset.y, part.offset.z, part.orientation.x, part.orientation.y, part.orientation.z, part.size.x, part.size.y, part.size.z, center.x, center.y, center.z])
+
+  const clones = useMemo(() => transforms.map(() => gltfScene.clone(true)), [gltfScene, transforms.length])
+  useEffect(() => () => { clones.forEach(cl => cl.traverse(ch => { if (ch instanceof THREE.Mesh) ch.geometry.dispose() })) }, [clones])
+
+  const sharedMat = useMemo(() => (material !== 'original' ? buildMaterial(material, baseColor, matParams) : null), [material, baseColor, matParams])
+  useEffect(() => () => { sharedMat?.dispose() }, [sharedMat])
+  const colorMats = useMemo(
+    () => (instanceColors && !colorTint ? instanceColors.map(c => buildMaterial(material === 'original' ? 'plastic' : material, c, matParams)) : null),
+    [instanceColors, colorTint, material, matParams],
+  )
+  useEffect(() => () => { colorMats?.forEach(m => m.dispose()) }, [colorMats])
+  const tintMats = useRef<THREE.Material[]>([])
+  useEffect(() => {
+    clones.forEach((clone, i) => clone.traverse(ch => {
+      if (!(ch instanceof THREE.Mesh)) return
+      if (!ch.userData.__origMat) ch.userData.__origMat = ch.material
+      const orig = ch.userData.__origMat as THREE.Material | THREE.Material[]
+      if (instanceColors && colorTint) {
+        const c = instanceColors[i % instanceColors.length]
+        const mk = (m: THREE.Material) => { const t = tintMaterial(m, c); tintMats.current.push(t); return t }
+        ch.material = Array.isArray(orig) ? orig.map(mk) : mk(orig)
+      } else if (colorMats) ch.material = colorMats[i % colorMats.length]
+      else if (sharedMat) ch.material = sharedMat
+      else ch.material = orig
+    }))
+    return () => { tintMats.current.forEach(m => m.dispose()); tintMats.current = [] }
+  }, [clones, sharedMat, colorMats, instanceColors, colorTint])
+
+  const tmp = useMemo(() => new THREE.Matrix4(), [])
+  return (
+    <>
+      {clones.map((clone, i) => {
+        tmp.multiplyMatrices(transforms[i].matrix, partLocal)
+        const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3()
+        tmp.decompose(pos, quat, scl)
+        return (
+          <group key={i} position={pos} quaternion={quat} scale={scl}>
+            <primitive object={clone} position={[-glbCenter.x * normScale, -glbCenter.y * normScale, -glbCenter.z * normScale]} scale={normScale} />
+          </group>
+        )
+      })}
+    </>
+  )
+}
+
+function CompoundInstances({
+  placements, parts, markMaterial, markSize, color, structural,
+  scaleBoost, standOnAnchor, stack, labelGapFactor, instanceSizes, instanceColors, colorTint, markLabels,
+}: MarkInstancesProps & { parts: MarkPart[]; scaleBoost: number; standOnAnchor: boolean; stack: boolean; labelGapFactor: number }) {
+  // Centre the compound on its bounding box so the origin is its true centre; then
+  // half.y is a symmetric half-height and the standard stacking / stand-on math holds.
+  // halvesV re-runs this once any GLB part reports its measured height.
+  const halvesV = useModelHalvesVersion()
+  const bounds = useMemo(() => compoundBounds(parts), [parts, halvesV])
+  const transforms = useMemo<MarkTransform[]>(() => {
+    const halfUnit = bounds.half.y
+    const halfYs = placements.map((_, i) => halfUnit * scaleBoost * instSize(instanceSizes, markSize, i).y)
+    const stackYs = stack ? stackedCenterYs(halfYs) : null
+    const q = new THREE.Quaternion(), nv = new THREE.Vector3()
+    return placements.map((p, i) => {
+      const msz = instSize(instanceSizes, markSize, i)
+      const center: [number, number, number] = stackYs ? [p.pos[0], p.pos[1] + stackYs[i], p.pos[2]] : markCenter(p, halfYs[i], standOnAnchor)
+      if (p.normal && !stack) q.setFromUnitVectors(UP, nv.set(...p.normal))
+      else q.setFromEuler(new THREE.Euler(...(p.rot ?? [0, 0, 0])))
+      const matrix = new THREE.Matrix4().compose(new THREE.Vector3(...center), q, new THREE.Vector3(msz.x * scaleBoost, msz.y * scaleBoost, msz.z * scaleBoost))
+      return { matrix, center, halfY: halfYs[i], normal: p.normal }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placements, bounds, scaleBoost, standOnAnchor, stack, instanceSizes, markSize.x, markSize.y, markSize.z])
+
+  return (
+    <>
+      {parts.map(part => (part.shape === 'custom' && part.customModelUrl)
+        ? <CompoundGLBPart key={part.id} part={part} center={bounds.center} transforms={transforms} markMaterial={markMaterial} markColor={color} instanceColors={instanceColors} colorTint={colorTint} />
+        : <CompoundPrimitivePart key={part.id} part={part} center={bounds.center} transforms={transforms} markMaterial={markMaterial} markColor={color} structural={structural} instanceColors={instanceColors} />
+      )}
+      {markLabels && transforms.map((t, i) => {
+        const lbl = markLabels[i]
+        if (!lbl || (!lbl.above && !lbl.below)) return null
+        return (
+          <MarkLabelTags key={`lbl-${i}`}
+            center={t.center} dir={stack ? [0, 1, 0] : (t.normal ?? [0, 1, 0])}
+            halfY={t.halfY} gapFactor={labelGapFactor} above={lbl.above} below={lbl.below}
+          />
+        )
+      })}
+    </>
+  )
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export function MarkInstances(props: MarkInstancesProps) {
   const {
-    markShape, customModelUrl,
+    markShape, customModelUrl, parts,
     scaleBoost = SCATTER_SCALE, standOnAnchor = false, stack = false, labelGapFactor = 0,
   } = props
   const resolved = { ...props, scaleBoost, standOnAnchor, stack, labelGapFactor }
+  if (parts && parts.length > 0) {
+    return (
+      <Suspense fallback={null}>
+        <CompoundInstances {...resolved} parts={parts} />
+      </Suspense>
+    )
+  }
   if (markShape === 'custom' && customModelUrl) {
     return (
       <Suspense fallback={null}>

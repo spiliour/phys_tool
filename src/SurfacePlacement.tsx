@@ -11,7 +11,7 @@ import * as THREE from 'three'
 import { useGLTF } from '@react-three/drei'
 import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { MarkShape, MarkMaterial, StructuralConfig, Vec3, DecorationConfig } from './types'
+import { MarkShape, MarkMaterial, StructuralConfig, Vec3, DecorationConfig, MarkPart } from './types'
 import { makeMarkGeometry, MARK_BASE } from './markGeometry'
 import { MarkInstances, MarkPlacement, MarkLabelPair, SCATTER_SCALE } from './MarkInstances'
 
@@ -111,6 +111,7 @@ interface ScatterProps {
   instanceColors?: string[]
   colorTint?:      boolean
   markLabels?:     MarkLabelPair[]
+  parts?:          MarkPart[]
 }
 
 function SurfaceScatter({ worldGeo, count, seed, markShape, markUrl, surfaceScale, ...mark }: ScatterProps) {
@@ -172,6 +173,7 @@ export interface SurfacePlacementProps {
   instanceColors?: string[]        // data-driven per-mark colour
   colorTint?:    boolean           // tint GLB material instead of replacing it
   markLabels?:   MarkLabelPair[]   // per-mark label text (above the mark, along its normal)
+  parts?:        MarkPart[]        // compound mark: sub-shapes rendered together
 }
 
 export function SurfacePlacement({ dec, ...rest }: SurfacePlacementProps) {
