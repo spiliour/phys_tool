@@ -20,6 +20,11 @@ export const PRESETS: SceneSave[] = Object.entries(_presetMods).map(([path, mod]
   return { id: `preset_${raw}`, name, createdAt: '', data: mod.default }
 })
 
+// The study scenes are the lettered presets ("A. …", "B. …", "C. …"). The Load
+// dialog can filter to just these (on by default) so the study list stays clean.
+const STUDY_SCENE_RE = /^[A-Za-z]\.\s/
+export const isStudyScene = (s: SceneSave) => STUDY_SCENE_RE.test(s.name)
+
 // ── Viewport thumbnail ────────────────────────────────────────────────────────
 
 // Grab the WebGL canvas and return a small JPEG data URL for the scene preview.
@@ -152,6 +157,29 @@ interface LoadDialogProps {
   currentData: Record<string, unknown>
 }
 
+// iOS-style toggle switch.
+function ToggleSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      title="Study scenes only (A · B · C)"
+      style={{
+        width: '30px', height: '18px', borderRadius: '9px', border: 'none', padding: 0,
+        background: on ? '#007AFF' : '#E9E9EA', cursor: 'pointer',
+        position: 'relative', flexShrink: 0, transition: 'background 0.15s',
+      }}
+    >
+      <span style={{
+        position: 'absolute', top: '2px', left: on ? '14px' : '2px',
+        width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.3)', transition: 'left 0.15s',
+      }} />
+    </button>
+  )
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
@@ -167,6 +195,9 @@ export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDi
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [importText, setImportText] = useState<string | null>(null)   // non-null → import view open
   const [importErr,  setImportErr]  = useState<string>('')
+  const [studyOnly,  setStudyOnly]  = useState(true)   // show only the A/B/C study scenes
+
+  const visiblePresets = studyOnly ? PRESETS.filter(isStudyScene) : PRESETS
 
   // Load a scene from pasted JSON. Accepts a bare scene state (like a preset
   // file), a study export { data: … }, or a whole DB row { participant, data, … }.
@@ -238,10 +269,10 @@ export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDi
           <>
             {/* Scrollable list */}
             <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
-              {PRESETS.length > 0 ? (
+              {visiblePresets.length > 0 ? (
                 <>
                   <SectionLabel>Presets</SectionLabel>
-                  {PRESETS.map((s, i) => row(s, i === PRESETS.length - 1))}
+                  {visiblePresets.map((s, i) => row(s, i === visiblePresets.length - 1))}
                 </>
               ) : (
                 <div style={{ padding: '36px 20px', textAlign: 'center', color: '#8E8E93', fontSize: '13px' }}>
@@ -255,7 +286,7 @@ export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDi
               padding: '12px 20px', borderTop: '1px solid #E5E5EA',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
             }}>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <button
                   onClick={() => exportScene(currentName, currentData)}
                   title="Export current scene as JSON"
@@ -270,6 +301,7 @@ export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDi
                 >
                   Import
                 </button>
+                <ToggleSwitch on={studyOnly} onChange={setStudyOnly} />
               </div>
               <button onClick={onClose} style={{ ...btnBase, background: '#F2F2F7', color: '#6C6C70' }}>
                 Close
