@@ -164,16 +164,16 @@ function ToggleSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) =>
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
-      title="Study scenes only (A · B · C)"
+      title="Show all scenes (off = study scenes A · B · C)"
       style={{
-        width: '30px', height: '18px', borderRadius: '9px', border: 'none', padding: 0,
+        width: '28px', height: '15px', borderRadius: '8px', border: 'none', padding: 0,
         background: on ? '#007AFF' : '#E9E9EA', cursor: 'pointer',
         position: 'relative', flexShrink: 0, transition: 'background 0.15s',
       }}
     >
       <span style={{
-        position: 'absolute', top: '2px', left: on ? '14px' : '2px',
-        width: '14px', height: '14px', borderRadius: '50%', background: '#fff',
+        position: 'absolute', top: '2px', left: on ? '15px' : '2px',
+        width: '11px', height: '11px', borderRadius: '50%', background: '#fff',
         boxShadow: '0 1px 3px rgba(0,0,0,0.3)', transition: 'left 0.15s',
       }} />
     </button>
@@ -195,9 +195,9 @@ export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDi
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [importText, setImportText] = useState<string | null>(null)   // non-null → import view open
   const [importErr,  setImportErr]  = useState<string>('')
-  const [studyOnly,  setStudyOnly]  = useState(true)   // show only the A/B/C study scenes
+  const [showAll,    setShowAll]    = useState(false)   // off (default) → only the A/B/C study scenes
 
-  const visiblePresets = studyOnly ? PRESETS.filter(isStudyScene) : PRESETS
+  const visiblePresets = showAll ? PRESETS : PRESETS.filter(isStudyScene)
 
   // Load a scene from pasted JSON. Accepts a bare scene state (like a preset
   // file), a study export { data: … }, or a whole DB row { participant, data, … }.
@@ -301,7 +301,7 @@ export function LoadDialog({ onLoad, onClose, currentName, currentData }: LoadDi
                 >
                   Import
                 </button>
-                <ToggleSwitch on={studyOnly} onChange={setStudyOnly} />
+                <ToggleSwitch on={showAll} onChange={setShowAll} />
               </div>
               <button onClick={onClose} style={{ ...btnBase, background: '#F2F2F7', color: '#6C6C70' }}>
                 Close
