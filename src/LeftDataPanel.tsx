@@ -82,7 +82,7 @@ const DATASETS: Record<string, {
     ],
     reference: {
       title: 'Annual CO₂ emissions 2024',
-      image: 'co2-emissions.png',
+      image: '',
       link:  'https://ourworldindata.org/grapher/annual-co2-emissions-per-country?country=~OWID_WRL&tab=map&time=latest',
     },
   },
@@ -107,7 +107,7 @@ const DATASETS: Record<string, {
     ],
     reference: {
       title: 'Mushroom Danger Score',
-      image: 'mushroom-danger.png',
+      image: '',
       link:  'https://namyco.org/interests/toxicology/mushroom-poisoning-syndromes/',
     },
   },
@@ -126,7 +126,7 @@ const DATASETS: Record<string, {
     ],
     reference: {
       title: "Surface Plastic Mass across the world's Oceans",
-      image: 'plastic-oceans.png',
+      image: '',
       link:  'https://ourworldindata.org/grapher/surface-plastic-mass-by-ocean',
     },
   },
@@ -167,7 +167,7 @@ const DATASETS: Record<string, {
       { id: '12', name: 'Cairo',       percentage: 67, color: '#C62828' },
     ],
     reference: {
-      title: 'WHO Ambient Air Quality Database — annual mean PM2.5 (µg/m³)',
+      title: 'WHO Ambient Air Quality Database, annual mean PM2.5 (µg/m³)',
       image: '',
       link:  'https://www.who.int/data/gho/data/themes/air-pollution/who-air-quality-database',
     },
