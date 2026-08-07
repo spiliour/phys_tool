@@ -168,7 +168,7 @@ const DATASETS: Record<string, {
     ],
     reference: {
       title: 'WHO Ambient Air Quality Database, annual mean PM2.5 (µg/m³)',
-      image: '',
+      image: 'city.png',
       link:  'https://www.who.int/data/gho/data/themes/air-pollution/who-air-quality-database',
     },
   },
