@@ -19,7 +19,7 @@ import { resolveCustomModel, MASTER_COLLECTION, modelsForCollection } from './mo
 const BINDING_LABELS: Record<keyof DataBindings, string> = {
   markColor:    'Color',
   markGeometry: 'Geometry',
-  scatterSize:  'Scatter - Size',
+  scatterSize:  'Scatter Size',
   scatterCount: 'Population',
   c1AlignCount: 'Count',
   c2AlignCount: 'Count',
@@ -619,6 +619,7 @@ export default function App() {
               Load
             </button>
           </div>
+          {/* Render (path tracer) — hidden for the study
           <button
             onClick={() => { setPathTracingActive(true); setPathTracerSamples(0) }}
             disabled={pathTracingActive}
@@ -633,6 +634,7 @@ export default function App() {
           >
             {pathTracingActive ? 'Rendering...' : 'Render'}
           </button>
+          */}
           <button
             onClick={handleSubmitStudy}
             disabled={studyStatus === 'saving'}
@@ -822,6 +824,7 @@ export default function App() {
             markOpenSection={markOpenSection}
             onReseed={() => setScatterSeed(s => s + 1)}
             models={modelsForCollection(activeModelCollection)}
+            varLabels={varLabels}
             activePartId={activePartId}
             onAddPart={handleAddPart}
             onRemovePart={handleRemovePart}
@@ -919,9 +922,9 @@ export default function App() {
                       {labelTags.map(lt => (
                         <div key={lt.key} style={{
                           display: 'inline-flex', alignItems: 'center', gap: '5px',
-                          background: '#EFEAFB', border: '1px solid #DCCFFA',
+                          background: '#E8F1FF', border: '1px solid #BBD6FF',
                           borderRadius: '10px', padding: '4px 6px 4px 11px',
-                          fontSize: '12.5px', color: '#5E5CE6', fontWeight: '600', lineHeight: 1.2,
+                          fontSize: '12.5px', color: '#0A66DA', fontWeight: '600', lineHeight: 1.2,
                         }}>
                           <span style={{ whiteSpace: 'nowrap' }}>{lt.label}</span>
                           <button
@@ -931,9 +934,9 @@ export default function App() {
                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                               width: '17px', height: '17px', borderRadius: '50%', flexShrink: 0,
                               background: 'none', border: 'none', cursor: 'pointer',
-                              color: '#9A98EE', fontSize: '14px', lineHeight: 1, fontFamily: 'inherit', padding: 0,
+                              color: '#7FAEF0', fontSize: '14px', lineHeight: 1, fontFamily: 'inherit', padding: 0,
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.background = '#E4DCFA' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#D3E4FF' }}
                             onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
                           >×</button>
                         </div>

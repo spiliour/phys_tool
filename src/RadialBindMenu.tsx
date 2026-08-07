@@ -132,13 +132,13 @@ export function RadialBindMenu({
     // ── Mark ──
     { action: 'bind',  bindKey: 'markColor',    label: 'Color',    icon: '●',  section: 'mark',       varTypes: ['numerical', 'categorical'] },
     { action: 'bind',  bindKey: 'markGeometry', label: 'Geometry', icon: '◆',  section: 'mark',       varTypes: ['categorical'] },
-    { action: 'bind',  bindKey: 'markSizeX',    label: 'Width',    icon: '↔',  section: 'mark',       varTypes: ['numerical'] },
-    { action: 'bind',  bindKey: 'markSizeY',    label: 'Height',   icon: '↕',  section: 'mark',       varTypes: ['numerical'] },
-    { action: 'bind',  bindKey: 'markSizeZ',    label: 'Depth',    icon: '⊙',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'bind',  bindKey: 'markSizeX',    label: 'Width',    icon: 'X',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'bind',  bindKey: 'markSizeY',    label: 'Height',   icon: 'Y',  section: 'mark',       varTypes: ['numerical'] },
+    { action: 'bind',  bindKey: 'markSizeZ',    label: 'Depth',    icon: 'Z',  section: 'mark',       varTypes: ['numerical'] },
     { action: 'bind',  bindKey: 'markScale',    label: 'Scale',    icon: '⤢',  section: 'mark',       varTypes: ['numerical'] },
     { action: 'label',                           label: 'Label',    icon: 'Aa', section: 'mark',       varTypes: ['numerical', 'categorical'] },
     // ── Collection ──
-    { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter - Size',  icon: '⊞', section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
+    { action: 'bind',  bindKey: 'scatterSize',  label: 'Scatter Size',  icon: '⊞', section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering'], minLevel: 2 },
     { action: 'bind',  bindKey: 'scatterCount', label: 'Population', icon: '#',  section: 'collection', varTypes: ['numerical'],               arrangements: ['scattering', 'stacking', 'adjacent', 'surface'], minLevel: 2 },
     { action: 'label',                           label: 'Label',              icon: 'Aa', section: 'collection', varTypes: ['numerical', 'categorical'],                             minLevel: 3 },
   ]
@@ -153,19 +153,50 @@ export function RadialBindMenu({
     return true
   }
 
-  const markOpts: MenuOption[] = RULES.filter(r => r.section === 'mark' && ruleMatches(r)) as MenuOption[]
+  // Section layout: 'sides' = Mark-left / Collection-right (original design);
+  // 'stacked' = Mark-top / Collection-bottom. Flip this one flag to switch back —
+  // both layouts are kept so it's a trivial revert.
+  const MENU_LAYOUT = 'stacked' as 'sides' | 'stacked'
+
+  // Order the mark options so they read Scale, X, Y, Z, Color, Geometry, Label —
+  // top→bottom on the vertical (sides) arc, left→right on the horizontal (stacked).
+  const MARK_ORDER = ['Scale', 'Width', 'Height', 'Depth', 'Color', 'Geometry', 'Label']
+  const markRank = (o: MenuOption) => { const i = MARK_ORDER.indexOf(o.label); return i === -1 ? MARK_ORDER.length : i }
+  const markSorted = (RULES.filter(r => r.section === 'mark' && ruleMatches(r)) as MenuOption[]).sort((a, b) => markRank(a) - markRank(b))
+  // The vertical arc places index 0 at the BOTTOM, so reverse for 'sides'; the
+  // horizontal arc places index 0 at the LEFT, so keep order for 'stacked'.
+  const markOpts: MenuOption[] = MENU_LAYOUT === 'sides' ? [...markSorted].reverse() : markSorted
   const colOpts:  MenuOption[] = RULES.filter(r => r.section === 'collection' && ruleMatches(r)) as MenuOption[]
 
-  // Wider spread on the mark side: it can hold up to 6 options (Color, Width,
-  // Height, Depth, Scale, Label) and needs room so the buttons don't overlap.
+  // Arc centre per layout: Mark left(180°)/top(270°), Collection right(0°)/bottom(90°).
+  const markCenterDeg = MENU_LAYOUT === 'sides' ? 180 : 270
+  const colCenterDeg  = MENU_LAYOUT === 'sides' ?   0 :  90
+  // Wider spread on the mark side: up to 6 options need room so buttons don't overlap.
   const markSpread = markOpts.length > 3 ? 150 : 90
-  const markPos = arcPositions(markOpts.length, 180, markSpread, RADIUS)
-  const colPos  = arcPositions(colOpts.length,    0,  70, RADIUS)
+  const markPos = arcPositions(markOpts.length, markCenterDeg, markSpread, RADIUS)
+  const colPos  = arcPositions(colOpts.length,  colCenterDeg,  70, RADIUS)
 
   const allItems = [
     ...markOpts.map((o, i) => ({ opt: o, pos: markPos[i] })),
     ...colOpts.map((o, i)  => ({ opt: o, pos: colPos[i] })),
   ]
+
+  // Section labels: plain text just inside the arc, centred on the group.
+  const LABEL_INSET = RADIUS * 0.3
+  const sectionLabel: React.CSSProperties = {
+    position: 'absolute', fontSize: '13px', fontWeight: '700',
+    letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap',
+    transform: 'translate(-50%, -50%)',
+  }
+  const markLabelPos: React.CSSProperties = MENU_LAYOUT === 'sides'
+    ? { left: -LABEL_INSET, top: 0 }
+    : { left: 0, top: -LABEL_INSET }
+  const colLabelPos: React.CSSProperties = MENU_LAYOUT === 'sides'
+    ? { left: LABEL_INSET, top: 0 }
+    : { left: 0, top: LABEL_INSET }
+  const dividerStyle: React.CSSProperties = MENU_LAYOUT === 'sides'
+    ? { left: 0, top: -(RADIUS + 20), width: '1px', height: (RADIUS + 20) * 2, transform: 'translateX(-50%)' }
+    : { top: 0, left: -(RADIUS + 20), height: '1px', width: (RADIUS + 20) * 2, transform: 'translateY(-50%)' }
 
   function handleSelect(opt: MenuOption) {
     if (opt.action === 'bind' && opt.bindKey === 'markColor') {
@@ -288,33 +319,19 @@ export function RadialBindMenu({
         zIndex: 1001, pointerEvents: 'none',
       }}>
 
-        {/* Vertical divider: Mark | Collection */}
+        {/* Divider between Mark and Collection */}
         {hasCollection && (
-          <div style={{
-            position: 'absolute', left: 0, top: -(RADIUS + 20),
-            width: '1px', height: (RADIUS + 20) * 2,
-            background: '#E5E5EA', transform: 'translateX(-50%)',
-          }} />
+          <div style={{ position: 'absolute', background: '#E5E5EA', ...dividerStyle }} />
         )}
 
         {/* Section label: Mark */}
-        <div style={{
-          position: 'absolute', left: -8, top: -10,
-          fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
-          textTransform: 'uppercase', color: '#007AFF',
-          whiteSpace: 'nowrap', textAlign: 'right',
-          transform: 'translateX(-100%)',
-        }}>
+        <div style={{ ...sectionLabel, color: '#007AFF', ...markLabelPos }}>
           Mark
         </div>
 
         {/* Section label: Collection */}
         {hasCollection && (
-          <div style={{
-            position: 'absolute', left: 8, top: -10,
-            fontSize: '9px', fontWeight: '700', letterSpacing: '0.12em',
-            textTransform: 'uppercase', color: '#5E5CE6', whiteSpace: 'nowrap',
-          }}>
+          <div style={{ ...sectionLabel, color: '#0D9488', ...colLabelPos }}>
             Collection
           </div>
         )}
@@ -323,14 +340,14 @@ export function RadialBindMenu({
         <div style={{
           position: 'absolute',
           width: 10, height: 10,
-          background: '#1D1D1F', borderRadius: '50%',
+          background: '#fff', borderRadius: '50%',
           transform: 'translate(-50%, -50%)',
         }} />
 
         {/* Option buttons */}
         {allItems.map(({ opt, pos }, i) => {
           const isCollection = opt.section === 'collection'
-          const accent = isCollection ? '#5E5CE6' : '#007AFF'
+          const accent = isCollection ? '#0D9488' : '#007AFF'
           return (
             <button
               key={i}
@@ -354,17 +371,21 @@ export function RadialBindMenu({
                 const el = e.currentTarget as HTMLElement
                 el.style.transform = 'translate(-50%, -50%) scale(1.13)'
                 el.style.boxShadow = `0 6px 20px rgba(0,0,0,0.22)`
-                el.style.background = isCollection ? '#F3EBFF' : '#EBF3FF'
               }}
               onMouseLeave={e => {
                 const el = e.currentTarget as HTMLElement
                 el.style.transform = 'translate(-50%, -50%)'
                 el.style.boxShadow = '0 4px 16px rgba(0,0,0,0.16)'
-                el.style.background = '#fff'
               }}
             >
-              <span style={{ fontSize: '14px', color: accent, lineHeight: 1 }}>{opt.icon}</span>
-              <span style={{ fontSize: '8px', color: '#6C6C70', fontWeight: '600', lineHeight: 1.2, textAlign: 'center' }}>
+              <span style={{ fontSize: opt.label === 'Scale' ? '19px' : '14px', color: accent, lineHeight: 1 }}>{opt.icon}</span>
+              {/* A multi-word long label (e.g. "Scatter Size") wraps onto two rows at a
+                  readable size; a long single word (Population) shrinks to fit one row. */}
+              <span style={{
+                fontSize: opt.label.length > 8 && !opt.label.includes(' ') ? '7px' : '8px',
+                color: '#6C6C70', fontWeight: '600', lineHeight: 1.15, textAlign: 'center',
+                maxWidth: opt.label.length > 8 && opt.label.includes(' ') ? BTN - 4 : undefined,
+              }}>
                 {opt.label}
               </span>
             </button>

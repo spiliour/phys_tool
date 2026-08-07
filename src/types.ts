@@ -184,8 +184,13 @@ export interface DataBindings {
 export type BindingScale = Partial<Record<keyof DataBindings, number>>
 
 export interface LabelConfig {
-  show:  boolean
-  slots: LabelSlots
+  show:      boolean
+  slots:     LabelSlots
+  fontSize?: number   // label text size in px (default 11)
+  distance?: number   // extra offset from the object; +away / −closer (default 0)
+  bold?:     boolean  // render label text bold (default false)
+  italic?:   boolean  // render label text italic (default false)
+  color?:    string   // label text colour (default light grey)
 }
 
 // ── Decoration ────────────────────────────────────────────────────────────────

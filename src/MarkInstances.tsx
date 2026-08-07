@@ -32,6 +32,13 @@ export interface LabelOccludeValue {
 }
 export const LabelOccludeContext = createContext<LabelOccludeValue>({ mode: 'off', occluders: [] })
 
+// Shared label style (text size + extra distance from the object), provided at the
+// canvas root so every label renderer honours the Labels-panel controls.
+export interface LabelStyle { fontSize: number; distance: number; bold: boolean; italic: boolean; color: string }
+export const DEFAULT_LABEL_STYLE: LabelStyle = { fontSize: 11, distance: 0, bold: false, italic: false, color: '#e8e8e8' }
+export const LabelStyleContext    = createContext<LabelStyle>(DEFAULT_LABEL_STYLE)   // mark labels
+export const ColLabelStyleContext = createContext<LabelStyle>(DEFAULT_LABEL_STYLE)   // collection labels
+
 // Translate the occlusion config into drei's <Html occlude> prop.
 export function occludeProp(v: LabelOccludeValue): true | OccluderRef[] | undefined {
   if (v.mode === 'off')  return undefined
@@ -138,7 +145,10 @@ function MarkLabelTags({ center, dir, halfY, gapFactor, above, below }: {
   below:     string | null
 }) {
   const occ = occludeProp(useContext(LabelOccludeContext))
-  const off = halfY * (1 + gapFactor)
+  const { fontSize, distance, bold, italic, color } = useContext(LabelStyleContext)
+  const off = halfY * (1 + gapFactor) + distance
+  const weight = bold ? 700 : 400
+  const fstyle = italic ? 'italic' : 'normal'
   const abovePos: [number, number, number] = [center[0] + dir[0] * off, center[1] + dir[1] * off, center[2] + dir[2] * off]
   const belowPos: [number, number, number] = [center[0] - dir[0] * off, center[1] - dir[1] * off, center[2] - dir[2] * off]
   return (
@@ -147,7 +157,7 @@ function MarkLabelTags({ center, dir, halfY, gapFactor, above, below }: {
         <group position={abovePos}>
           <group userData={{ isLabel: true, labelText: above, labelPos: 'top' }} />
           <Html center occlude={occ} style={{ pointerEvents: 'none' }}>
-            <span data-phys-label="" style={{ ...markLabelSpan, transform: 'translateY(-100%)' }}>{above}</span>
+            <span data-phys-label="" style={{ ...markLabelSpan, fontSize: `${fontSize}px`, fontWeight: weight, fontStyle: fstyle, color, transform: 'translateY(-100%)' }}>{above}</span>
           </Html>
         </group>
       )}
@@ -155,7 +165,7 @@ function MarkLabelTags({ center, dir, halfY, gapFactor, above, below }: {
         <group position={belowPos}>
           <group userData={{ isLabel: true, labelText: below, labelPos: 'bottom' }} />
           <Html center occlude={occ} style={{ pointerEvents: 'none' }}>
-            <span data-phys-label="" style={{ ...markLabelSpan, transform: 'translateY(0)' }}>{below}</span>
+            <span data-phys-label="" style={{ ...markLabelSpan, fontSize: `${fontSize}px`, fontWeight: weight, fontStyle: fstyle, color, transform: 'translateY(0)' }}>{below}</span>
           </Html>
         </group>
       )}

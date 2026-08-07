@@ -7,3 +7,6 @@ dist/
 server/jobs/
 __pycache__/
 *.pyc
+
+# Claude Code local config (personal, not for the public repo)
+.claude/

@@ -12,7 +12,7 @@ import { MarkShape, MarkMaterial, StructuralConfig, Vec3, MarkPart } from './typ
 import { MARK_BASE } from './markGeometry'
 import {
   MarkInstances, MarkPlacement, MarkLabelPair,
-  LabelOccludeContext, occludeProp, SCATTER_SCALE,
+  LabelOccludeContext, occludeProp, SCATTER_SCALE, ColLabelStyleContext,
 } from './MarkInstances'
 
 // Re-export shared names so existing importers (CompositionCanvas, …) keep working.
@@ -297,6 +297,11 @@ export function Layer({
   instanceSizes, instanceColors, colorTint, markLabels,
 }: LayerProps) {
   const occ = occludeProp(useContext(LabelOccludeContext))
+  const { fontSize: labelFs, distance: labelDist, bold: labelBold, italic: labelItalic, color: labelColor } = useContext(ColLabelStyleContext)
+  const labelWeight = labelBold ? 700 : 400
+  const labelFStyle = labelItalic ? 'italic' : 'normal'
+  const hOff = height / 2 + 0.8 + labelDist   // top/bottom label offset (+ custom distance)
+  const wOff = width  / 2 + 0.2 + labelDist   // left/right label offset
 
   const useCustom = markShape === 'custom' && !!customModelUrl
   // GLB scatter historically renders at least 5 marks; a per-row encoding uses the exact count.
@@ -378,9 +383,9 @@ export function Layer({
         <>
           {labelData.top    && (
             <>
-              <group position={[0, height / 2 + 0.8, 0]} userData={{ isLabel: true, labelText: labelData.top,    labelPos: 'top'    }} />
-              <Html position={[0, height / 2 + 0.8, 0]} center occlude={occ} style={{ pointerEvents: 'none' }}>
-                <span style={{ fontSize: '12px', color: '#e0e0e0', fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none' }}>
+              <group position={[0, hOff, 0]} userData={{ isLabel: true, labelText: labelData.top,    labelPos: 'top'    }} />
+              <Html position={[0, hOff, 0]} center occlude={occ} style={{ pointerEvents: 'none' }}>
+                <span style={{ fontSize: `${labelFs}px`, fontWeight: labelWeight, fontStyle: labelFStyle, color: labelColor, fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none' }}>
                   {labelData.top}
                 </span>
               </Html>
@@ -388,9 +393,9 @@ export function Layer({
           )}
           {labelData.bottom && (
             <>
-              <group position={[0, -(height / 2 + 0.8), 0]} userData={{ isLabel: true, labelText: labelData.bottom, labelPos: 'bottom' }} />
-              <Html position={[0, -(height / 2 + 0.8), 0]} center occlude={occ} style={{ pointerEvents: 'none' }}>
-                <span style={{ fontSize: '12px', color: '#e0e0e0', fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none' }}>
+              <group position={[0, -(hOff), 0]} userData={{ isLabel: true, labelText: labelData.bottom, labelPos: 'bottom' }} />
+              <Html position={[0, -(hOff), 0]} center occlude={occ} style={{ pointerEvents: 'none' }}>
+                <span style={{ fontSize: `${labelFs}px`, fontWeight: labelWeight, fontStyle: labelFStyle, color: labelColor, fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none' }}>
                   {labelData.bottom}
                 </span>
               </Html>
@@ -398,9 +403,9 @@ export function Layer({
           )}
           {labelData.left   && (
             <>
-              <group position={[-(width / 2 + 0.2), 0, 0]} userData={{ isLabel: true, labelText: labelData.left,   labelPos: 'left'   }} />
-              <Html position={[-(width / 2 + 0.2), 0, 0]} occlude={occ} style={{ pointerEvents: 'none' }}>
-                <span style={{ fontSize: '12px', color: '#e0e0e0', fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none', display: 'block', textAlign: 'right', transform: 'translate(-100%, -50%)' }}>
+              <group position={[-(wOff), 0, 0]} userData={{ isLabel: true, labelText: labelData.left,   labelPos: 'left'   }} />
+              <Html position={[-(wOff), 0, 0]} occlude={occ} style={{ pointerEvents: 'none' }}>
+                <span style={{ fontSize: `${labelFs}px`, fontWeight: labelWeight, fontStyle: labelFStyle, color: labelColor, fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none', display: 'block', textAlign: 'right', transform: 'translate(-100%, -50%)' }}>
                   {labelData.left}
                 </span>
               </Html>
@@ -408,9 +413,9 @@ export function Layer({
           )}
           {labelData.right  && (
             <>
-              <group position={[width / 2 + 0.2, 0, 0]} userData={{ isLabel: true, labelText: labelData.right,  labelPos: 'right'  }} />
-              <Html position={[width / 2 + 0.2, 0, 0]} occlude={occ} style={{ pointerEvents: 'none' }}>
-                <span style={{ fontSize: '12px', color: '#e0e0e0', fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none', display: 'block', transform: 'translateY(-50%)' }}>
+              <group position={[wOff, 0, 0]} userData={{ isLabel: true, labelText: labelData.right,  labelPos: 'right'  }} />
+              <Html position={[wOff, 0, 0]} occlude={occ} style={{ pointerEvents: 'none' }}>
+                <span style={{ fontSize: `${labelFs}px`, fontWeight: labelWeight, fontStyle: labelFStyle, color: labelColor, fontFamily: 'Courier New, monospace', textShadow: shadow, whiteSpace: 'nowrap', userSelect: 'none', display: 'block', transform: 'translateY(-50%)' }}>
                   {labelData.right}
                 </span>
               </Html>

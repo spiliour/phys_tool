@@ -102,6 +102,10 @@ const VAR_META: Record<DataVariable, { label: string; type: 'numerical' | 'categ
   section:     { label: 'Section',      type: 'categorical' },
 }
 
+// Resolves a variable to its display name — the universal numerical/categorical keys
+// use the active dataset's column names; legacy keys fall back to VAR_META.
+const VarLabelContext = createContext<(v: DataVariable) => string>((v) => VAR_META[v]?.label ?? v)
+
 // ── Drag-and-drop primitives ──────────────────────────────────────────────────
 
 function DropZone({ children, accepts, onDrop }: {
@@ -139,17 +143,19 @@ function DropZone({ children, accepts, onDrop }: {
   )
 }
 
-function BoundChip({ label, type, onClear }: {
-  label: string; type: 'numerical' | 'categorical'; onClear: () => void
+function BoundChip({ variable, onClear }: {
+  variable: DataVariable; onClear: () => void
 }) {
+  const varLabel = useContext(VarLabelContext)
+  const type = VAR_META[variable]?.type ?? 'numerical'
   return (
     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: '6px',
+      display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '100%',
       background: '#EBF3FF', border: '1px solid #A8CAFF',
       borderRadius: '7px', padding: '6px 10px',
       fontSize: '12px', color: '#007AFF', fontWeight: '500',
     }}>
-      <span>{type === 'numerical' ? '#' : '◈'} {label}</span>
+      <span style={{ minWidth: 0, wordBreak: 'break-word' }}><span style={{ color: '#8FB6EE', fontWeight: '700' }}>{type === 'numerical' ? '#' : 'Aa'}</span> {varLabel(variable)}</span>
       <button onClick={onClear} style={{
         background: 'none', border: 'none', cursor: 'pointer',
         color: '#60A0EE', padding: '0 0 0 2px',
@@ -170,6 +176,7 @@ function LabelSlotZone({ position, slot, onAdd, onRemove }: {
   onRemove: (v: DataVariable) => void
 }) {
   const [over, setOver] = useState(false)
+  const varLabel = useContext(VarLabelContext)
   const dropOk = (e: React.DragEvent) =>
     e.dataTransfer.types.some(t => t === 'phys-var/numerical' || t === 'phys-var/categorical')
   const onDragOver  = (e: React.DragEvent) => { if (dropOk(e)) { e.preventDefault(); setOver(true) } }
@@ -192,15 +199,16 @@ function LabelSlotZone({ position, slot, onAdd, onRemove }: {
           const meta = VAR_META[v]
           return (
             <span key={v} style={{
-              display: 'inline-flex', alignItems: 'center', gap: '3px',
-              background: meta.type === 'numerical' ? '#EBF3FF' : '#F3EBFF',
-              border: `1px solid ${meta.type === 'numerical' ? '#A8CAFF' : '#C8A8FF'}`,
+              display: 'inline-flex', alignItems: 'center', gap: '3px', maxWidth: '100%',
+              background: '#EBF3FF', border: '1px solid #A8CAFF',
               borderRadius: '6px', padding: '2px 3px 2px 6px', fontSize: '10px', fontWeight: '600',
-              color: meta.type === 'numerical' ? '#007AFF' : '#5E5CE6', whiteSpace: 'nowrap',
+              color: '#007AFF',
             }}>
-              {meta.type === 'numerical' ? '#' : '◈'} {meta.label}
+              <span style={{ minWidth: 0, wordBreak: 'break-word', lineHeight: 1.25 }}>
+                <span style={{ color: '#8FB6EE', fontWeight: '700' }}>{meta.type === 'numerical' ? '#' : 'Aa'}</span> {varLabel(v)}
+              </span>
               <button onClick={() => onRemove(v)} style={{
-                background: 'none', border: 'none', cursor: 'pointer', color: '#AEAEB2',
+                background: 'none', border: 'none', cursor: 'pointer', color: '#AEAEB2', flexShrink: 0,
                 padding: '0 2px', fontSize: '12px', lineHeight: 1, fontFamily: 'inherit',
               }}>×</button>
             </span>
@@ -224,15 +232,15 @@ function LabelSlotZone({ position, slot, onAdd, onRemove }: {
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
       }}
     >
-      <span>{SLOT_ICONS[position]}</span>
-      <span style={{ textTransform: 'capitalize' }}>{position}</span>
+      <span style={{ opacity: 0.9 }}>＋ variable</span>
     </div>
   )
 }
 
-function LabelSlotsEditor({ config, onChange }: {
+function LabelSlotsEditor({ config, onChange, styleControls }: {
   config:   LabelConfig
   onChange: (c: LabelConfig) => void
+  styleControls?: boolean   // show font-size / distance / bold / italic / colour controls
 }) {
   function addToSlot(pos: LabelPosition, v: DataVariable) {
     const cur = config.slots[pos]
@@ -244,41 +252,66 @@ function LabelSlotsEditor({ config, onChange }: {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <button
-        onClick={() => onChange({ ...config, show: !config.show })}
-        style={{
-          alignSelf: 'flex-start',
-          background: config.show ? '#EBF3FF' : '#F2F2F7',
-          border: `1px solid ${config.show ? '#A8CAFF' : '#D1D1D6'}`,
-          color: config.show ? '#007AFF' : '#6C6C70',
-          borderRadius: '6px', padding: '6px 14px',
-          fontSize: '12px', fontWeight: config.show ? '600' : '400',
-          cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-        }}
-      >
-        {config.show ? '● Visible' : '○ Hidden'}
-      </button>
-
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr auto 1fr',
-        gridTemplateRows: 'auto auto auto',
-        gap: '4px', alignItems: 'center', justifyItems: 'center',
-      }}>
-        {/* row 0: Top */}
-        <div />
-        <LabelSlotZone position="top"    slot={config.slots.top}    onAdd={(v) => addToSlot('top', v)}    onRemove={(v) => removeFromSlot('top', v)} />
-        <div />
-        {/* row 1: Left · center · Right */}
-        <LabelSlotZone position="left"   slot={config.slots.left}   onAdd={(v) => addToSlot('left', v)}   onRemove={(v) => removeFromSlot('left', v)} />
-        <div style={{ width: '18px', height: '18px', background: '#E5E5EA', borderRadius: '4px', flexShrink: 0 }} />
-        <LabelSlotZone position="right"  slot={config.slots.right}  onAdd={(v) => addToSlot('right', v)}  onRemove={(v) => removeFromSlot('right', v)} />
-        {/* row 2: Bottom */}
-        <div />
-        <LabelSlotZone position="bottom" slot={config.slots.bottom} onAdd={(v) => addToSlot('bottom', v)} onRemove={(v) => removeFromSlot('bottom', v)} />
-        <div />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* One row per position (a labelled list handles long variable names better
+          than a cross grid, which clips them). */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {(['top', 'bottom', 'left', 'right'] as const).map(pos => (
+          <div key={pos} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            <span style={{ fontSize: '11px', color: '#8E8E93', fontWeight: '600', width: '56px', flexShrink: 0, paddingTop: '5px' }}>
+              {SLOT_ICONS[pos]} {pos[0].toUpperCase() + pos.slice(1)}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <LabelSlotZone position={pos} slot={config.slots[pos]} onAdd={(v) => addToSlot(pos, v)} onRemove={(v) => removeFromSlot(pos, v)} />
+            </div>
+          </div>
+        ))}
       </div>
+
+      {styleControls && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #E5E5EA', paddingTop: '10px' }}>
+          <LabeledSlider label="Font size" value={config.fontSize ?? 11} min={8} max={28} step={1}
+            onChange={(v) => onChange({ ...config, fontSize: v })} />
+          <LabeledSlider label="Distance" value={config.distance ?? 0} min={-3} max={6} step={0.5} decimals={1}
+            onChange={(v) => onChange({ ...config, distance: v })} />
+          <Row label="Style">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                title="Bold"
+                onClick={() => onChange({ ...config, bold: !config.bold })}
+                style={{
+                  padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'inherit',
+                  fontWeight: '700', fontSize: '13px', transition: 'all 0.12s',
+                  background: config.bold ? '#EBF3FF' : '#F2F2F7',
+                  border: `1px solid ${config.bold ? '#A8CAFF' : '#D1D1D6'}`,
+                  color: config.bold ? '#007AFF' : '#6C6C70',
+                }}
+              >B</button>
+              <button
+                title="Italic"
+                onClick={() => onChange({ ...config, italic: !config.italic })}
+                style={{
+                  padding: '4px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: 'inherit',
+                  fontStyle: 'italic', fontSize: '13px', transition: 'all 0.12s',
+                  background: config.italic ? '#EBF3FF' : '#F2F2F7',
+                  border: `1px solid ${config.italic ? '#A8CAFF' : '#D1D1D6'}`,
+                  color: config.italic ? '#007AFF' : '#6C6C70',
+                }}
+              >I</button>
+              <input
+                type="color"
+                title="Font color"
+                value={config.color ?? '#e8e8e8'}
+                onChange={(e) => onChange({ ...config, color: e.target.value })}
+                style={{
+                  width: '30px', height: '28px', padding: '2px', borderRadius: '6px',
+                  border: '1px solid #D1D1D6', background: '#F2F2F7', cursor: 'pointer',
+                }}
+              />
+            </div>
+          </Row>
+        </div>
+      )}
     </div>
   )
 }
@@ -392,6 +425,7 @@ function Vec3Input({
 }) {
   const [locked,   setLocked]   = useState(false)
   const [overAxis, setOverAxis] = useState<'x' | 'y' | 'z' | null>(null)
+  const varLabel = useContext(VarLabelContext)
   const axes: (keyof Vec3)[] = axesProp ?? ['x', 'y', 'z']
 
   function handleChange(axis: keyof Vec3, raw: number) {
@@ -455,7 +489,7 @@ function Vec3Input({
                     fontWeight: '600', display: 'flex', alignItems: 'center',
                     overflow: 'hidden', whiteSpace: 'nowrap',
                   }}>
-                    {meta.type === 'numerical' ? '#' : '◈'} {meta.label}
+                    {meta.type === 'numerical' ? '#' : 'Aa'} {varLabel(boundVar)}
                   </span>
                   <button
                     onClick={() => onAxisBind(axis, null)}
@@ -708,9 +742,9 @@ function ShapeDropdown({ config, onChange }: {
         )}
 
         <optgroup label="Primitives">
-          <option value="box">■  Box</option>
-          <option value="sphere">●  Sphere</option>
-          <option value="star">★  Star</option>
+          <option value="box">Box</option>
+          <option value="sphere">Sphere</option>
+          <option value="star">Star</option>
         </optgroup>
 
         <optgroup label="Custom">
@@ -769,7 +803,7 @@ function PartsEditor({ config, activePartId, onAddPart, onRemovePart, onUpdatePa
         style={{ width: '100%', padding: '8px', background: '#F2F2F7', border: '1px dashed #C7C7CC', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#3A3A3C', fontFamily: 'inherit' }}
         onMouseEnter={e => (e.currentTarget.style.background = '#E9E9EE')}
         onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
-      >+ Add part</button>
+      >+ Add geometry</button>
 
       {active && (
         <div style={{ marginTop: '6px', paddingTop: '10px', borderTop: '1px solid #E5E5EA', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -851,8 +885,7 @@ function MarkProperties({
         <Row label="Scale">
           {bindings.markScale !== null ? (
             <BoundChip
-              label={VAR_META[bindings.markScale].label}
-              type="numerical"
+              variable={bindings.markScale}
               onClear={() => onBind('markScale', null)}
             />
           ) : (
@@ -937,12 +970,12 @@ function MarkProperties({
             {onAddPart && bindings.markGeometry === null && (
               <button
                 onClick={onAddPart}
-                title="Combine shapes into one mark (e.g. a sphere on a leaf)"
+                title="Add another geometry to this mark (e.g. a sphere on a leaf)"
                 style={{ width: '100%', padding: '8px', background: '#F2F2F7', border: '1px dashed #C7C7CC', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#3A3A3C', fontFamily: 'inherit' }}
                 onMouseEnter={e => (e.currentTarget.style.background = '#E9E9EE')}
                 onMouseLeave={e => (e.currentTarget.style.background = '#F2F2F7')}
               >
-                + Make it a compound mark
+                + Add geometry
               </button>
             )}
           </>
@@ -967,8 +1000,7 @@ function MarkProperties({
           {bindings.markColor !== null ? (
             <>
               <BoundChip
-                label={VAR_LABELS[bindings.markColor]?.label ?? bindings.markColor}
-                type={VAR_LABELS[bindings.markColor]?.type ?? 'categorical'}
+                variable={bindings.markColor}
                 onClear={() => onBind('markColor', null)}
               />
               {colorMode === 'continuous' && colorGradient && onColorGradientChange && (
@@ -1029,7 +1061,7 @@ function MarkProperties({
 
       {/* ── Labels ── */}
       <AttributeCategory icon={ICONS.labels} title="Labels" open={acc.isOpen('Labels')} onToggle={() => acc.toggle('Labels')}>
-        <LabelSlotsEditor config={labelConfig} onChange={onLabelChange} />
+        <LabelSlotsEditor config={labelConfig} onChange={onLabelChange} styleControls />
       </AttributeCategory>
     </>
   )
@@ -1083,14 +1115,8 @@ function CollectionProperties({
                 const anyBound = collectionLevel === 1
                   ? Object.values(bindings).some(v => v !== null)
                   : bindings.scatterSize !== null
-                const VAR_META: Record<string, { label: string; type: 'numerical' | 'categorical' }> = {
-                  weight:      { label: 'Weight',       type: 'numerical'   },
-                  garbageType: { label: 'Garbage Type', type: 'categorical' },
-                  count:       { label: 'Count',        type: 'numerical'   },
-                }
                 if (boundVar !== null) {
-                  const meta = VAR_META[boundVar] ?? { label: boundVar, type: 'numerical' as const }
-                  return <BoundChip label={meta.label} type={meta.type} onClear={() => onBind(boundKey, null)} />
+                  return <BoundChip variable={boundVar} onClear={() => onBind(boundKey, null)} />
                 }
                 if (anyBound) {
                   return (
@@ -1118,7 +1144,7 @@ function CollectionProperties({
             </Row>
             <Row label="Axis">
               <SegmentedControl
-                options={[{ value: 'X' as const, label: '→ X axis' }, { value: 'Y' as const, label: '↑ Y axis' }]}
+                options={[{ value: 'X' as const, label: 'X axis' }, { value: 'Y' as const, label: 'Y axis' }]}
                 value={config.alignAxis}
                 onChange={(v) => onChange({ ...config, alignAxis: v })}
               />
@@ -1127,14 +1153,14 @@ function CollectionProperties({
               <SegmentedControl
                 options={config.alignAxis === 'X'
                   ? [
-                      { value: 'start'  as const, label: '↑ Top'    },
-                      { value: 'center' as const, label: '◆ Ctr'    },
-                      { value: 'end'    as const, label: '↓ Bottom' },
+                      { value: 'start'  as const, label: 'Top'    },
+                      { value: 'center' as const, label: 'Center' },
+                      { value: 'end'    as const, label: 'Bottom' },
                     ]
                   : [
-                      { value: 'start'  as const, label: '← Left'  },
-                      { value: 'center' as const, label: '◆ Ctr'   },
-                      { value: 'end'    as const, label: '→ Right'  },
+                      { value: 'start'  as const, label: 'Left'   },
+                      { value: 'center' as const, label: 'Center' },
+                      { value: 'end'    as const, label: 'Right'  },
                     ]
                 }
                 value={config.alignAnchor}
@@ -1208,7 +1234,7 @@ function CollectionProperties({
                       borderRadius: idx === 0 ? '6px 0 0 6px' : '0 6px 6px 0',
                       cursor: 'pointer', fontFamily: 'inherit', fontSize: '11px', fontWeight: '600',
                     }}>
-                    {v === 'box' ? '□ Box' : '○ Sphere'}
+                    {v === 'box' ? 'Box' : 'Sphere'}
                   </button>
                 ))}
               </div>
@@ -1218,7 +1244,7 @@ function CollectionProperties({
             {bindings.scatterSize !== null ? (
               <>
                 <Row label="Dimensions">
-                  <BoundChip label="Number of Instruments" type="numerical" onClear={() => onBind('scatterSize', null)} />
+                  <BoundChip variable={bindings.scatterSize} onClear={() => onBind('scatterSize', null)} />
                 </Row>
                 <Row label="Size axes">
                   <div style={{ display: 'flex', gap: '4px' }}>
@@ -1355,7 +1381,7 @@ function CollectionProperties({
               <span style={{ fontSize: '11px', color: '#AEAEB2', lineHeight: 1.4 }}>
                 {config.object
                   ? 'Marks are placed on the collection object (below).'
-                  : 'Add an object below (Geometry) to use as the surface.'}
+                  : 'Add an object below to use as the surface.'}
               </span>
             </Row>
             <Row label="Population">
@@ -1465,7 +1491,7 @@ function CollectionProperties({
              collection, so a collection-wide label has nothing to distinguish. ── */}
       {collectionLevel === 1 && compositionLevel >= 3 && labelConfig && onLabelChange && (
         <AttributeCategory icon={ICONS.labels} title="Labels" open={acc.isOpen('Labels')} onToggle={() => acc.toggle('Labels')}>
-          <LabelSlotsEditor config={labelConfig} onChange={onLabelChange} />
+          <LabelSlotsEditor config={labelConfig} onChange={onLabelChange} styleControls />
         </AttributeCategory>
       )}
     </>
@@ -1619,8 +1645,7 @@ function CheckRow({ label, checked, onChange }: {
 function SceneProperties({
   config, onChange,
 }: { config: SceneConfig; onChange: (c: SceneConfig) => void }) {
-  const [framingOpen, setFramingOpen] = useState(true)
-  const [labelOpen,   setLabelOpen]   = useState(false)
+  const acc = useAccordion('Framing')   // single-open: opening one section closes the others
   const titleShow   = config.sceneTitleShow   ?? false
   const titleOffset = config.sceneTitleOffset ?? 2.5
   const titleBelow  = config.sceneTitleBelow  ?? false
@@ -1628,7 +1653,7 @@ function SceneProperties({
     <>
       <PanelHeader title="Scene" />
 
-      <AttributeCategory icon={ICONS.framing} title="Framing" open={framingOpen} onToggle={() => setFramingOpen(o => !o)}>
+      <AttributeCategory icon={ICONS.framing} title="Framing" open={acc.isOpen('Framing')} onToggle={() => acc.toggle('Framing')}>
         <Row label="Background">
           <select
             value={config.background}
@@ -1724,7 +1749,7 @@ function SceneProperties({
         </Row>
       </AttributeCategory>
 
-      <AttributeCategory icon={ICONS.labels} title="Label" open={labelOpen} onToggle={() => setLabelOpen(o => !o)}>
+      <AttributeCategory icon={ICONS.labels} title="Label" open={acc.isOpen('Label')} onToggle={() => acc.toggle('Label')}>
         <Row label="Show title">
           <SegmentedControl
             options={[{ value: 'on' as const, label: 'On' }, { value: 'off' as const, label: 'Off' }]}
@@ -1761,7 +1786,7 @@ function SceneProperties({
               { value: 'full' as const,      label: 'Full'      },
               { value: 'optimized' as const, label: 'Optimized' },
             ]}
-            value={config.sceneLabelOcclude ?? 'off'}
+            value={config.sceneLabelOcclude ?? 'optimized'}
             onChange={(v) => onChange({ ...config, sceneLabelOcclude: v })}
           />
           <span style={{ fontSize: '10px', color: '#AEAEB2', marginTop: '4px', display: 'block' }}>
@@ -1804,6 +1829,7 @@ interface PropertiesPanelProps {
   markOpenSection?:      string
   onReseed?:             () => void
   models?:               ModelPreset[]
+  varLabels?:            { numerical: string; categorical: string }   // active dataset column names
   activePartId?:         string | null
   onAddPart?:            () => void
   onRemovePart?:         (id: string) => void
@@ -1822,14 +1848,20 @@ export function PropertiesPanel({
   colLabelConfig,  onColLabelChange,
   activeDecorationId, decorations, onDecorationChange,
   colorMode, colorGradient, onColorGradientChange, colorTint, onColorTintChange, markOpenSection, onReseed,
-  models,
+  models, varLabels,
   activePartId, onAddPart, onRemovePart, onUpdatePart, onSelectPart,
 }: PropertiesPanelProps) {
   const activeDec = activeDecorationId !== null
     ? decorations.find((d) => d.id === activeDecorationId) ?? null
     : null
 
+  const resolveVarLabel = (v: DataVariable) =>
+    v === 'numerical'   ? (varLabels?.numerical   ?? 'Numerical')
+    : v === 'categorical' ? (varLabels?.categorical ?? 'Categorical')
+    : (VAR_META[v]?.label ?? v)
+
   return (
+    <VarLabelContext.Provider value={resolveVarLabel}>
     <ModelListContext.Provider value={models ?? MODEL_PRESETS}>
     <div style={{
       padding: '18px 14px', color: '#1D1D1F', fontSize: '13px',
@@ -1876,5 +1908,6 @@ export function PropertiesPanel({
 
     </div>
     </ModelListContext.Provider>
+    </VarLabelContext.Provider>
   )
 }

@@ -53,7 +53,7 @@ function resolveMarkColor(
 }
 import { MarkMaterialElement, MaterialParamsContext, resolveMaterialParams } from './MarkMaterial'
 import { Layer, LayerLabelData, SCATTER_SCALE, ExclusionZone, MarkLabelPair, LabelOccludeContext, occludeProp } from './Layer'
-import { compoundBounds, reportModelHalf, useModelHalvesVersion, buildMaterial } from './MarkInstances'
+import { compoundBounds, reportModelHalf, useModelHalvesVersion, buildMaterial, LabelStyleContext, ColLabelStyleContext } from './MarkInstances'
 import { SurfacePlacement } from './SurfacePlacement'
 import { PilingLayer } from './PilingLayer'
 import { Physics } from '@react-three/rapier'
@@ -436,7 +436,7 @@ function surfaceLabelStrings(slots: LabelSlots, layers: LayerData[], count: numb
 
 const LABEL_SHADOW = '0 0 6px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,1)'
 
-function MarkLabel({ pos, text }: { pos: 'top'|'bottom'|'left'|'right'; text: string }) {
+function MarkLabel({ pos, text, fontSize, bold, italic, color }: { pos: 'top'|'bottom'|'left'|'right'; text: string; fontSize: number; bold?: boolean; italic?: boolean; color?: string }) {
   const transform =
     pos === 'top'    ? 'translate(-50%, -100%)' :
     pos === 'bottom' ? 'translate(-50%, 0)'     :
@@ -444,7 +444,8 @@ function MarkLabel({ pos, text }: { pos: 'top'|'bottom'|'left'|'right'; text: st
                        'translateY(-50%)'
   return (
     <span data-phys-label="" style={{
-      display: 'block', fontSize: '12px', color: '#e0e0e0',
+      display: 'block', fontSize: `${fontSize}px`, fontWeight: bold ? 700 : 400,
+      fontStyle: italic ? 'italic' : 'normal', color: color ?? '#e0e0e0',
       fontFamily: 'Courier New, monospace', textShadow: LABEL_SHADOW,
       whiteSpace: 'nowrap', userSelect: 'none', transform,
     }}>
@@ -458,18 +459,20 @@ function MarkLabel({ pos, text }: { pos: 'top'|'bottom'|'left'|'right'; text: st
 // here, since the label lives on the group as a whole, not per mark. `halfW`/`halfH`
 // are the group's approximate half-extents so the tag clears the marks/object.
 function CollectionGroupLabels({ data, halfW, halfH }: { data: LayerLabelData; halfW: number; halfH: number }) {
+  const { fontSize: colFs, distance, bold: colBold, italic: colItalic, color: colColor } = useContext(ColLabelStyleContext)
+  const hH = halfH + distance, hW = halfW + distance
   const tag = (pos: 'top' | 'bottom' | 'left' | 'right', p: [number, number, number], text: string) => (
     <>
       <group position={p} userData={{ isLabel: true, labelText: text, labelPos: pos }} />
-      <Html zIndexRange={[1, 0]} position={p} style={{ pointerEvents: 'none' }}><MarkLabel pos={pos} text={text} /></Html>
+      <Html zIndexRange={[1, 0]} position={p} style={{ pointerEvents: 'none' }}><MarkLabel pos={pos} text={text} fontSize={colFs} bold={colBold} italic={colItalic} color={colColor} /></Html>
     </>
   )
   return (
     <>
-      {data.top    && tag('top',    [0,  halfH, 0], data.top)}
-      {data.bottom && tag('bottom', [0, -halfH, 0], data.bottom)}
-      {data.left   && tag('left',   [-halfW, 0, 0], data.left)}
-      {data.right  && tag('right',  [ halfW, 0, 0], data.right)}
+      {data.top    && tag('top',    [0,  hH, 0], data.top)}
+      {data.bottom && tag('bottom', [0, -hH, 0], data.bottom)}
+      {data.left   && tag('left',   [-hW, 0, 0], data.left)}
+      {data.right  && tag('right',  [ hW, 0, 0], data.right)}
     </>
   )
 }
@@ -593,6 +596,7 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
   useEffect(() => () => { geo.dispose() }, [geo])
   const { colorMode, colorGradient, colorTint } = useContext(ColorContext)
   const bScale = useContext(BindingScaleContext)
+  const { fontSize: labelFontSize, distance: labelDistance, bold: labelBold, italic: labelItalic, color: labelColor } = useContext(LabelStyleContext)
 
   const s     = L1_MARK_SCALE
   const color = resolveMarkColor(0, bindings, layers, config.color, colorMode, colorGradient)
@@ -603,8 +607,8 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
     y: config.size.y * sc * sizeMul('markSizeY', 0, bindings, layers, bScale),
     z: config.size.z * sc * sizeMul('markSizeZ', 0, bindings, layers, bScale),
   }
-  const halfH = s * sz.y * 0.036 + 0.8
-  const halfW = s * sz.x * 0.036 + 0.8
+  const halfH = s * sz.y * 0.036 + 0.8 + labelDistance
+  const halfW = s * sz.x * 0.036 + 0.8 + labelDistance
   const ld    = computeLabelValues(markLabelConfig.slots, layers, 0)
   // Centre the compound on its bounding box so the mark's origin (its handle +
   // scale pivot) is the compound's true centre — matches how collections render it.
@@ -633,10 +637,10 @@ function SingleMarkMesh({ config, layers, bindings, markLabelConfig }: {
       )}
       {markLabelConfig.show && (
         <>
-          {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[1, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
-          {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[1, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
-          {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[1, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
-          {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[1, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
+          {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[1, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    fontSize={labelFontSize} bold={labelBold} italic={labelItalic} color={labelColor} /></Html></>}
+          {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[1, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} fontSize={labelFontSize} bold={labelBold} italic={labelItalic} color={labelColor} /></Html></>}
+          {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[1, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   fontSize={labelFontSize} bold={labelBold} italic={labelItalic} color={labelColor} /></Html></>}
+          {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[1, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  fontSize={labelFontSize} bold={labelBold} italic={labelItalic} color={labelColor} /></Html></>}
         </>
       )}
     </SpatialHandle>
@@ -693,6 +697,7 @@ function AlignedMarks({
   const rot: [number, number, number] = [markConfig.orientation.x * DEG, markConfig.orientation.y * DEG, markConfig.orientation.z * DEG]
   const { colorMode, colorGradient, colorTint } = useContext(ColorContext)
   const bScale = useContext(BindingScaleContext)
+  const { fontSize: labelFontSize, distance: labelDistance, bold: labelBold, italic: labelItalic, color: labelColor } = useContext(LabelStyleContext)
   const recolor = bindings.markColor !== null   // colour encoding active → recolour custom models too
 
   function getColor(i: number) {
@@ -722,8 +727,8 @@ function AlignedMarks({
           ? [t + ao[0], ao[1], ao[2]]
           : [ao[0], t + ao[1], ao[2]]
 
-        const halfH = sc[1] * 0.036 + 0.8
-        const halfW = sc[0] * 0.036 + 0.8
+        const halfH = sc[1] * 0.036 + 0.8 + labelDistance
+        const halfW = sc[0] * 0.036 + 0.8 + labelDistance
         const ld  = computeLabelValues(markLabelConfig.slots, layers, i)
 
         const layerName = layers[i % Math.max(1, layers.length)]?.name
@@ -760,10 +765,10 @@ function AlignedMarks({
             )}
             {markLabelConfig.show && (
               <>
-                {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[1, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    /></Html></>}
-                {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[1, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} /></Html></>}
-                {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[1, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   /></Html></>}
-                {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[1, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  /></Html></>}
+                {ld.top    && <><group position={[0,    halfH, 0]} userData={{ isLabel: true, labelText: ld.top,    labelPos: 'top'    }} /><Html zIndexRange={[1, 0]} position={[0,    halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="top"    text={ld.top}    fontSize={labelFontSize} bold={labelBold} italic={labelItalic} color={labelColor} /></Html></>}
+                {ld.bottom && <><group position={[0,   -halfH, 0]} userData={{ isLabel: true, labelText: ld.bottom, labelPos: 'bottom' }} /><Html zIndexRange={[1, 0]} position={[0,   -halfH, 0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="bottom" text={ld.bottom} fontSize={labelFontSize} bold={labelBold} italic={labelItalic} color={labelColor} /></Html></>}
+                {ld.left   && <><group position={[-halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.left,   labelPos: 'left'   }} /><Html zIndexRange={[1, 0]} position={[-halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="left"   text={ld.left}   fontSize={labelFontSize} bold={labelBold} italic={labelItalic} color={labelColor} /></Html></>}
+                {ld.right  && <><group position={[ halfW, 0,   0]} userData={{ isLabel: true, labelText: ld.right,  labelPos: 'right'  }} /><Html zIndexRange={[1, 0]} position={[ halfW, 0,   0]} style={{ pointerEvents: 'none' }}><MarkLabel pos="right"  text={ld.right}  fontSize={labelFontSize} bold={labelBold} italic={labelItalic} color={labelColor} /></Html></>}
               </>
             )}
           </group>
@@ -1643,7 +1648,7 @@ export function CompositionCanvas({
     setOccluderMap(prev => { const n = { ...prev }; delete n[id]; return n })
   }, [])
   const occludeValue = useMemo(() => ({
-    mode: sceneConfig.sceneLabelOcclude ?? 'off',
+    mode: sceneConfig.sceneLabelOcclude ?? 'optimized',
     occluders: Object.values(occluderMap).map(o => ({ current: o })),
   }), [sceneConfig.sceneLabelOcclude, occluderMap])
 
@@ -1710,6 +1715,8 @@ export function CompositionCanvas({
       <ModelAspectContext.Provider value={{ aspects: modelAspects, report: reportAspect }}>
       <ColorContext.Provider value={{ colorMode, colorGradient, colorTint }}>
       <LabelOccludeContext.Provider value={occludeValue}>
+      <LabelStyleContext.Provider value={{ fontSize: markLabelConfig.fontSize ?? 11, distance: markLabelConfig.distance ?? 0, bold: markLabelConfig.bold ?? false, italic: markLabelConfig.italic ?? false, color: markLabelConfig.color ?? '#e8e8e8' }}>
+      <ColLabelStyleContext.Provider value={{ fontSize: colLabelConfig.fontSize ?? 11, distance: colLabelConfig.distance ?? 0, bold: colLabelConfig.bold ?? false, italic: colLabelConfig.italic ?? false, color: colLabelConfig.color ?? '#e8e8e8' }}>
       <Physics gravity={[0, -9.81, 0]} timeStep="vary">
       <HandleContext.Provider value={handleValue}>
 
@@ -1773,6 +1780,8 @@ export function CompositionCanvas({
 
       </HandleContext.Provider>
       </Physics>
+      </ColLabelStyleContext.Provider>
+      </LabelStyleContext.Provider>
       </LabelOccludeContext.Provider>
       </ColorContext.Provider>
       </ModelAspectContext.Provider>
