@@ -1122,7 +1122,9 @@ function Level3Content({
       const base = Array.from({ length: groupCount }, (_, i) => {
         const layer = layers[i % Math.max(1, layers.length)]
         return {
-          color: layer?.color      ?? col2Color,
+          // Base colour is the mark's own colour; per-category colour is applied
+          // downstream by resolveMarkColor only when a markColor encoding is set.
+          color: markConfig.color  ?? col2Color,
           name:  layer?.name       ?? `Group ${i + 1}`,
           pct:   layer?.percentage ?? 0,
         }
@@ -1202,7 +1204,7 @@ function Level3Content({
           (Math.random() - 0.5) * scatterDimensions.y * 0.8,
           (Math.random() - 0.5) * scatterDimensions.z * 0.8,
         ] as [number, number, number],
-        color:    layer?.color      ?? col2Color,
+        color:    markConfig.color  ?? col2Color,
         name:     layer?.name       ?? `Group ${i + 1}`,
         pct:      layer?.percentage ?? 0,
         perpExt:  0,
@@ -1215,7 +1217,7 @@ function Level3Content({
     collection1Config.arrangement, collection1Config.alignAxis,
     collection1Config.alignCount, collection1Config.alignSpacing,
     collection1Config.scatterDimensions.x, collection1Config.scatterDimensions.y,
-    markConfig.size.x, markConfig.size.y, markConfig.scale, scatterSeed,
+    markConfig.size.x, markConfig.size.y, markConfig.scale, markConfig.color, scatterSeed,
   ])
 
   const maxPct = Math.max(...layers.map(l => l.percentage), 1)
