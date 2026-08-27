@@ -8,7 +8,15 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const BLENDER    = 'C:\\Program Files\\Blender Foundation\\Blender 4.4\\blender.exe'
+// Blender executable. Auto-detected per platform; override with the BLENDER_PATH
+// env var, e.g. BLENDER_PATH=/Applications/Blender.app/Contents/MacOS/Blender
+const BLENDER = process.env.BLENDER_PATH || (
+  process.platform === 'darwin' ? '/Applications/Blender.app/Contents/MacOS/Blender' :
+  process.platform === 'win32'  ? 'C:\\Program Files\\Blender Foundation\\Blender 4.4\\blender.exe' :
+  'blender'   // linux: assume it's on PATH
+)
+const blenderStartError = err =>
+  `Could not start Blender: ${err.message}. Is Blender installed at "${BLENDER}"? Override with the BLENDER_PATH env var.`
 const SCRIPTS    = path.join(__dirname, 'scripts')
 const JOBS_DIR   = path.join(__dirname, 'jobs')
 const MODELS_DIR   = path.join(__dirname, '..', 'src', 'assets', 'models')
@@ -53,7 +61,11 @@ function runBlender(inputPath, outputPath, { pieces, cutSpread, voxelDiv, cutStr
   blender.stdout.on('data', d => process.stdout.write(`  [blender] ${d}`))
   blender.stderr.on('data', d => process.stderr.write(`  [blender] ${d}`))
 
+  // A failed spawn emits BOTH 'error' and 'close'; guard so we respond only once
+  // (a second res.json throws ERR_HTTP_HEADERS_SENT and crashes the process).
+  let settled = false
   blender.on('close', code => {
+    if (settled) return; settled = true
     if (inputPath !== 'SPHERE') fs.unlink(inputPath, () => {})
     if (code !== 0 || !fs.existsSync(outputPath)) {
       return res.status(500).json({ error: `Blender failed (exit ${code})` })
@@ -62,7 +74,8 @@ function runBlender(inputPath, outputPath, { pieces, cutSpread, voxelDiv, cutStr
   })
 
   blender.on('error', err => {
-    res.status(500).json({ error: 'Could not start Blender: ' + err.message })
+    if (settled) return; settled = true
+    res.status(500).json({ error: blenderStartError(err) })
   })
 }
 
@@ -115,7 +128,9 @@ function runDeform(inputPath, outputPath, params, res) {
   blender.stdout.on('data', d => process.stdout.write(`  [blender] ${d}`))
   blender.stderr.on('data', d => process.stderr.write(`  [blender] ${d}`))
 
+  let settled = false
   blender.on('close', code => {
+    if (settled) return; settled = true
     if (inputPath !== 'SPHERE' && inputPath !== 'CUBE') fs.unlink(inputPath, () => {})
     if (code !== 0 || !fs.existsSync(outputPath)) {
       return res.status(500).json({ error: `Blender failed (exit ${code})` })
@@ -124,7 +139,8 @@ function runDeform(inputPath, outputPath, params, res) {
   })
 
   blender.on('error', err => {
-    res.status(500).json({ error: 'Could not start Blender: ' + err.message })
+    if (settled) return; settled = true
+    res.status(500).json({ error: blenderStartError(err) })
   })
 }
 
@@ -270,7 +286,9 @@ app.post('/slice', upload.fields([
   blender.stdout.on('data', d => process.stdout.write(`  [slice] ${d}`))
   blender.stderr.on('data', d => process.stderr.write(`  [slice] ${d}`))
 
+  let settled = false
   blender.on('close', code => {
+    if (settled) return; settled = true
     if (shape === 'MODEL' && inputPath) fs.unlink(inputPath, () => {})
     // texturePath points to a bundled asset — never delete it
     if (code !== 0 || !fs.existsSync(outputPath)) {
@@ -280,7 +298,8 @@ app.post('/slice', upload.fields([
   })
 
   blender.on('error', err => {
-    res.status(500).json({ error: 'Could not start Blender: ' + err.message })
+    if (settled) return; settled = true
+    res.status(500).json({ error: blenderStartError(err) })
   })
 })
 
@@ -306,4 +325,12 @@ app.use((err, req, res, _next) => {
 app.listen(3001, () => {
   console.log('Simulation server running on http://localhost:3001')
   console.log(`Blender: ${BLENDER}`)
+  // If BLENDER is an explicit path (not a bare "blender" on PATH) and it's
+  // missing, warn now rather than failing on the first simulation request.
+  if (/[\\/]/.test(BLENDER) && !fs.existsSync(BLENDER)) {
+    console.warn(`⚠  Blender not found at that path.`)
+    console.warn(`   Set BLENDER_PATH to your Blender executable, e.g.:`)
+    console.warn(`   macOS:   BLENDER_PATH=/Applications/Blender.app/Contents/MacOS/Blender npm run server`)
+    console.warn(`   Windows: BLENDER_PATH="C:\\Program Files\\Blender Foundation\\Blender 4.4\\blender.exe"`)
+  }
 })
